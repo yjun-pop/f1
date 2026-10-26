@@ -1,23 +1,23 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {surfaceMaps} from './SurfaceTextures';
+import {createTireGeometry,createTireLetteringGeometry} from './TireGeometry';
 export interface CarVisual {group:THREE.Group;frontWheels:THREE.Group[];tires:THREE.Mesh[];chassis:THREE.Group}
 let sidewallMaterial:THREE.MeshStandardMaterial|undefined;
 function tireLettering(){
   if(sidewallMaterial)return sidewallMaterial;
   const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
   const ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,256,256);ctx.translate(128,128);
-  ctx.strokeStyle='#e3bb58';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,111,0,Math.PI*2);ctx.stroke();
   for(const angle of [0,Math.PI]){ctx.save();ctx.rotate(angle);ctx.fillStyle='#f3d26d';ctx.font='bold 19px sans-serif';ctx.textAlign='center';ctx.fillText('APEX',0,-99);ctx.font='9px sans-serif';ctx.fillText('SOFT · SLICK',0,-82);ctx.restore();}
   const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;map.anisotropy=4;
-  return sidewallMaterial=new THREE.MeshStandardMaterial({map,alphaTest:.35,side:THREE.DoubleSide,roughness:1,depthWrite:false});
+  return sidewallMaterial=new THREE.MeshStandardMaterial({map,alphaTest:.35,side:THREE.DoubleSide,roughness:1,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1});
 }
 export function createCar(color:number):CarVisual {
   const group=new THREE.Group(),chassis=new THREE.Group();group.add(chassis);
   const carbon=new THREE.MeshPhysicalMaterial({...surfaceMaps('carbon'),color:0xd0d5dd,roughness:.65,metalness:.15,clearcoat:.3,clearcoatRoughness:.25,bumpScale:.002});
   const paint=new THREE.MeshPhysicalMaterial({color,roughness:.24,metalness:.55,clearcoat:1,clearcoatRoughness:.12,envMapIntensity:1.25});
   const silver=new THREE.MeshPhysicalMaterial({color:0xc6cdd1,roughness:.22,metalness:.85,clearcoat:.65,clearcoatRoughness:.15});
-  const rubber=new THREE.MeshStandardMaterial({...surfaceMaps('rubber'),color:0xa7aaad,roughness:1,bumpScale:.004});
+  const rubber=new THREE.MeshStandardMaterial({...surfaceMaps('rubber'),color:0xa7aaad,roughness:.94,bumpScale:.001});
   const accent=new THREE.MeshStandardMaterial({color:0xb48b40,roughness:.58,metalness:.1});
   const inlet=new THREE.MeshStandardMaterial({color:0x080d12,roughness:.94});
   const addBox=(parent:THREE.Object3D,w:number,h:number,d:number,x:number,y:number,z:number,mat:THREE.Material)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);parent.add(m);return m;};
@@ -77,7 +77,8 @@ export function createCar(color:number):CarVisual {
   const tires:THREE.Mesh[]=[],frontWheels:THREE.Group[]=[];
   for(const side of [-1,1])for(const front of [false,true]){
     const pivot=new THREE.Group();pivot.name='wheel-pivot';pivot.position.set(side*.91,.5,front?1.55:-1.85);group.add(pivot);if(front)frontWheels.push(pivot);
-    const tire=new THREE.Mesh(new THREE.CylinderGeometry(.435,.435,front?.3:.38,40,1),rubber);tire.rotation.z=Math.PI/2;pivot.add(tire);
+    const width=front?.34:.42,tire=new THREE.Mesh(createTireGeometry(width),rubber);pivot.add(tire);
+    const label=new THREE.Mesh(createTireLetteringGeometry(tire.geometry,width,side),tireLettering());pivot.add(label);
     for(const face of [-1,1]){
       const ring=new THREE.Mesh(new THREE.TorusGeometry(.315,.012,6,40),silver);ring.rotation.y=Math.PI/2;ring.position.x=face*(front?.163:.203);pivot.add(ring);
       const pieces:THREE.BufferGeometry[]=[new THREE.CylinderGeometry(.11,.11,.018,20).toNonIndexed()];
@@ -88,9 +89,7 @@ export function createCar(color:number):CarVisual {
       rim.rotation.z=Math.PI/2;rim.position.x=face*(front?.17:.21);pivot.add(rim);
       const hub=new THREE.Mesh(new THREE.CylinderGeometry(.065,.065,.027,12),accent);hub.rotation.z=Math.PI/2;hub.position.x=face*(front?.19:.23);pivot.add(hub);
       const disc=new THREE.Mesh(new THREE.CylinderGeometry(.25,.25,.012,24),carbon);disc.rotation.z=Math.PI/2;disc.position.x=face*(front?.13:.17);pivot.add(disc);
-      const shoulder=new THREE.Mesh(new THREE.TorusGeometry(.407,.05,8,40),rubber);shoulder.rotation.y=Math.PI/2;shoulder.position.x=face*(front?.12:.16);pivot.add(shoulder);
     }
-    const label=new THREE.Mesh(new THREE.RingGeometry(.27,.45,48),tireLettering());label.rotation.y=side*Math.PI/2;label.position.x=side*(front?.174:.214);pivot.add(label);
     // All parts rotate about the actual axle (X), including sidewall markings.
     // One mesh per material replaces the old individual rings/spokes/hubs.
     const wheelBatches=new Map<THREE.Material,THREE.BufferGeometry[]>();

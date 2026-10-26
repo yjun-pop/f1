@@ -3,6 +3,7 @@ import {Input} from './Input';
 import {Track} from './Track';
 import {Controls,integrateBody} from './Dynamics';
 import {createCar,CarVisual} from './CarModel';
+import {TIRE_RADIUS} from './TireGeometry';
 export class Vehicle {
   raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;
   private readonly baseGrip:number;raceGripAssist?:number;
@@ -48,7 +49,7 @@ export class Vehicle {
     this.model.chassis.rotation.x=THREE.MathUtils.damp(this.model.chassis.rotation.x,-this.acceleration*.0014,9,dt);
     this.model.chassis.rotation.z=THREE.MathUtils.damp(this.model.chassis.rotation.z,this.lateralAcceleration*.0015,9,dt);
     for(const wheel of this.model.frontWheels)wheel.rotation.y=this.steerAngle;
-    for(const tire of this.model.tires)tire.rotateX(this.speed*dt/.455);
+    for(const tire of this.model.tires)tire.rotateX(this.speed*dt/TIRE_RADIUS);
   }
   present(bounce=0){this.model.chassis.position.y=bounce;}
   get kmh(){return Math.round(this.speed*3.6);}

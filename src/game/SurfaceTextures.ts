@@ -21,8 +21,7 @@ export function surfaceMaps(kind:Surface){
       const fibre=(warp?x:y)%8,shade=18+Math.sin(fibre/8*Math.PI)*16+fine*4;
       rgb=[shade*.83,shade*.92,shade];h=warp?118+fibre*3:132-fibre*2;r=115+fine*35;
     }else{
-      const band=Math.sin(x/size*Math.PI*32)*3;
-      const shade=28+n*8+band;rgb=[shade,shade+1,shade+2];h=104+fine*28+band;r=206+fine*28;
+      const shade=28+n*3;rgb=[shade,shade+1,shade+2];h=115+fine*6;r=215+fine*12;
     }
     for(let k=0;k<3;k++){color[i+k]=rgb[k];height[i+k]=h;rough[i+k]=r;}
     color[i+3]=height[i+3]=rough[i+3]=255;

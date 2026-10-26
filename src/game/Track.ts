@@ -4,6 +4,7 @@ import {MONZA_POINTS,MONZA_LENGTH,MONZA_SECTIONS,MONZA_ORIGIN} from './MonzaLayo
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {CircuitDetails} from './CircuitDetails';
 import type {GraphicsTier} from './Graphics';
+import {connectKerbSegments,createKerbContacts,createKerbGeometry,kerbPaintMap,type KerbContactSegment} from './KerbGeometry';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name='MONZA';readonly country='ITALY';readonly cornerCount=11;
@@ -12,6 +13,7 @@ export class Track {
   readonly sections:{number:number;name:string;progress:number}[]=[];
   readonly bounds=new THREE.Box3();
   private samples:THREE.Vector3[]=[];private sampleCount=0;private kerbSegments=new Uint8Array(0);
+  private kerbContacts:KerbContactSegment[][]=[];
   readonly details:CircuitDetails;
   constructor(scene:THREE.Scene){
     let raw=MONZA_POINTS.map(([x,z])=>new THREE.Vector3(x,0,z));
@@ -44,14 +46,23 @@ export class Track {
   point(t:number){return this.curve.getPointAt(((t%1)+1)%1);}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
+  // Average small source-line kinks for the visible road edge only. AI/path
+  // normals and the physical centreline retain their existing definitions.
+  roadNormal(t:number){const v=this.point(t+12/this.length).sub(this.point(t-12/this.length)).normalize();return new THREE.Vector3(-v.z,0,v.x);}
   kerbContact(position:THREE.Vector3,heading:number,progress:number){
     let contact=0;
     for(const axle of [-1.8,1.8])for(const side of [-1,1]){
       const wheel=position.clone().add(new THREE.Vector3(Math.sin(heading)*axle+Math.cos(heading)*side,0,Math.cos(heading)*axle-Math.sin(heading)*side));
       const t=this.nearestProgress(wheel,progress),index=Math.round(t*this.kerbSegments.length)%this.kerbSegments.length;
-      if(!this.kerbSegments[index])continue;
-      const lateral=Math.abs(wheel.sub(this.point(t)).dot(this.normal(t)));
-      contact+=Math.max(0,Math.min(lateral+.26,11.05)-Math.max(lateral-.26,9.65))/.52;
+      let overlap=0;
+      for(let offset=-6;offset<=6;offset++)for(const segment of this.kerbContacts[(index+offset+this.kerbContacts.length)%this.kerbContacts.length]){
+        if(Math.abs(segment.det)<1e-6)continue;
+        const x=wheel.x-segment.x,z=wheel.z-segment.z,along=(x*segment.nz-z*segment.nx)/segment.det;
+        if(along<0||along>1)continue;
+        const lateral=(segment.dx*z-segment.dz*x)/segment.det;
+        overlap=Math.max(overlap,Math.max(0,Math.min(lateral+.26,.7)-Math.max(lateral-.26,-.7))/.52);
+      }
+      contact+=overlap;
     }
     return Math.min(1,contact/2);
   }
@@ -68,7 +79,7 @@ export class Track {
   private buildRoad(){
     const count=Math.ceil(this.length/2.5),positions:number[]=[],uvs:number[]=[],indices:number[]=[];
     for(let i=0;i<=count;i++){
-      const t=i/count,p=this.point(t),n=this.normal(t);
+      const t=i/count,p=this.point(t),n=this.roadNormal(t);
       for(const side of [-1,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH);positions.push(q.x,.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);}
       if(i<count){const k=i*2;indices.push(k,k+1,k+2,k+1,k+3,k+2);}
     }
@@ -83,7 +94,7 @@ export class Track {
       const p=this.point(t).addScaledVector(this.normal(t),((i*17)%11-5)*.43),f=this.tangent(t);
       stamp.position.set(p.x,.048,p.z);stamp.rotation.set(-Math.PI/2,0,Math.atan2(f.x,f.z));stamp.scale.set(1+(i%3)*.2,1+(i%5)*.3,1);stamp.updateMatrix();marks.setMatrixAt(markCount++,stamp.matrix);
     }marks.count=markCount;this.group.add(marks);
-    for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>this.point(i/count).addScaledVector(this.normal(i/count),side*9.6).setY(.07));this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
+    for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>this.point(i/count).addScaledVector(this.roadNormal(i/count),side*9.6).setY(.07));this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
     const start=new THREE.Group();start.position.copy(this.point(0));const t=this.tangent(0);start.rotation.y=Math.atan2(t.x,t.z);
     for(let row=0;row<2;row++)for(let col=0;col<20;col++){const tile=new THREE.Mesh(new THREE.BoxGeometry(1,.025,.7),new THREE.MeshBasicMaterial({color:(row+col)%2?0x14191f:0xfaf8f0}));tile.position.set(col-9.5,.1,row*.7);start.add(tile);}this.group.add(start);
     // Physical grid boxes, rather than floating markings on the main straight.
@@ -104,13 +115,13 @@ export class Track {
   private buildCircuit(){
     const dummy=new THREE.Object3D(),count=Math.ceil(this.length/3.1),barrierCount=Math.ceil(this.length/4.2);
     this.kerbSegments=new Uint8Array(count);
-    const kerbs=new THREE.InstancedMesh(new THREE.BoxGeometry(1.4,.12,3.25),new THREE.MeshStandardMaterial({roughness:.82,metalness:0}),count*2);
-    const barriers=new THREE.InstancedMesh(new THREE.BoxGeometry(.5,1.2,4.4),new THREE.MeshStandardMaterial({color:0x315248,roughness:.7}),barrierCount*2);let k=0,b=0;
+    for(let i=0;i<count;i++){const t=i/count;if(this.tangent(t-5/this.length).angleTo(this.tangent(t+5/this.length))>=.018)this.kerbSegments[i]=1;}
+    connectKerbSegments(this.kerbSegments,this.length);this.kerbContacts=createKerbContacts(this,this.kerbSegments);
+    const kerbs=new THREE.Mesh(createKerbGeometry(this,this.kerbSegments),new THREE.MeshStandardMaterial({map:kerbPaintMap(),roughness:.88,metalness:0}));kerbs.name='continuous-kerbs';
+    const barriers=new THREE.InstancedMesh(new THREE.BoxGeometry(.5,1.2,4.4),new THREE.MeshStandardMaterial({color:0x315248,roughness:.7}),barrierCount*2);let b=0;
     for(const side of [-1,1]){
-      for(let i=0;i<count;i++){const t=i/count,angle=this.tangent(t-5/this.length).angleTo(this.tangent(t+5/this.length));if(angle<.018)continue;this.kerbSegments[i]=1;
-        const p=this.point(t).addScaledVector(this.normal(t),side*10.35),v=this.tangent(t);dummy.position.set(p.x,.08,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();kerbs.setMatrixAt(k,dummy.matrix);kerbs.setColorAt(k++,new THREE.Color(i%2?0xf5f3e8:0xd6493b));}
       for(let i=0;i<barrierCount;i++){const t=i/barrierCount,p=this.point(t).addScaledVector(this.normal(t),side*16.2),v=this.tangent(t);dummy.position.set(p.x,.6,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();barriers.setMatrixAt(b++,dummy.matrix);}
-    }kerbs.receiveShadow=true;barriers.receiveShadow=true;kerbs.count=k;this.group.add(kerbs,barriers);
+    }kerbs.receiveShadow=true;barriers.receiveShadow=true;this.group.add(kerbs,barriers);
     const steel=new THREE.MeshStandardMaterial({color:0x263b36}),standMaterial=new THREE.MeshStandardMaterial({color:0x47545b});
     const seatMaterial=new THREE.MeshStandardMaterial({roughness:.85}),seatGeometry=new THREE.BoxGeometry(.55,.16,.55),roofMaterial=new THREE.MeshStandardMaterial({color:0xcbd6d5,roughness:.65});
     for(const t of [.007,.028,.15,.215,.35,.45,.59,.74,.9]){const p=this.point(t).addScaledVector(this.normal(t),-37),stand=new THREE.Group();stand.name='grandstand';

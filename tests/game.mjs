@@ -1202,3 +1202,49 @@ assert.equal(reflectionState.target,null);assert.equal(reflectionRenderer.xr.ena
 const bakePasses=reflectionState.passes;lighting.setQuality('high');assert.equal(reflectionState.passes,bakePasses,'An unchanged quality must not rebuild reflections');
 let freedLast=false;lighting.environment.addEventListener('dispose',()=>{freedLast=true;});lighting.dispose();assert.ok(freedLast&&reflectionScene.environment===null&&reflectionScene.background===null);
 console.log('PASS: manual/automatic graphics, stall/pause safeguards, mirror capture budgets, wheel geometry/spin, road-parallel stands, distance culling and HDR reflection profiles',{carMeshes,carTriangles,lowDetailCount,highDetailCount});
+
+// Painted kerbs must share a smooth road-following surface, including the tight
+// inside of Rettifilo: no rotated boxes, reversed faces or broken corner runs.
+const kerbRibbon=track.group.getObjectByName('continuous-kerbs');assert.ok(kerbRibbon instanceof THREE.Mesh&&!(kerbRibbon instanceof THREE.InstancedMesh));
+const ribbonGeometry=kerbRibbon.geometry,kerbSurfacePositions=ribbonGeometry.getAttribute('position'),kerbSurfaceUV=ribbonGeometry.getAttribute('uv');
+assert.ok(kerbSurfacePositions.count<ribbonGeometry.index.count*.3,'Adjacent painted sections must share their actual vertices');
+for(let i=0;i<ribbonGeometry.index.count;i+=3){
+  const a=new THREE.Vector3().fromBufferAttribute(kerbSurfacePositions,ribbonGeometry.index.getX(i)),b=new THREE.Vector3().fromBufferAttribute(kerbSurfacePositions,ribbonGeometry.index.getX(i+1)),c=new THREE.Vector3().fromBufferAttribute(kerbSurfacePositions,ribbonGeometry.index.getX(i+2));
+  assert.ok(b.sub(a).cross(c.sub(a)).y>1e-7,'Kerbs must not fold or disappear at tight inside corners');
+}
+for(let i=0;i<kerbSurfacePositions.count;i++){
+  const t=(kerbSurfaceUV.getX(i)*2-.5)/track.kerbSegments.length,p=track.point(t),n=track.roadNormal(t),lateral=Math.abs((kerbSurfacePositions.getX(i)-p.x)*n.x+(kerbSurfacePositions.getZ(i)-p.z)*n.z);
+  assert.ok(lateral>=9.649&&lateral<=11.051,'Visible strips must stay on the shared road-edge footprint');
+  assert.ok(kerbSurfacePositions.getY(i)>=-.07801&&kerbSurfacePositions.getY(i)<=.11501,'Kerbs must blend low into the road and grass');
+}
+let cornerRuns=0;for(let i=0;i<track.kerbSegments.length;i++)if(track.kerbSegments[i]&&!track.kerbSegments[(i+track.kerbSegments.length-1)%track.kerbSegments.length])cornerRuns++;
+assert.ok(cornerRuns<=22,'A single corner must not break into many short disconnected kerbs');
+for(const section of track.sections){const t=section.progress,h=Math.atan2(track.tangent(t).x,track.tangent(t).z);assert.equal(track.kerbContact(track.point(t),h,t),0,'Track centres must not trigger kerb feedback');}
+const visibleKerbEdge=track.point(kerbProgress).addScaledVector(track.roadNormal(kerbProgress),9.6);
+assert.ok(track.kerbContact(visibleKerbEdge,kerbHeading,kerbProgress)>.25,'Wheel feedback must follow the smoothed visible kerb');
+// Slick tread and its shoulders are one carcass. Sidewall text conforms to it
+// within 0.35mm rather than creating a flat disc or a raised outer trim ring.
+const {createTireGeometry,createTireLetteringGeometry,TIRE_RADIUS}=await import(moduleURL('TireGeometry'));
+for(const width of [.34,.42]){
+  const tire=createTireGeometry(width),points=tire.getAttribute('position'),normals=tire.getAttribute('normal');let treadPoints=0;
+  for(let i=0;i<points.count;i++){
+    const axial=points.getX(i),radius=Math.hypot(points.getY(i),points.getZ(i));
+    assert.ok(Math.abs(axial)<=width/2+1e-6&&radius<=TIRE_RADIUS+1e-6);
+    if(Math.abs(axial)<width*.2){treadPoints++;assert.ok(Math.abs(radius-TIRE_RADIUS)<1e-6&&Math.abs(normals.getX(i))<1e-6,'The middle of a slick tyre must be flat across its width');}
+  }
+  assert.ok(treadPoints>=64);
+  const sourcePoints=new Set(Array.from({length:points.count},(_,i)=>[points.getX(i),points.getY(i),points.getZ(i)].map(v=>(Math.abs(v)<.00005?0:v).toFixed(4)).join('/')));
+  for(const side of [-1,1]){
+    const decal=createTireLetteringGeometry(tire,width,side),dp=decal.getAttribute('position'),dn=decal.getAttribute('normal');assert.ok(dp.count>0);
+    for(let i=0;i<dp.count;i++){
+      const original=[dp.getX(i)-dn.getX(i)*.00035,dp.getY(i)-dn.getY(i)*.00035,dp.getZ(i)-dn.getZ(i)*.00035].map(v=>(Math.abs(v)<.00005?0:v).toFixed(4)).join('/');
+      assert.ok(sourcePoints.has(original),'Every printed vertex must follow the rubber surface');
+    }
+    decal.dispose();
+  }
+  tire.dispose();
+}
+const {surfaceMaps}=await import(moduleURL('SurfaceTextures'));const rubberHeight=surfaceMaps('rubber').bumpMap.image.data;
+let lowestRubber=255,highestRubber=0;for(let i=0;i<rubberHeight.length;i+=4){lowestRubber=Math.min(lowestRubber,rubberHeight[i]);highestRubber=Math.max(highestRubber,rubberHeight[i]);}
+assert.ok(highestRubber-lowestRubber<=6,'Slick rubber must retain only fine grain, without periodic raised bands');
+console.log('PASS: shared curved kerb ribbons, unbroken corner runs, upward faces, low edge profile, matching wheel feedback, flat slick tread, flush lettering and fine rubber grain',{cornerRuns,kerbTriangles:ribbonGeometry.index.count/3});
