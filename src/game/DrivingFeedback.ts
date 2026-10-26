@@ -2,7 +2,7 @@ import {EngineSoundState} from './EngineSound';
 import type {Vehicle} from './Vehicle';
 import type {Track} from './Track';
 const clamp=(n:number,a:number,b:number)=>Math.max(a,Math.min(b,n));
-export function windLevel(speed:number){return Math.min(.28,Math.max(0,(speed-8)/96)**2*.27);}
+export function windLevel(speed:number){return Math.min(.14,Math.max(0,(speed-8)/96)**2*.135);}
 export interface DrivingFeedbackFrame {
   pitch:number;roll:number;heave:number;sway:number;longitudinal:number;surfaceHeave:number;
   cockpitHeave:number;cockpitPitch:number;

@@ -1061,8 +1061,8 @@ for(let i=0;i<120*24;i++){
   if(feedback.engine.cut<1&&feedback.longitudinal<-.005)engagementCount++;
 }
 assert.equal(feedback.engine.gear,8);assert.ok(engagementCount>0,'Upshifts must create short camera engagement pulses');
-assert.equal(windLevel(0),0);assert.ok(windLevel(90)>windLevel(40));assert.ok(windLevel(200)<=.28);
-assert.ok(windLevel(200/3.6)>.06&&windLevel(300/3.6)>.16,'Wind must have a meaningful level relative to the engine at racing speeds');
+assert.equal(windLevel(0),0);assert.ok(windLevel(90)>windLevel(40));assert.ok(windLevel(200)<=.14);
+assert.ok(windLevel(200/3.6)>.03&&windLevel(300/3.6)>.08,'Wind must retain its speed-dependent presence at the reduced volume');
 globalThis.AudioContext=goodAudioContext;
 const feelAudio=new DrivingAudio();feelAudio.unlock([feelCar]);feelAudio.update(feelCar,true,feedback);
 assert.equal(feelAudio.voices[0].low.frequency.value,feedback.engine.rpm/120,'Audio must consume the same RPM as camera feedback');
