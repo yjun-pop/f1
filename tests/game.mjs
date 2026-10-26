@@ -76,6 +76,25 @@ for(let i=0;i<planner.count;i++){
 for(let i=0;i<planner.count;i++){const j=(i+1)%planner.count;assert.ok(planner.speeds[i]**2<=planner.speeds[j]**2+2*brakingDeceleration(planner.speeds[i])*.88*planner.distances[i]+1e-5,'Braking envelope including seam');assert.ok(Number.isFinite(planner.speeds[i])&&planner.speeds[i]>0);}
 assert.ok(planner.point(0).distanceTo(planner.point(1))<1e-9,'Closed line seam');
 console.log('PASS: optimized line clearance, non-centerline geometry, reduced bending, braking distance and closed-loop continuity');
+
+// Check the actual inside of each geometric turn, independently of the line's
+// stored signed offsets. Compound chicanes must alternate sides at their apices.
+assert.equal(planner.apices.length,11,'The Monza GP line must identify all eleven geometric turn apices');
+for(const apex of planner.apices){
+  const t=apex.progress,before=track.tangent(t-16/track.length),after=track.tangent(t+16/track.length);
+  const turn=before.x*after.z-before.z*after.x;
+  const lateral=planner.point(t).sub(track.point(t)).dot(track.normal(t));
+  assert.ok(Math.sign(turn)*lateral>2,'Every apex must lie in the inside half of the road, not follow the outside edge');
+}
+const offsetsAt=meters=>planner.point(meters/track.length).sub(track.point(meters/track.length)).dot(track.normal(meters/track.length));
+for(const [name,entry,apex,exit] of [['Lesmo 1',2500,2639,2725],['Lesmo 2',2850,2954,3020],['Parabolica',5100,5333,5600]]){
+  assert.ok(offsetsAt(entry)<-3&&offsetsAt(apex)>3&&offsetsAt(exit)<-3,`${name} must use outside-entry, inside-apex and outside-exit`);
+}
+assert.deepEqual(planner.apices.slice(0,2).map(a=>a.direction),[1,-1],'Rettilifilo must link opposite apex sides');
+assert.deepEqual(planner.apices.slice(3,5).map(a=>a.direction),[-1,1],'Roggia must link opposite apex sides');
+assert.deepEqual(planner.apices.slice(7,10).map(a=>a.direction),[-1,1,-1],'Ascari must connect all three turn directions');
+console.log('PASS: eleven inside apices, outside-inside-outside single corners and alternating chicane geometry');
+
 const {RacingLine}=await import(moduleURL('RacingLine'));
 const guide=new RacingLine(track,scene);v.reset();guide.update(v);
 assert.equal(guide.ribbon.visible,false,'Guide must be hidden on the long starting straight');
@@ -424,6 +443,7 @@ console.log('PASS: AI checks the full merge corridor before returning to the rac
 // Physical top-three contest. A reference driver with the calibrated 86-second
 // baseline uses normal throttle/brake/steering controls and no rank assistance.
 // Its fixture performance matches the benchmark AI, not the stock player car.
+// Pace 1.44 gives an approximately 86.4s reference on the apex-constrained line.
 const duelRace=new Race(track,new THREE.Scene(),planner),duelPlayer=new Vehicle(track,new THREE.Scene(),0xaaaaaa,{grip:1.4,power:1.35});
 const duelGhost=new Vehicle(track,new THREE.Scene());duelGhost.position.set(1e6,0,1e6);
 duelRace.opponents.splice(2);
@@ -433,7 +453,7 @@ duelRace.opponents.forEach((o,i)=>{
   const t=(180-i*16)/track.length;o.car.resetAt(t,THREE.MathUtils.clamp(duelLane(t)+(i%2?3.5:0),-7.2,7.2));
   o.car.speed=75;o.distance=t;o.lane=o.car.position.clone().sub(planner.point(t)).dot(track.normal(t));
 });
-const referenceDriver={...duelRace.opponents[0],car:duelPlayer,pace:1.46,speedCap:94,powerAssist:1,attack:0,lane:.6,control:{steer:0,throttle:1,brake:0}};
+const referenceDriver={...duelRace.opponents[0],car:duelPlayer,pace:1.44,speedCap:94,powerAssist:1,attack:0,lane:.6,control:{steer:0,throttle:1,brake:0}};
 duelRace.state='racing';duelRace.elapsed=20;
 let lastLeader='PLAYER',lastChange=0,duelOffroad=0;const leaderStints=[];
 for(let step=0;step<120*250;step++){
@@ -445,7 +465,10 @@ for(let step=0;step<120*250;step++){
   duelOffroad+=duelRace.opponents.filter(o=>o.car.offRoad).length;
 }
 leaderStints.push({name:lastLeader,seconds:250-lastChange});
-const sustained=leaderStints.filter(stint=>stint.seconds>=2);
+const sustained=leaderStints.filter(stint=>stint.seconds>=2).reduce((result,stint)=>{
+  const previous=result.at(-1);if(previous?.name===stint.name)previous.seconds+=stint.seconds;else result.push({...stint});
+  return result;
+},[]);
 assert.ok(sustained.filter(stint=>stint.name==='PLAYER').length>=3,'The reference player must lose and regain the lead more than once');
 assert.ok(sustained.filter(stint=>stint.name!=='PLAYER').length>=2,'Challengers must take and sustain the lead, not only flicker past the player');
 assert.ok(duelOffroad/(120*250*2)<.025,'Lead battles must generally stay on the circuit');
