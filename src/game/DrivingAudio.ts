@@ -4,6 +4,8 @@ export {soundTelemetry} from './EngineSound';
 interface Voice {
   car:Vehicle;state:EngineSoundState;low:OscillatorNode;high:OscillatorNode;
   lowGain:GainNode;highGain:GainNode;turbo:OscillatorNode;turboGain:GainNode;
+  body:OscillatorNode;bodyGain:GainNode;bodyFilter:BiquadFilterNode;bodyShelf:BiquadFilterNode;
+  pulse:OscillatorNode;pulseDepth:GainNode;previousLoad:number;previousCut:number;thump:number;
   texture:GainNode;filter:BiquadFilterNode;shelf:BiquadFilterNode;gain:GainNode;pan:StereoPannerNode;
 }
 export class DrivingAudio {
@@ -35,6 +37,9 @@ export class DrivingAudio {
           low:context.createPeriodicWave(new Float32Array(profile.low.length),Float32Array.from(profile.low)),
           high:context.createPeriodicWave(new Float32Array(profile.high.length),Float32Array.from(profile.high))
         }));
+        // Low exhaust orders keep their audible 60–200Hz body on smaller
+        // speakers, while avoiding an inaudible sub-bass-only sine tone.
+        const bodyWave=context.createPeriodicWave(new Float32Array(5),new Float32Array([0,1,.45,.2,.08]));
         cars.forEach((car,index)=>{
           const low=context.createOscillator(),high=context.createOscillator(),lowGain=context.createGain(),highGain=context.createGain();
           const gain=context.createGain(),pan=context.createStereoPanner(),filter=context.createBiquadFilter();
@@ -44,9 +49,15 @@ export class DrivingAudio {
           const shelf=context.createBiquadFilter();shelf.type='highshelf';shelf.frequency.value=2500;shelf.gain.value=-5;
           low.connect(lowGain);high.connect(highGain);lowGain.connect(filter);highGain.connect(filter);
           const turbo=context.createOscillator(),turboGain=context.createGain();turbo.type='sine';turboGain.gain.value=0;turbo.connect(turboGain);turboGain.connect(filter);
-          const texture=noise(1500,.55,filter);filter.connect(shelf);shelf.connect(gain);gain.connect(pan);pan.connect(master);
-          low.start();high.start();turbo.start();
-          this.voices.push({car,state:new EngineSoundState(),low,high,lowGain,highGain,turbo,turboGain,texture,filter,shelf,gain,pan});
+          const body=context.createOscillator(),bodyGain=context.createGain(),bodyFilter=context.createBiquadFilter();
+          body.setPeriodicWave(bodyWave);bodyGain.gain.value=0;bodyFilter.type='lowpass';bodyFilter.frequency.value=220;bodyFilter.Q.value=.5;
+          body.connect(bodyFilter);bodyFilter.connect(bodyGain);bodyGain.connect(filter);
+          const pulse=context.createOscillator(),pulseDepth=context.createGain();pulse.type='sine';pulseDepth.gain.value=0;
+          pulse.connect(pulseDepth);pulseDepth.connect(bodyGain.gain);
+          const bodyShelf=context.createBiquadFilter();bodyShelf.type='lowshelf';bodyShelf.frequency.value=180;bodyShelf.gain.value=2.5;
+          const texture=noise(1500,.55,filter);filter.connect(shelf);shelf.connect(bodyShelf);bodyShelf.connect(gain);gain.connect(pan);pan.connect(master);
+          low.start();high.start();turbo.start();body.start();pulse.start();
+          this.voices.push({car,state:new EngineSoundState(),low,high,lowGain,highGain,turbo,turboGain,body,bodyGain,bodyFilter,bodyShelf,pulse,pulseDepth,previousLoad:0,previousCut:1,thump:0,texture,filter,shelf,gain,pan});
         });
         this.brake=noise(2300,3,master);this.tire=noise(1100,.8,master);this.road=noise(320,.5,master);
       }
@@ -74,6 +85,14 @@ export class DrivingAudio {
       voice.filter.frequency.setTargetAtTime(2100+sample.load*1800+(sample.rpm-3800)*.06,now,.05);
       voice.turbo.frequency.setTargetAtTime(1700+sample.rpm*.3,now,.06);voice.turboGain.gain.setTargetAtTime(sample.load*.006,now,.04);
       voice.texture.gain.setTargetAtTime(.015+sample.load*.055+sample.blip*.03,now,.03);
+      const engagement=voice.previousCut<.9&&sample.cut>=.9;
+      voice.thump=Math.max(voice.thump*Math.exp(-dt*14),Math.max(0,sample.load-voice.previousLoad)*.20,engagement?.18:0);
+      voice.previousLoad=sample.load;voice.previousCut=sample.cut;
+      const bodyLevel=(.14+sample.load*.30+voice.thump)*(self?1:.55);
+      voice.body.frequency.setTargetAtTime(Math.max(32,Math.min(72,sample.rpm/180)),now,.025);
+      voice.bodyGain.gain.setTargetAtTime(bodyLevel,now,.015);
+      voice.pulse.frequency.setTargetAtTime(16+sample.rpm*.0009,now,.04);
+      voice.pulseDepth.gain.setTargetAtTime(bodyLevel*.09,now,.02);
       voice.gain.gain.setTargetAtTime(sample.engine*sample.cut*attenuation,now,.012);
       voice.pan.pan.setTargetAtTime(self?0:Math.max(-1,Math.min(1,(-dx*Math.cos(player.heading)+dz*Math.sin(player.heading))/Math.max(8,distance))),now,.06);
     }

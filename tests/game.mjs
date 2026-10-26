@@ -972,3 +972,36 @@ for(const initial of ['grid','180m-deficit']){
   eliteRace.reset();assert.ok(eliteRace.opponents.every(o=>o.car.gripScale===1.4&&o.car.raceGripAssist===undefined));
 }
 console.log('PASS: 90s standing / 85.6s flying reference and all five physical rivals stay close',referenceLaps,eliteResults);
+
+// Engine body must add controlled, load-linked low exhaust orders, with a
+// short throttle/gear engagement punch and the same master mute path.
+globalThis.AudioContext=goodAudioContext;
+const bodyPlayer=new Vehicle(track,new THREE.Scene()),bodyRival=new Vehicle(track,new THREE.Scene());
+const bodyAudio=new DrivingAudio();bodyAudio.unlock([bodyPlayer,bodyRival]);bodyAudio.update(bodyPlayer,true);
+const bodyVoice=bodyAudio.voices[0],nearbyVoice=bodyAudio.voices[1],idleBody=bodyVoice.bodyGain.gain.value;
+assert.ok(idleBody>0&&bodyVoice.body.frequency.value>=32&&bodyVoice.body.frequency.value<=72);
+assert.equal(bodyVoice.bodyShelf.type,'lowshelf');assert.equal(bodyVoice.bodyShelf.gain.value,2.5);
+assert.equal(bodyVoice.bodyFilter.frequency.value,220);assert.ok(bodyVoice.bodyFilter.Q.value<=.5);
+assert.ok(nearbyVoice.bodyGain.gain.value<idleBody*.6,'Rival bass must not drown out the driver\'s engine body');
+assert.ok(bodyVoice.pulseDepth.connections.includes(bodyVoice.bodyGain.gain),'Roughness must modulate the exhaust layer at audio rate');
+bodyPlayer.throttle=1;bodyAudio.update(bodyPlayer,true);const initialPunch=bodyVoice.bodyGain.gain.value;
+for(let i=0;i<120;i++)bodyAudio.update(bodyPlayer,true);
+assert.ok(bodyVoice.bodyGain.gain.value>idleBody*2.5,'Sustained throttle must strengthen the exhaust body');
+assert.ok(initialPunch>bodyVoice.bodyGain.gain.value+.1,'Throttle punch must decay rather than leave a permanent gain boost');
+assert.ok(bodyVoice.pulseDepth.gain.value<bodyVoice.bodyGain.gain.value*.1);
+let hadEngagement=false;
+for(let i=0;i<120*24;i++){
+  bodyPlayer.speed=Math.min(94,bodyPlayer.speed+4/120);bodyAudio.context.currentTime+=1/120;
+  bodyAudio.update(bodyPlayer,true);
+  if(bodyVoice.state.gear>1&&bodyVoice.thump>.17)hadEngagement=true;
+  assert.ok(bodyVoice.body.frequency.value>=32&&bodyVoice.body.frequency.value<=72);
+  assert.ok(bodyVoice.bodyGain.gain.value<=.65,'Exhaust transients must stay bounded');
+}
+assert.ok(hadEngagement,'A gear engagement must produce a brief low-frequency punch');
+assert.equal(bodyVoice.shelf.gain.value,-5);assert.ok(bodyVoice.turboGain.gain.value<=.0061,'The previously tamed high note must remain subdued');
+bodyAudio.toggleMute();assert.equal(bodyAudio.master.gain.value,0);
+bodyAudio.toggleMute();bodyAudio.silence();assert.equal(bodyAudio.master.gain.value,0);
+bodyAudio.update(bodyPlayer,true);assert.ok(bodyAudio.master.gain.value>0);
+bodyAudio.setVolume(.4);assert.equal(bodyAudio.master.gain.value,.4);
+delete globalThis.AudioContext;
+console.log('PASS: low exhaust body, load-linked roughness, transient decay, gear punch, bounded bass, preserved treble balance and unified mute');
