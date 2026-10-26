@@ -10,6 +10,7 @@ function moduleURL(name){
   let js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   js=js.replace(/from 'three\/addons\/([^']+)'/g,(_,path)=>`from '${new URL('../node_modules/three/examples/jsm/'+path,import.meta.url).href}'`);
   js=js.replace(/from 'three'/g,`from '${threeURL}'`).replace(/from '\.\/(\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
+  js=js.replace(/from '\.\.\/game\/(\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
   const url=`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;cache.set(name,url);return url;
 }
 globalThis.window={innerWidth:1280,innerHeight:720};
@@ -43,7 +44,7 @@ v.reset();const start=v.position.clone();v.update(.04,input('KeyW'));assert.ok(v
 v.speed=40;v.update(.04,input('KeyS'));assert.ok(v.speed<40);
 v.update(.04,{down:(...keys)=>keys.includes('KeyW')||keys.includes('ShiftLeft')});assert.ok(v.boost<100);
 const planner=new LinePlanner(track);
-const race=new Race(track,scene,planner);race.start();race.update(4.1,v);assert.equal(race.state,'racing');
+const race=new Race(track,scene,planner);race.start();race.update(race.countdown+.1,v);assert.equal(race.state,'racing');
 for(let lap=1;lap<=3;lap++){v.distance=lap;race.elapsed+=30-1/120;race.update(1/120,v);}
 assert.equal(race.state,'finished');assert.equal(race.best,30);assert.ok(Math.abs(race.elapsed-90)<1e-8);
 race.reset();assert.equal(race.state,'ready');assert.equal(race.elapsed,0);
@@ -182,7 +183,7 @@ assert.ok(v.speed<40,'Braking must take priority over held throttle and boost');
 console.log('PASS: keyboard corner entry, trail braking, turning authority, release, straight stopping distance and brake priority');
 
 // Run the actual AI controls against the same physical car model.
-race.reset();race.start();race.update(4.1,v);v.resetAt(0);v.position.set(1000,0,1000);
+race.reset();race.start();race.update(race.countdown+.1,v);v.resetAt(0);v.position.set(1000,0,1000);
 let offroad=0;const laneStart=race.opponents.map(o=>o.lane);
 // Keep representative player telemetry moving while the player mesh stays
 // outside the circuit, so this endurance check isolates the AI vehicles.
@@ -393,7 +394,7 @@ console.log('PASS: physical rank-based straight-line catch-up and smooth speed-l
 
 // Measure a full solo lap: speed multipliers alone must not hide a poor driver.
 const skilledRace=new Race(track,new THREE.Scene(),planner),benchmarkPlayer=new Vehicle(track,new THREE.Scene());
-skilledRace.opponents.splice(1);skilledRace.start();skilledRace.update(4.1,benchmarkPlayer);
+skilledRace.opponents.splice(1);skilledRace.start();skilledRace.update(skilledRace.countdown+.1,benchmarkPlayer);
 const skilledRival=skilledRace.opponents[0];
 // Keep base caps fixed for this driver regression; rank-dependent gameplay is
 // measured separately above and in the physical lead-exchange test below.
@@ -423,7 +424,7 @@ const lineLane=t=>planner.point(t).sub(track.point(t)).dot(track.normal(t))+.6;
 passer.car.resetAt(300/track.length,lineLane(300/track.length));passer.car.speed=45;
 passer.lane=.6;passer.distance=passer.car.distance;
 slowCar.resetAt(350/track.length,lineLane(350/track.length));slowCar.speed=15;
-passingRace.start();passingRace.update(4.1,slowCar);
+passingRace.start();passingRace.update(passingRace.countdown+.1,slowCar);
 let passingOffroad=0;
 for(let step=0;step<120*10;step++){
   const drag=.00105*slowCar.speed*slowCar.speed+.35,engine=17*(1-slowCar.speed/140);
@@ -487,7 +488,7 @@ console.log('PASS: stable passing side, blocked-lane escape, closing-speed braki
 
 // Exercise five rivals together against a fast player over more than two laps.
 const packRace=new Race(track,new THREE.Scene(),planner),fastPlayer=new Vehicle(track,new THREE.Scene());
-packRace.start();packRace.update(4.1,fastPlayer);
+packRace.start();packRace.update(packRace.countdown+.1,fastPlayer);
 const packOffroad=packRace.opponents.map(()=>0);
 for(let step=0;step<120*270;step++){
   fastPlayer.distance=step/120*60/track.length;fastPlayer.progress=fastPlayer.distance%1;
@@ -676,7 +677,7 @@ assert.ok(soundTelemetry({...telemetry,speed:30,lateralSpeed:4,gripUsage:1}).tir
 assert.ok(soundTelemetry({...telemetry,speed:30,offRoad:true}).road>soundTelemetry({...telemetry,speed:30}).road);
 // A fake Web Audio graph verifies actual routing, silence and gesture reuse.
 const audioNodes=[];let resumes=0;
-class AudioParam {value=0;setTargetAtTime(value){this.value=value;}}
+class AudioParam {value=0;events=[];setTargetAtTime(value){this.value=value;}cancelScheduledValues(time){this.events.push({kind:"cancel",time});}setValueAtTime(value,time){this.value=value;this.events.push({kind:"set",value,time});}linearRampToValueAtTime(value,time){this.value=value;this.events.push({kind:"ramp",value,time});}}
 class AudioNode {gain=new AudioParam();frequency=new AudioParam();pan=new AudioParam();Q=new AudioParam();threshold=new AudioParam();knee=new AudioParam();ratio=new AudioParam();connections=[];connect(node){this.connections.push(node);}start(){this.started=true;}setPeriodicWave(wave){this.wave=wave;}}
 globalThis.AudioContext=class {currentTime=0;sampleRate=48000;destination={};createPeriodicWave(real,imag){return {real,imag};}createGain(){const n=new AudioNode();audioNodes.push(n);return n;}createDynamicsCompressor(){return new AudioNode();}createOscillator(){return new AudioNode();}createStereoPanner(){return new AudioNode();}createBiquadFilter(){return new AudioNode();}createBuffer(){return {getChannelData:()=>new Float32Array(96000)};}createBufferSource(){return new AudioNode();}close(){return Promise.resolve();}resume(){resumes++;return Promise.resolve();}};
 const audio=new DrivingAudio();audio.unlock([v,a]);const nodeCount=audioNodes.length;audio.unlock([v,a]);assert.equal(audioNodes.length,nodeCount,'Repeated gestures must reuse voices');
@@ -1248,3 +1249,71 @@ const {surfaceMaps}=await import(moduleURL('SurfaceTextures'));const rubberHeigh
 let lowestRubber=255,highestRubber=0;for(let i=0;i<rubberHeight.length;i+=4){lowestRubber=Math.min(lowestRubber,rubberHeight[i]);highestRubber=Math.max(highestRubber,rubberHeight[i]);}
 assert.ok(highestRubber-lowestRubber<=6,'Slick rubber must retain only fine grain, without periodic raised bands');
 console.log('PASS: shared curved kerb ribbons, unbroken corner runs, upward faces, low edge profile, matching wheel feedback, flat slick tread, flush lettering and fine rubber grain',{cornerRuns,kerbTriangles:ribbonGeometry.index.count/3});
+
+// F1-style five paired red lights: all motion/timing waits for lights-out,
+// and pause is represented by not advancing this simulation clock.
+const {StartSequence}=await import(moduleURL('StartSequence'));
+const startClock=new StartSequence();assert.equal(startClock.signal.phase,'idle');startClock.arm(.25);const firstStartRun=startClock.signal.run;
+assert.equal(startClock.signal.lights,0);startClock.advance(.599);assert.equal(startClock.signal.lights,0);startClock.advance(.001);
+for(let lights=1;lights<=5;lights++){assert.equal(startClock.signal.lights,lights);if(lights<5)startClock.advance(1);}
+const heldSignal={...startClock.signal};assert.deepEqual(startClock.signal,heldSignal);assert.ok(startClock.remaining>=.8&&startClock.remaining<=2.4);
+startClock.advance(startClock.remaining-.01);assert.equal(startClock.signal.lights,5);startClock.advance(.01);assert.deepEqual(startClock.signal,{run:firstStartRun,phase:'go',lights:0});
+startClock.reset();assert.equal(startClock.signal.phase,'idle');startClock.arm(1);assert.ok(startClock.signal.run>firstStartRun);
+for(const fps of [30,60,120,144]){const clock=new StartSequence();clock.arm(.5);let frames=0;while(clock.signal.phase!=='go'&&frames<fps*10){clock.advance(1/fps);frames++;}assert.ok(Math.abs(frames/fps-6.2)<=1/fps+1e-8);}
+const signalRace=new Race(track,new THREE.Scene(),planner),signalPlayer=new Vehicle(track,new THREE.Scene());signalRace.start();
+const gridSnapshot=signalRace.opponents.map(o=>o.car.position.clone());
+signalRace.update(4.61,signalPlayer);assert.equal(signalRace.state,'countdown');assert.equal(signalRace.startSignal.lights,5);assert.equal(signalRace.elapsed,0);
+assert.ok(signalRace.opponents.every((o,i)=>o.car.speed===0&&o.car.position.equals(gridSnapshot[i])),'All opponents must remain on their grid slots while red lights are on');
+signalRace.update(signalRace.countdown+.001,signalPlayer);assert.equal(signalRace.state,'racing');assert.equal(signalRace.startSignal.phase,'go');assert.equal(signalRace.elapsed,0);
+for(let i=0;i<10;i++)signalRace.update(1/120,signalPlayer);
+assert.ok(signalRace.opponents.every(o=>o.car.speed>0),'Every driver must receive the same release from the start signal');
+track.setStartLights(3);assert.equal(track.startBulbs.filter(m=>m.emissiveIntensity>1).length,3);track.setStartLights(0);assert.ok(track.startBulbs.every(m=>m.emissiveIntensity<.1));
+// Exercise the HUD's real five-pod presentation without a browser/GPU.
+const {HUD}=await import(moduleURL('../ui/HUD'));
+const nodes=new Map(),pods=Array.from({length:5},()=>makeSignalNode());
+function makeSignalNode(){const classes=new Set();return {value:'',textContent:'',hidden:false,classes,classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},addEventListener:()=>{},focus:()=>{},replaceChildren:()=>{},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})};}
+const hudRoot={innerHTML:'',classList:{toggle:()=>{}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,makeSignalNode());return nodes.get(selector);},querySelectorAll:selector=>selector.includes('.light-pod')?pods:[]};
+const savedPath=globalThis.Path2D;globalThis.Path2D=class {moveTo(){}lineTo(){}};
+const noop=()=>{};const signalHUD=new HUD(hudRoot,track,{start:noop,restart:noop,camera:noop,resume:noop,recover:noop,height:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop});
+signalRace.reset();signalRace.start();signalRace.update(2.61,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);
+assert.equal(pods.filter(p=>p.classes.has('lit')).length,3);assert.equal(nodes.get('#countdown').hidden,false);
+signalHUD.update(signalPlayer,signalRace,true,track,1);assert.equal(nodes.get('#countdown').hidden,true);
+signalRace.update(signalRace.countdown+.001,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);assert.equal(pods.filter(p=>p.classes.has('lit')).length,0);assert.equal(nodes.get('#start-caption').textContent,'출발');
+globalThis.Path2D=savedPath;
+// Start cues have a dedicated volume/mute path, so countdown beeps do not
+// depend on an engine voice being audible. No queued wall-clock beeps survive pause.
+globalThis.AudioContext=goodAudioContext;const signalAudio=new DrivingAudio();signalAudio.unlock([signalPlayer]);signalAudio.update(signalPlayer,false);
+const audibleStart=new StartSequence();audibleStart.arm(.25);signalAudio.updateStart(audibleStart.signal,true);
+const cuePeaks=()=>signalAudio.cueGain.gain.events.filter(e=>e.kind==='ramp'&&e.value>0).length;
+for(let lights=1;lights<=5;lights++){
+  audibleStart.advance(lights===1?.6:1);const before=cuePeaks();signalAudio.updateStart(audibleStart.signal,true);assert.equal(cuePeaks(),before+1);assert.equal(signalAudio.cue.frequency.value,660);
+  assert.ok(signalAudio.cueBus.gain.value>0&&signalAudio.master.gain.value===0);signalAudio.updateStart(audibleStart.signal,true);assert.equal(cuePeaks(),before+1,'A held red light must not beep repeatedly');
+}
+const pausedPeakCount=cuePeaks();signalAudio.updateStart(audibleStart.signal,false);assert.equal(signalAudio.cueBus.gain.value,0);signalAudio.updateStart(audibleStart.signal,true);assert.equal(cuePeaks(),pausedPeakCount);
+audibleStart.advance(audibleStart.remaining);signalAudio.updateStart(audibleStart.signal,true);assert.equal(cuePeaks(),6);assert.equal(signalAudio.cue.frequency.value,990);
+signalAudio.setVolume(.3);assert.equal(signalAudio.cueBus.gain.value,.3);signalAudio.toggleMute();assert.equal(signalAudio.cueBus.gain.value,0);signalAudio.toggleMute();signalAudio.silence();assert.equal(signalAudio.cueBus.gain.value,0);assert.equal(signalAudio.cueGain.gain.value,0);delete globalThis.AudioContext;
+// Actual bundled HDR source, local material variation and independently culled
+// tree batches must be valid and stay within the existing quality profiles.
+const {HDRLoader}=await import('three/addons/loaders/HDRLoader.js');const hdrBytes=fs.readFileSync(new URL('../src/assets/park-sky.hdr',import.meta.url));
+const parsedSky=new HDRLoader().parse(hdrBytes.buffer.slice(hdrBytes.byteOffset,hdrBytes.byteOffset+hdrBytes.byteLength)),sourceSky=new THREE.DataTexture(parsedSky.data,parsedSky.width,parsedSky.height,THREE.RGBAFormat,THREE.HalfFloatType);sourceSky.flipY=true;
+const {resizeSkyTexture}=await import(moduleURL('WorldLighting'));
+for(const tier of ['low','medium','high']){const photo=resizeSkyTexture(sourceSky,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(photo.image.width,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(photo.flipY,true);assert.ok(photo.image.data.every(value=>Number.isFinite(THREE.DataUtils.fromHalfFloat(value))));photo.dispose();}
+const scenery=track.group.getObjectByName('woodland');assert.ok(scenery.children.length>=20&&scenery.children.every(child=>child instanceof THREE.InstancedMesh));
+assert.ok(scenery.children.filter(child=>child.material.map).every(child=>child.castShadow&&child.material.alphaTest>0),'Leaf cutouts must participate in directional shadows');
+const roadMesh=track.group.getObjectByName('asphalt-road'),grassMesh=track.group.getObjectByName('grass-terrain');
+for(const mesh of [roadMesh,grassMesh]){const colors=mesh.geometry.getAttribute('color');assert.ok(colors&&colors.array.some(v=>Math.abs(v-colors.getX(0))>.03),'World-scale variation must break up repeated texture tiles');}
+for(const name of ['curved-rubber','gravel-runoff']){const mesh=track.group.getObjectByName(name);assert.ok(mesh&&mesh.geometry.getAttribute('position').array.every(Number.isFinite));}
+const rubberFade=track.group.getObjectByName('curved-rubber').geometry.getAttribute('color');assert.equal(rubberFade.itemSize,4);assert.equal(rubberFade.getW(0),0);assert.equal(rubberFade.getW(80*2),0);assert.equal(rubberFade.getW(40*2),1,'Rubber deposits must fade in and out instead of ending as rectangular stamps');
+assert.equal(surfaceMaps('asphalt').map.image.width,512);assert.equal(surfaceMaps('gravel').map.image.width,512);sourceSky.dispose();
+console.log('PASS: five-light sequence, variable hold, frame-rate independence, held grid/timers, shared AI launch, real HUD pods, unique start cues, pause/mute, bundled HDR and varied road/woodland');
+// A late HDR load must adopt the currently selected quality, and a failed load
+// must leave the working generated sky in place rather than blank the scene.
+const originalHDRLoad=HDRLoader.prototype.loadAsync;
+try{
+  let resolvePhoto;HDRLoader.prototype.loadAsync=()=>new Promise(resolve=>{resolvePhoto=resolve;});
+  const lateScene=new THREE.Scene(),lateLighting=new WorldLighting(lateScene,reflectionRenderer,'high'),pendingPhoto=lateLighting.loadSky('test://bundled-hdr');
+  lateLighting.setQuality('low');const latePhoto=sourceSky.clone();resolvePhoto(latePhoto);assert.equal(await pendingPhoto,true);assert.equal(lateScene.background.image.width,256);assert.ok(lateLighting.sunOffset.y>0&&Math.abs(lateLighting.sunOffset.length()-130)<1e-6);
+  const workingSky=lateScene.background;HDRLoader.prototype.loadAsync=async()=>{throw new Error('missing photo');};assert.equal(await lateLighting.loadSky('test://missing-hdr'),false);assert.equal(lateScene.background,workingSky);
+  let releasedPhoto=false;latePhoto.addEventListener('dispose',()=>{releasedPhoto=true;});lateLighting.dispose();assert.equal(releasedPhoto,true);
+}finally{HDRLoader.prototype.loadAsync=originalHDRLoad;}
+console.log('PASS: deferred HDR loading follows current quality, matches sun direction, releases resources and preserves a fallback sky on failure');

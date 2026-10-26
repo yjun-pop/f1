@@ -1,6 +1,7 @@
 import type {Vehicle} from './Vehicle';
 import {windLevel,type DrivingFeedbackFrame} from './DrivingFeedback';
 import {EngineSoundState,ENGINE_TIMBRES,soundTelemetry} from './EngineSound';
+import type {StartSignal} from './StartSequence';
 export {soundTelemetry} from './EngineSound';
 interface Voice {
   car:Vehicle;state:EngineSoundState;low:OscillatorNode;high:OscillatorNode;
@@ -13,6 +14,7 @@ export class DrivingAudio {
   private context?:AudioContext;private master?:GainNode;private voices:Voice[]=[];
   private brake?:GainNode;private tire?:GainNode;private road?:GainNode;private wind?:GainNode;private kerb?:GainNode;
   private volume=.65;private muted=false;private active=false;private lastUpdate=0;
+  private cueBus?:GainNode;private cueGain?:GainNode;private cue?:OscillatorNode;private cueActive=false;private cueKey='';
   constructor(){try{const saved=localStorage.getItem('apex-audio-volume');if(saved!==null&&Number.isFinite(Number(saved)))this.volume=Math.max(0,Math.min(1,Number(saved)));}catch{}}
   get level(){return this.volume;}
   get isMuted(){return this.muted;}
@@ -26,6 +28,8 @@ export class DrivingAudio {
         const master=context.createGain(),compressor=context.createDynamicsCompressor();
         compressor.threshold.value=-14;compressor.knee.value=16;compressor.ratio.value=3;
         master.gain.value=0;master.connect(compressor);compressor.connect(context.destination);this.master=master;
+        this.cueBus=context.createGain();this.cueBus.gain.value=0;this.cueBus.connect(compressor);
+        this.cueGain=context.createGain();this.cueGain.gain.value=0;this.cue=context.createOscillator();this.cue.type='sine';this.cue.connect(this.cueGain);this.cueGain.connect(this.cueBus);this.cue.start();
         const buffer=context.createBuffer(1,context.sampleRate*2,context.sampleRate),data=buffer.getChannelData(0);
         // Seeded texture avoids regenerating an unbounded collection of sources.
         let seed=157;for(let i=0;i<data.length;i++){seed=(Math.imul(seed,1664525)+1013904223)|0;data[i]=seed/2147483648;}
@@ -67,9 +71,20 @@ export class DrivingAudio {
       if(this.context)void this.context.close().catch(()=>{});
       this.context=undefined;this.master=undefined;this.voices=[];
       this.brake=undefined;this.tire=undefined;this.road=undefined;this.wind=undefined;this.kerb=undefined;
+      this.cueBus=this.cueGain=undefined;this.cue=undefined;
     }
   }
-  private applyGain(){if(this.context&&this.master)this.master.gain.setTargetAtTime(this.active&&!this.muted?this.volume:0,this.context.currentTime,.025);}
+  private applyGain(){if(this.context&&this.master){this.master.gain.setTargetAtTime(this.active&&!this.muted?this.volume:0,this.context.currentTime,.025);this.cueBus?.gain.setTargetAtTime(this.cueActive&&!this.muted?this.volume:0,this.context.currentTime,.01);}}
+  updateStart(signal:StartSignal,enabled:boolean){
+    const key=`${signal.run}/${signal.phase}/${signal.lights}`,changed=key!==this.cueKey;this.cueKey=key;
+    const context=this.context;if(!context)return;
+    const nextActive=enabled&&signal.phase!=='idle',wasActive=this.cueActive;
+    if(nextActive!==wasActive){this.cueActive=nextActive;this.applyGain();}
+    if(!this.cueActive){if(changed||wasActive){this.cueGain?.gain.cancelScheduledValues(context.currentTime);this.cueGain?.gain.setValueAtTime(0,context.currentTime);}return;}
+    if(!changed||signal.phase==='lights'&&signal.lights===0)return;
+    const now=context.currentTime,go=signal.phase==='go',duration=go?.42:.11,gain=this.cueGain!.gain;
+    this.cue!.frequency.setValueAtTime(go?990:660,now);gain.cancelScheduledValues(now);gain.setValueAtTime(0,now);gain.linearRampToValueAtTime(go?.17:.11,now+.008);gain.linearRampToValueAtTime(0,now+duration);
+  }
   update(player:Vehicle,active:boolean,feedback?:DrivingFeedbackFrame){
     if(active!==this.active){this.active=active;this.lastUpdate=this.context?.currentTime??0;this.applyGain();}
     const context=this.context;if(!context||!active)return;
@@ -102,5 +117,5 @@ export class DrivingAudio {
     this.kerb!.gain.setTargetAtTime((feedback?.kerb??0)*Math.min(1,player.speed/25)*.045,now,.025);
     this.brake!.gain.setTargetAtTime(sample.brake,now,.04);this.tire!.gain.setTargetAtTime(sample.tire,now,.04);this.road!.gain.setTargetAtTime(sample.road,now,.07);
   }
-  silence(){this.active=false;this.applyGain();}
+  silence(){this.active=this.cueActive=false;if(this.context&&this.cueGain){this.cueGain.gain.cancelScheduledValues(this.context.currentTime);this.cueGain.gain.setValueAtTime(0,this.context.currentTime);}this.applyGain();}
 }

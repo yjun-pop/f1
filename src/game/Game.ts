@@ -24,6 +24,7 @@ export class Game {
     let savedGraphics:unknown;try{savedGraphics=localStorage.getItem('apex-graphics-quality');}catch{}
     this.graphics=new GraphicsQuality(graphicsMode(savedGraphics),recommendedTier({memory:(navigator as Navigator&{deviceMemory?:number}).deviceMemory,cores:navigator.hardwareConcurrency,maxTextureSize:this.renderer.capabilities.maxTextureSize,width:window.innerWidth}));
     this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier);this.sun=this.lighting.sun;
+    void this.lighting.loadSky(new URL('../assets/park-sky.hdr',import.meta.url).href);
     this.track=new Track(this.scene);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner);
     try{
       const saved=localStorage.getItem('apex-motion-strength');
@@ -56,13 +57,14 @@ export class Game {
     if(this.input.consume('KeyG'))this.line.toggle();if(this.input.consume('KeyC'))this.cockpit.toggle();
     if(!this.paused){this.accumulator+=dt;while(this.accumulator>=1/120){if(this.race.state==='racing')this.vehicle.update(1/120,this.input);this.race.update(1/120,this.vehicle);this.accumulator-=1/120;}}
     const feedback=this.feedback.update(this.vehicle,this.track,dt,!this.paused&&this.race.state==='racing');
-    this.audio.update(this.vehicle,!this.paused&&this.race.state==='racing',feedback);
+    this.audio.update(this.vehicle,!this.paused&&(this.race.state==='racing'||this.race.state==='countdown'),feedback);
+    this.audio.updateStart(this.race.startSignal,!this.paused);this.track.setStartLights(this.race.startSignal.lights);
     this.vehicle.present(feedback.surfaceHeave);
     if(this.graphics.observe(elapsed,!this.paused&&this.race.state==='racing'))this.applyGraphics();
     this.track.updatePresentation(this.vehicle.position,this.graphics.tier);
     // Keep a small, texel-stable shadow volume around the player, not the full circuit.
     const texel=130/this.sun.shadow.mapSize.x,x=Math.round(this.vehicle.position.x/texel)*texel,z=Math.round(this.vehicle.position.z/texel)*texel;
-    this.sun.target.position.set(x,0,z);this.sun.position.set(x-85,50,z-77);
+    this.sun.target.position.set(x,0,z);this.sun.position.set(x,0,z).add(this.lighting.sunOffset);
     this.cockpit.update(this.vehicle,dt,feedback);this.line.update(this.vehicle);this.hud.update(this.vehicle,this.race,this.paused,this.track,this.cockpit.mode);this.renderer.render(this.scene,this.cockpit.camera);this.mirror.render(this.vehicle,dt);requestAnimationFrame(this.frame);
   };
 }

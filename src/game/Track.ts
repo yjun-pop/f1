@@ -5,6 +5,8 @@ import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {CircuitDetails} from './CircuitDetails';
 import type {GraphicsTier} from './Graphics';
 import {connectKerbSegments,createKerbContacts,createKerbGeometry,kerbPaintMap,type KerbContactSegment} from './KerbGeometry';
+import {createWoodland,landscapeShade} from './NaturalScenery';
+import {createRoadDressing} from './RoadDressing';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name='MONZA';readonly country='ITALY';readonly cornerCount=11;
@@ -15,6 +17,7 @@ export class Track {
   private samples:THREE.Vector3[]=[];private sampleCount=0;private kerbSegments=new Uint8Array(0);
   private kerbContacts:KerbContactSegment[][]=[];
   readonly details:CircuitDetails;
+  private startBulbs:THREE.MeshStandardMaterial[]=[];
   constructor(scene:THREE.Scene){
     let raw=MONZA_POINTS.map(([x,z])=>new THREE.Vector3(x,0,z));
     // Long sparse source segments must remain straight. Densification prevents
@@ -43,6 +46,7 @@ export class Track {
     this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
   }
   updatePresentation(position:THREE.Vector3,tier:GraphicsTier){this.details.update(position,tier);}
+  setStartLights(count:number){this.startBulbs.forEach((material,i)=>{const lit=i<count;material.color.setHex(lit?0xcc160a:0x190b0c);material.emissiveIntensity=lit?3:.015;});}
   point(t:number){return this.curve.getPointAt(((t%1)+1)%1);}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
@@ -77,23 +81,16 @@ export class Track {
     }return best;
   }
   private buildRoad(){
-    const count=Math.ceil(this.length/2.5),positions:number[]=[],uvs:number[]=[],indices:number[]=[];
+    const count=Math.ceil(this.length/2.5),positions:number[]=[],uvs:number[]=[],indices:number[]=[],colors:number[]=[];
     for(let i=0;i<=count;i++){
       const t=i/count,p=this.point(t),n=this.roadNormal(t);
-      for(const side of [-1,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH);positions.push(q.x,.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);}
-      if(i<count){const k=i*2;indices.push(k,k+1,k+2,k+1,k+3,k+2);}
+      for(const side of [-1,-.55,0,.55,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH),shade=(.85+Math.abs(side)*.13)*landscapeShade(q.x*.6,q.z*.6);positions.push(q.x,.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);colors.push(shade,shade,shade);}
+      if(i<count)for(let cross=0;cross<4;cross++){const k=i*5+cross;indices.push(k,k+1,k+5,k+1,k+6,k+5);}
     }
-    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();
-    const road=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({...surfaceMaps('asphalt'),color:0xb9bfc4,side:THREE.DoubleSide,roughness:.96,metalness:0,bumpScale:.018}));
+    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geometry.setIndex(indices);geometry.computeVertexNormals();
+    const road=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({...surfaceMaps('asphalt'),color:0xb9bfc4,vertexColors:true,side:THREE.DoubleSide,roughness:.94,metalness:0,bumpScale:.012}));road.name='asphalt-road';
     road.receiveShadow=true;this.group.add(road);
-    // Broken rubber deposits follow actual braking/cornering areas, in one draw call.
-    const marks=new THREE.InstancedMesh(new THREE.PlaneGeometry(.24,5),new THREE.MeshBasicMaterial({color:0x141719,transparent:true,opacity:.16,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1}),400);
-    const stamp=new THREE.Object3D();let markCount=0;
-    for(let i=0;i<400;i++){
-      const t=i/400;if(this.tangent(t-12/this.length).angleTo(this.tangent(t+12/this.length))<.045)continue;
-      const p=this.point(t).addScaledVector(this.normal(t),((i*17)%11-5)*.43),f=this.tangent(t);
-      stamp.position.set(p.x,.048,p.z);stamp.rotation.set(-Math.PI/2,0,Math.atan2(f.x,f.z));stamp.scale.set(1+(i%3)*.2,1+(i%5)*.3,1);stamp.updateMatrix();marks.setMatrixAt(markCount++,stamp.matrix);
-    }marks.count=markCount;this.group.add(marks);
+    this.group.add(createRoadDressing(this));
     for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>this.point(i/count).addScaledVector(this.roadNormal(i/count),side*9.6).setY(.07));this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
     const start=new THREE.Group();start.position.copy(this.point(0));const t=this.tangent(0);start.rotation.y=Math.atan2(t.x,t.z);
     for(let row=0;row<2;row++)for(let col=0;col<20;col++){const tile=new THREE.Mesh(new THREE.BoxGeometry(1,.025,.7),new THREE.MeshBasicMaterial({color:(row+col)%2?0x14191f:0xfaf8f0}));tile.position.set(col-9.5,.1,row*.7);start.add(tile);}this.group.add(start);
@@ -103,14 +100,11 @@ export class Track {
   }
   private buildScenery(){
     const center=this.bounds.getCenter(new THREE.Vector3());
-    const grass=new THREE.Mesh(new THREE.PlaneGeometry(6500,6500),new THREE.MeshStandardMaterial({...surfaceMaps('grass'),color:0xc0c8b4,roughness:1,bumpScale:.025}));grass.receiveShadow=true;grass.rotation.x=-Math.PI/2;grass.position.set(center.x,-.08,center.z);this.group.add(grass);
-    const trees=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(4.2,1),new THREE.MeshStandardMaterial({color:0x405542,roughness:1}),800);
-    const trunks=new THREE.InstancedMesh(new THREE.CylinderGeometry(.35,.55,5,6),new THREE.MeshStandardMaterial({color:0x594e3e}),800);const dummy=new THREE.Object3D();let count=0;
-    for(let i=0;i<800;i++){const t=i/800,side=i%2?1:-1,p=this.point(t).addScaledVector(this.normal(t),side*(38+(i*19%95)));
-      // Don't put trees on a nearby return leg of this narrow, long circuit.
-      let clear=true;for(let j=0;j<this.samples.length;j+=10)if(this.samples[j].distanceToSquared(p)<24*24){clear=false;break;}if(!clear)continue;
-      const size=.75+(i%7)*.1;dummy.scale.set(size,1.7*size,size);dummy.rotation.y=i*2.39996;dummy.position.set(p.x,7.5*size,p.z);dummy.updateMatrix();trees.setMatrixAt(count,dummy.matrix);dummy.scale.set(size,size,size);dummy.position.y=2.5*size;dummy.updateMatrix();trunks.setMatrixAt(count++,dummy.matrix);
-    }trees.count=trunks.count=count;this.group.add(trees,trunks);
+    const ground=new THREE.PlaneGeometry(6500,6500,96,96),points=ground.getAttribute('position'),colors:number[]=[];
+    for(let i=0;i<points.count;i++){const shade=landscapeShade(center.x+points.getX(i),center.z-points.getY(i));colors.push(shade,shade,.94*shade);}
+    ground.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+    const grass=new THREE.Mesh(ground,new THREE.MeshStandardMaterial({...surfaceMaps('grass'),color:0xc0c8b4,vertexColors:true,roughness:1,bumpScale:.018}));grass.name='grass-terrain';grass.receiveShadow=true;grass.rotation.x=-Math.PI/2;grass.position.set(center.x,-.08,center.z);this.group.add(grass);
+    this.group.add(createWoodland(this,p=>{for(let j=0;j<this.samples.length;j+=10)if(this.samples[j].distanceToSquared(p)<24*24)return false;return true;}));
   }
   private buildCircuit(){
     const dummy=new THREE.Object3D(),count=Math.ceil(this.length/3.1),barrierCount=Math.ceil(this.length/4.2);
@@ -139,6 +133,11 @@ export class Track {
     for(const side of [-1,1]){const post=new THREE.Mesh(new THREE.BoxGeometry(.5,8,.5),steel);post.position.set(side*12,4,0);gantry.add(post);}const board=new THREE.Mesh(new THREE.BoxGeometry(25,2,.65),steel);board.position.y=7;gantry.add(board);
     const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=96;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#143d2e';ctx.fillRect(0,0,1024,96);ctx.fillStyle='#fff';ctx.font='bold italic 56px sans-serif';ctx.textAlign='center';ctx.fillText('MONZA  /  TEMPLE OF SPEED',512,66);
     const sign=new THREE.Mesh(new THREE.PlaneGeometry(23,1.65),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas)}));sign.position.set(0,7,-.34);sign.rotation.y=Math.PI;gantry.add(sign);gantry.position.copy(start);gantry.rotation.y=Math.atan2(forward.x,forward.z);this.group.add(gantry);
+    const rack=new THREE.Mesh(new THREE.BoxGeometry(4.7,1.65,.3),new THREE.MeshStandardMaterial({color:0x111519,roughness:.8}));rack.position.set(0,5.25,-.25);gantry.add(rack);
+    for(let column=0;column<5;column++){
+      const material=new THREE.MeshStandardMaterial({color:0x190b0c,emissive:0xff1305,emissiveIntensity:.015,roughness:.45});this.startBulbs.push(material);
+      for(const y of [4.85,5.62]){const bulb=new THREE.Mesh(new THREE.CircleGeometry(.27,24),material);bulb.position.set((column-2)*.88,y,-.415);bulb.rotation.y=Math.PI;gantry.add(bulb);}
+    }
   }
   private buildLighting(){
     const count=Math.ceil(this.length/52),dummy=new THREE.Object3D(),steel=new THREE.MeshStandardMaterial({color:0x61716e,metalness:.6,roughness:.4});
