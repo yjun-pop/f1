@@ -672,8 +672,8 @@ assert.ok(soundTelemetry({...telemetry,speed:30,offRoad:true}).road>soundTelemet
 // A fake Web Audio graph verifies actual routing, silence and gesture reuse.
 const audioNodes=[];let resumes=0;
 class AudioParam {value=0;setTargetAtTime(value){this.value=value;}}
-class AudioNode {gain=new AudioParam();frequency=new AudioParam();pan=new AudioParam();Q=new AudioParam();connections=[];connect(node){this.connections.push(node);}start(){this.started=true;}}
-globalThis.AudioContext=class {currentTime=0;sampleRate=48000;destination={};createGain(){const n=new AudioNode();audioNodes.push(n);return n;}createDynamicsCompressor(){return new AudioNode();}createOscillator(){return new AudioNode();}createStereoPanner(){return new AudioNode();}createBiquadFilter(){return new AudioNode();}createBuffer(){return {getChannelData:()=>new Float32Array(96000)};}createBufferSource(){return new AudioNode();}close(){return Promise.resolve();}resume(){resumes++;return Promise.resolve();}};
+class AudioNode {gain=new AudioParam();frequency=new AudioParam();pan=new AudioParam();Q=new AudioParam();threshold=new AudioParam();knee=new AudioParam();ratio=new AudioParam();connections=[];connect(node){this.connections.push(node);}start(){this.started=true;}setPeriodicWave(wave){this.wave=wave;}}
+globalThis.AudioContext=class {currentTime=0;sampleRate=48000;destination={};createPeriodicWave(real,imag){return {real,imag};}createGain(){const n=new AudioNode();audioNodes.push(n);return n;}createDynamicsCompressor(){return new AudioNode();}createOscillator(){return new AudioNode();}createStereoPanner(){return new AudioNode();}createBiquadFilter(){return new AudioNode();}createBuffer(){return {getChannelData:()=>new Float32Array(96000)};}createBufferSource(){return new AudioNode();}close(){return Promise.resolve();}resume(){resumes++;return Promise.resolve();}};
 const audio=new DrivingAudio();audio.unlock([v,a]);const nodeCount=audioNodes.length;audio.unlock([v,a]);assert.equal(audioNodes.length,nodeCount,'Repeated gestures must reuse voices');
 audio.update(v,true);assert.ok(audioNodes[0].gain.value>0);audio.toggleMute();assert.equal(audioNodes[0].gain.value,0);audio.toggleMute();
 audio.setVolume(.3);assert.equal(audioNodes[0].gain.value,.3);audio.silence();assert.equal(audioNodes[0].gain.value,0);audio.update(v,true);assert.equal(audioNodes[0].gain.value,.3);audio.update(v,false);assert.equal(audioNodes[0].gain.value,0);
@@ -684,3 +684,42 @@ const unavailableAudio=new DrivingAudio();assert.doesNotThrow(()=>{unavailableAu
 assert.equal(unavailableAudio.context,undefined,'Partial failed graphs must be discarded');
 delete globalThis.AudioContext;
 console.log('PASS: engine/load, moving brake, tire slip, surface sound, graph reuse, mute, volume and pause/resume silence');
+
+
+// Stateful reference-engine sound: upshift cuts, RPM drops, downshift blips,
+// bounded pitch and hysteresis, independent from the physical controls.
+const {EngineSoundState,ENGINE_TIMBRES}=await import(moduleURL('EngineSound'));
+const gearbox=new EngineSoundState(),trace=[];let hadCut=false,hadBlip=false;
+let testSpeed=0,previousGear=1;
+for(let i=0;i<120*42;i++){
+  const accelerating=i<120*24;testSpeed=Math.max(0,Math.min(94,testSpeed+(accelerating?4:-6)/120));
+  const car={...telemetry,speed:testSpeed,throttle:accelerating?1:0,brake:accelerating?0:1};
+  const snapshot=JSON.stringify(car),sample=gearbox.advance(car,1/120);
+  assert.equal(JSON.stringify(car),snapshot,'Audio must never alter vehicle inputs or motion');
+  assert.ok(Number.isFinite(sample.rpm)&&sample.rpm>=3800&&sample.rpm<=12800);
+  if(sample.gear!==previousGear){trace.push({gear:sample.gear,speed:testSpeed,rpm:sample.rpm});previousGear=sample.gear;}
+  hadCut ||=sample.cut<.8;hadBlip ||=sample.blip>.2;
+}
+assert.ok(trace.some(x=>x.gear===8),'Full acceleration must reach the eighth audio gear');
+assert.equal(gearbox.gear,1);assert.ok(hadCut&&hadBlip,'Acceleration must cut on upshifts; braking must trigger rev-matching blips');
+assert.ok(trace.length<=14,'A smooth acceleration/braking sweep must not chatter between gears');
+const stableGearbox=new EngineSoundState();const stable={...telemetry,speed:42,throttle:.7};
+for(let i=0;i<600;i++)stableGearbox.advance(stable,1/120);
+const heldGear=stableGearbox.gear;
+for(let i=0;i<600;i++){stableGearbox.advance({...stable,speed:42+Math.sin(i)*.1},1/120);assert.equal(stableGearbox.gear,heldGear);}
+assert.equal(ENGINE_TIMBRES.length,4);
+assert.equal(new Set(ENGINE_TIMBRES.map(x=>JSON.stringify(x.high))).size,4,'Reference-derived manufacturers must have different spectra');
+for(const timbre of ENGINE_TIMBRES)for(const band of [timbre.low,timbre.high]){
+  assert.ok(band.every(x=>Number.isFinite(x)&&x>=0));assert.equal(band[0],0);
+  assert.ok(band.slice(8).some(x=>x>.05),'Reference upper harmonics must survive beyond the previous two-tone engine');
+}
+// The real graph must use the measured periodic spectra with a load-dependent
+// low-pass; the driver and the closest rival must have different timbres.
+const referenceAudio=new DrivingAudio();globalThis.AudioContext=goodAudioContext;
+referenceAudio.unlock([v,a]);referenceAudio.update(v,true);
+assert.equal(referenceAudio.voices.length,2);
+assert.notDeepEqual(referenceAudio.voices[0].high.wave.imag,referenceAudio.voices[1].high.wave.imag);
+assert.ok(referenceAudio.voices.every(voice=>voice.low.frequency.value===voice.high.frequency.value&&voice.filter.frequency.value>=1900));
+assert.ok(referenceAudio.voices.every(voice=>voice.lowGain.gain.value>=0&&voice.highGain.gain.value>=0));
+delete globalThis.AudioContext;
+console.log('PASS: reference harmonic banks, individual engine timbres, eight gears, shift cut, downshift blips, pitch bounds and anti-chatter');

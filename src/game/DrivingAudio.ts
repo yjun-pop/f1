@@ -1,46 +1,56 @@
-import {Vehicle} from './Vehicle';
-
-/** Continuous telemetry, also shared by the audio regression tests. */
-export function soundTelemetry(car:Pick<Vehicle,'speed'|'throttle'|'brake'|'lateralSpeed'|'gripUsage'|'offRoad'>){
-  const speed=Math.max(0,car.speed),gear=Math.min(8,1+Math.floor(speed/12));
-  const rpm=1400+Math.min(1,(speed-(gear-1)*12)/14)*10000+car.throttle*700;
-  const moving=Math.min(1,speed/18);
-  return {rpm,engine:.035+car.throttle*.075+moving*.025,
-    brake:car.brake*moving*.035,
-    tire:Math.min(1,Math.max(0,(car.gripUsage-.72)*1.5)+Math.abs(car.lateralSpeed)/9)*moving*.065,
-    road:moving*(car.offRoad?.065:.009)};
+import type {Vehicle} from './Vehicle';
+import {EngineSoundState,ENGINE_TIMBRES,soundTelemetry} from './EngineSound';
+export {soundTelemetry} from './EngineSound';
+interface Voice {
+  car:Vehicle;state:EngineSoundState;low:OscillatorNode;high:OscillatorNode;
+  lowGain:GainNode;highGain:GainNode;turbo:OscillatorNode;turboGain:GainNode;
+  texture:GainNode;filter:BiquadFilterNode;gain:GainNode;pan:StereoPannerNode;
 }
-interface Voice {car:Vehicle;engine:OscillatorNode;harmonic:OscillatorNode;gain:GainNode;pan:StereoPannerNode}
 export class DrivingAudio {
   private context?:AudioContext;private master?:GainNode;private voices:Voice[]=[];
   private brake?:GainNode;private tire?:GainNode;private road?:GainNode;
-  private volume=.65;private muted=false;private active=false;
+  private volume=.65;private muted=false;private active=false;private lastUpdate=0;
   constructor(){try{const saved=localStorage.getItem('apex-audio-volume');if(saved!==null&&Number.isFinite(Number(saved)))this.volume=Math.max(0,Math.min(1,Number(saved)));}catch{}}
   get level(){return this.volume;}
   get isMuted(){return this.muted;}
   setVolume(value:number){this.volume=Math.max(0,Math.min(1,value));try{localStorage.setItem('apex-audio-volume',String(this.volume));}catch{}this.applyGain();}
   toggleMute(){this.muted=!this.muted;this.applyGain();}
-  // Called synchronously from a real user gesture, never from animation autoplay.
+  // Create and resume synchronously inside the original user gesture.
   unlock(cars:Vehicle[]){
     try{
       if(!this.context){
-        const context=new AudioContext();this.context=context;
+        const context=new AudioContext();this.context=context;this.lastUpdate=context.currentTime;
         const master=context.createGain(),compressor=context.createDynamicsCompressor();
+        compressor.threshold.value=-14;compressor.knee.value=16;compressor.ratio.value=3;
         master.gain.value=0;master.connect(compressor);compressor.connect(context.destination);this.master=master;
-        for(const car of cars){
-          const engine=context.createOscillator(),harmonic=context.createOscillator(),gain=context.createGain(),pan=context.createStereoPanner(),filter=context.createBiquadFilter();
-          engine.type='sawtooth';harmonic.type='triangle';filter.type='lowpass';filter.frequency.value=1700;gain.gain.value=0;
-          engine.connect(filter);harmonic.connect(filter);filter.connect(gain);gain.connect(pan);pan.connect(master);engine.start();harmonic.start();
-          this.voices.push({car,engine,harmonic,gain,pan});
-        }
         const buffer=context.createBuffer(1,context.sampleRate*2,context.sampleRate),data=buffer.getChannelData(0);
-        for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
-        const noise=(frequency:number,q:number)=>{const source=context.createBufferSource(),filter=context.createBiquadFilter(),gain=context.createGain();source.buffer=buffer;source.loop=true;filter.type='bandpass';filter.frequency.value=frequency;filter.Q.value=q;gain.gain.value=0;source.connect(filter);filter.connect(gain);gain.connect(master);source.start();return gain;};
-        this.brake=noise(2300,3);this.tire=noise(1100,.8);this.road=noise(320,.5);
+        // Seeded texture avoids regenerating an unbounded collection of sources.
+        let seed=157;for(let i=0;i<data.length;i++){seed=(Math.imul(seed,1664525)+1013904223)|0;data[i]=seed/2147483648;}
+        const noise=(frequency:number,q:number,destination:AudioNode)=>{
+          const source=context.createBufferSource(),filter=context.createBiquadFilter(),gain=context.createGain();
+          source.buffer=buffer;source.loop=true;filter.type='bandpass';filter.frequency.value=frequency;filter.Q.value=q;gain.gain.value=0;
+          source.connect(filter);filter.connect(gain);gain.connect(destination);source.start();return gain;
+        };
+        const waves=ENGINE_TIMBRES.map(profile=>({
+          low:context.createPeriodicWave(new Float32Array(profile.low.length),Float32Array.from(profile.low)),
+          high:context.createPeriodicWave(new Float32Array(profile.high.length),Float32Array.from(profile.high))
+        }));
+        cars.forEach((car,index)=>{
+          const low=context.createOscillator(),high=context.createOscillator(),lowGain=context.createGain(),highGain=context.createGain();
+          const gain=context.createGain(),pan=context.createStereoPanner(),filter=context.createBiquadFilter();
+          // Player: Ferrari reference. Rivals cycle Honda/Mercedes/Renault/Ferrari.
+          const wave=waves[index%waves.length];low.setPeriodicWave(wave.low);high.setPeriodicWave(wave.high);
+          lowGain.gain.value=1;highGain.gain.value=0;gain.gain.value=0;filter.type='lowpass';filter.frequency.value=4500;
+          low.connect(lowGain);high.connect(highGain);lowGain.connect(filter);highGain.connect(filter);
+          const turbo=context.createOscillator(),turboGain=context.createGain();turbo.type='sine';turboGain.gain.value=0;turbo.connect(turboGain);turboGain.connect(filter);
+          const texture=noise(1500,.55,filter);filter.connect(gain);gain.connect(pan);pan.connect(master);
+          low.start();high.start();turbo.start();
+          this.voices.push({car,state:new EngineSoundState(),low,high,lowGain,highGain,turbo,turboGain,texture,filter,gain,pan});
+        });
+        this.brake=noise(2300,3,master);this.tire=noise(1100,.8,master);this.road=noise(320,.5,master);
       }
       void this.context.resume().catch(()=>{});this.applyGain();
     }catch{
-      // Discard a partial graph too: unsupported audio must never break driving.
       if(this.context)void this.context.close().catch(()=>{});
       this.context=undefined;this.master=undefined;this.voices=[];
       this.brake=undefined;this.tire=undefined;this.road=undefined;
@@ -48,16 +58,22 @@ export class DrivingAudio {
   }
   private applyGain(){if(this.context&&this.master)this.master.gain.setTargetAtTime(this.active&&!this.muted?this.volume:0,this.context.currentTime,.025);}
   update(player:Vehicle,active:boolean){
-    if(active!==this.active){this.active=active;this.applyGain();}
+    if(active!==this.active){this.active=active;this.lastUpdate=this.context?.currentTime??0;this.applyGain();}
     const context=this.context;if(!context||!active)return;
-    const now=context.currentTime;
+    const now=context.currentTime,dt=Math.max(1/240,Math.min(.1,now-this.lastUpdate||1/60));this.lastUpdate=now;
     for(const voice of this.voices){
-      const car=voice.car,sample=soundTelemetry(car),self=car===player;
+      const car=voice.car,sample=voice.state.advance(car,dt),self=car===player;
       const dx=car.position.x-player.position.x,dz=car.position.z-player.position.z,distance=Math.hypot(dx,dz);
-      const attenuation=self?1:.48/(1+(distance/13)**2);
-      voice.engine.frequency.setTargetAtTime(sample.rpm/60*2,now,.045);
-      voice.harmonic.frequency.setTargetAtTime(sample.rpm/60*4,now,.045);
-      voice.gain.gain.setTargetAtTime(sample.engine*attenuation,now,.035);
+      const attenuation=self?1:.4/(1+(distance/13)**2);
+      // The measured reference has ~100Hz periodic spacing at high RPM;
+      // upper harmonics, rather than two unrelated notes, carry its engine timbre.
+      voice.low.frequency.setTargetAtTime(sample.rpm/120,now,.015);voice.high.frequency.setTargetAtTime(sample.rpm/120,now,.015);
+      const mix=Math.max(0,Math.min(1,(sample.rpm-7500)/4300))*(.4+.6*sample.load);
+      voice.lowGain.gain.setTargetAtTime(Math.sqrt(1-mix),now,.04);voice.highGain.gain.setTargetAtTime(Math.sqrt(mix),now,.04);
+      voice.filter.frequency.setTargetAtTime(1900+sample.load*3900+(sample.rpm-3800)*.1,now,.05);
+      voice.turbo.frequency.setTargetAtTime(1700+sample.rpm*.3,now,.06);voice.turboGain.gain.setTargetAtTime(sample.load*.035,now,.04);
+      voice.texture.gain.setTargetAtTime(.015+sample.load*.055+sample.blip*.03,now,.03);
+      voice.gain.gain.setTargetAtTime(sample.engine*sample.cut*attenuation,now,.012);
       voice.pan.pan.setTargetAtTime(self?0:Math.max(-1,Math.min(1,(-dx*Math.cos(player.heading)+dz*Math.sin(player.heading))/Math.max(8,distance))),now,.06);
     }
     const sample=soundTelemetry(player);

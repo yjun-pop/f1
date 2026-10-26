@@ -1,0 +1,38 @@
+import type {Vehicle} from './Vehicle';
+import {ENGINE_TIMBRES} from './EngineTimbres';
+export type SoundCar=Pick<Vehicle,'speed'|'throttle'|'brake'|'lateralSpeed'|'gripUsage'|'offRoad'>;
+const clamp=(value:number,low:number,high:number)=>Math.max(low,Math.min(high,value));
+/** Audio gearbox only: never alters vehicle physics, acceleration or ERS. */
+export class EngineSoundState {
+  gear=1;rpm=3800;private cooldown=0;private transient=0;private downshift=false;private lastSpeed=0;
+  advance(car:SoundCar,dt:number){
+    dt=clamp(dt,0,.1);const speed=Math.max(0,car.speed),ratios=[800,500,350,270,220,185,158,137];
+    this.cooldown=Math.max(0,this.cooldown-dt);this.transient=Math.max(0,this.transient-dt);
+    if(speed<2||Math.abs(speed-this.lastSpeed)>22){
+      this.gear=1;while(this.gear<8&&speed*ratios[this.gear-1]>12000)this.gear++;
+      this.transient=0;this.cooldown=.2;
+    }
+    const wheelRPM=speed*ratios[this.gear-1]+car.throttle*420;
+    if(this.cooldown===0){
+      const previous=this.gear;
+      if(wheelRPM>12000&&this.gear<8)this.gear++;
+      else if(wheelRPM<6500&&this.gear>1)this.gear--;
+      if(this.gear!==previous){this.downshift=this.gear<previous;this.transient=this.downshift?.12:.085;this.cooldown=.24;}
+    }
+    const phase=this.transient/(this.downshift?.12:.085);
+    const blip=this.downshift&&this.transient>0?Math.sin(phase*Math.PI)*850:0;
+    const desired=clamp(speed*ratios[this.gear-1]+car.throttle*420+blip,3800,12800);
+    this.rpm+=(desired-this.rpm)*(1-Math.exp(-dt*(this.transient>0?40:19)));
+    this.lastSpeed=speed;
+    return {...soundTelemetry(car),rpm:this.rpm,gear:this.gear,
+      cut:!this.downshift&&this.transient>0?.32+.68*(1-phase):1,blip:blip/850};
+  }
+}
+export function soundTelemetry(car:SoundCar){
+  const speed=Math.max(0,car.speed),moving=Math.min(1,speed/18);
+  return {rpm:Math.min(12800,3800+speed*94+car.throttle*420),engine:.055+car.throttle*.12+moving*.02,
+    load:clamp(car.throttle,0,1),brake:car.brake*moving*.03,
+    tire:Math.min(1,Math.max(0,(car.gripUsage-.72)*1.5)+Math.abs(car.lateralSpeed)/9)*moving*.06,
+    road:moving*(car.offRoad?.065:.008)};
+}
+export {ENGINE_TIMBRES};
