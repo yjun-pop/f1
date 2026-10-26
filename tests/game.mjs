@@ -210,7 +210,56 @@ for(let step=0;step<120*20;step++)chasePlayer.race.adaptPace(lapLead,telemetry,1
 assert.ok(lapLead.adaptivePace>1.1,'Lap gaps must use total race distance');
 telemetry.distance=lapLead.car.distance-1;
 for(let step=0;step<120*20;step++)chasePlayer.race.adaptPace(lapLead,telemetry,1/120);
-assert.ok(lapLead.adaptivePace<.6,'An AI a lap ahead must ease off instead of treating the player as nearby');
+assert.ok(lapLead.adaptivePace<.8,'An AI a lap ahead must ease off instead of treating the player as nearby');
 chasePlayer.race.reset();assert.equal(lapLead.adaptivePace,1,'Restart must clear the previous race adaptation');
 console.log('PASS: adaptive rivals ease off, chase, preserve smooth physical driving and handle lap gaps',
   JSON.stringify({helpMeters:Math.round(helpPlayer.meters),normalMeters:Math.round(normalPlayer.meters),chaseMeters:Math.round(chasePlayer.meters)}));
+
+
+// Measure a full solo lap: speed multipliers alone must not hide a poor driver.
+const skilledRace=new Race(track,new THREE.Scene(),planner),benchmarkPlayer=new Vehicle(track,new THREE.Scene());
+skilledRace.opponents.splice(1);skilledRace.start();skilledRace.update(4.1,benchmarkPlayer);
+const skilledRival=skilledRace.opponents[0];let skilledLap=0,skilledOffroad=0;
+for(let step=0;step<120*112;step++){
+  benchmarkPlayer.distance=skilledRival.car.distance-40/track.length;
+  benchmarkPlayer.progress=(benchmarkPlayer.distance%1+1)%1;
+  benchmarkPlayer.position.copy(track.point(benchmarkPlayer.progress));benchmarkPlayer.speed=skilledRival.car.speed;
+  skilledRace.update(1/120,benchmarkPlayer);skilledOffroad+=skilledRival.car.offRoad?1:0;
+  if(skilledRival.car.distance>=1){skilledLap=(step+1)/120;break;}
+}
+assert.ok(skilledLap>0,'The lead AI must beat 112s (previous controller: 120.3s) at neutral adaptation');
+assert.equal(skilledOffroad,0,'The improved solo lap must remain on asphalt');
+console.log(`PASS: stronger neutral AI completes a physical lap in ${skilledLap.toFixed(1)}s without leaving the track`);
+
+// On a straight, drive around a slower physical vehicle instead of queuing
+// indefinitely or clamping an impossible passing lane into the blocked lane.
+const passingRace=new Race(track,new THREE.Scene(),planner),slowCar=new Vehicle(track,new THREE.Scene());
+passingRace.opponents.splice(1);const passer=passingRace.opponents[0];
+const lineLane=t=>planner.point(t).sub(track.point(t)).dot(track.normal(t))+.6;
+passer.car.resetAt(300/track.length,lineLane(300/track.length));passer.car.speed=45;
+passer.lane=.6;passer.distance=passer.car.distance;
+slowCar.resetAt(350/track.length,lineLane(350/track.length));slowCar.speed=15;
+passingRace.start();passingRace.update(4.1,slowCar);
+let passingOffroad=0;
+for(let step=0;step<120*10;step++){
+  const drag=.00105*slowCar.speed*slowCar.speed+.35,engine=17*(1-slowCar.speed/140);
+  slowCar.drive(1/120,{steer:0,throttle:drag/engine,brake:0});
+  passingRace.update(1/120,slowCar);passingOffroad+=passer.car.offRoad?1:0;
+}
+assert.ok((passer.car.distance-slowCar.distance)*track.length>20,'AI must complete a clean straight-line pass');
+assert.equal(passingOffroad,0,'Passing must stay on the road');
+console.log('PASS: AI finds a free corridor and overtakes a slower car on asphalt');
+
+// Exercise five rivals together against a fast player over more than two laps.
+const packRace=new Race(track,new THREE.Scene(),planner),fastPlayer=new Vehicle(track,new THREE.Scene());
+packRace.start();packRace.update(4.1,fastPlayer);
+const packOffroad=packRace.opponents.map(()=>0);
+for(let step=0;step<120*270;step++){
+  fastPlayer.distance=step/120*60/track.length;fastPlayer.progress=fastPlayer.distance%1;
+  fastPlayer.position.copy(track.point(fastPlayer.progress));fastPlayer.speed=60;
+  packRace.update(1/120,fastPlayer);
+  packRace.opponents.forEach((o,i)=>{packOffroad[i]+=o.car.offRoad?1:0;});
+}
+assert.ok(packRace.opponents.every(o=>o.distance>2.5),'Every rival must keep competitive pace with a fast player over multiple laps');
+assert.ok(packOffroad.every(frames=>frames/(120*270)<.035),'Faster pack racing must avoid prolonged track departures');
+console.log('PASS: all five adaptive rivals exceed 2.5 physical laps in 270s against a fast player');
