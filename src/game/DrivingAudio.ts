@@ -60,7 +60,7 @@ export class DrivingAudio {
           low.start();high.start();turbo.start();body.start();pulse.start();
           this.voices.push({car,state:new EngineSoundState(),low,high,lowGain,highGain,turbo,turboGain,body,bodyGain,bodyFilter,bodyShelf,pulse,pulseDepth,previousLoad:0,previousCut:1,thump:0,texture,filter,shelf,gain,pan});
         });
-        this.brake=noise(2300,3,master);this.tire=noise(1100,.8,master);this.road=noise(320,.5,master);this.wind=noise(700,.4,master);this.kerb=noise(430,.8,master);
+        this.brake=noise(2300,3,master);this.tire=noise(1100,.8,master);this.road=noise(320,.5,master);this.wind=noise(900,.45,master);this.kerb=noise(430,.8,master);
       }
       void this.context.resume().catch(()=>{});this.applyGain();
     }catch{

@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import {Vehicle} from './Vehicle';
 import type {DrivingFeedbackFrame} from './DrivingFeedback';
+import {EngineSoundState} from './EngineSound';
 export class CockpitCamera {
   readonly camera=new THREE.PerspectiveCamera(76,1,.06,1800);
   mode=1;
   eyeHeight=1.8;
   private cockpit=new THREE.Group();private wheel=new THREE.Group();private initialized=false;
   private display=document.createElement('canvas');private displayTexture:THREE.CanvasTexture;
-  private displayAge=0;
+  private displayAge=0;private displayGear=0;private fallbackEngine=new EngineSoundState();private cockpitSpring=0;
   constructor(scene:THREE.Scene){
     const carbon=new THREE.MeshStandardMaterial({color:0x11161b,roughness:.43,metalness:.35});
     const mesh=(w:number,h:number,d:number,x:number,y:number,z:number,mat:THREE.Material=carbon)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);return m;};
@@ -48,15 +49,17 @@ export class CockpitCamera {
     this.camera.fov=THREE.MathUtils.damp(this.camera.fov,(this.mode===1?76:62)+vehicle.speed*.055+(feedback?.boostFov??0),4,dt);this.camera.updateProjectionMatrix();
     vehicle.group.visible=true;vehicle.group.traverse(child=>{if(child.name==='driver')child.visible=this.mode===0;});
     this.cockpit.visible=this.mode===1;this.wheel.rotation.z=vehicle.steer*.32;
-    // Cockpit-only sprung motion stays small relative to the stabilized road view.
-    this.cockpit.rotation.x=THREE.MathUtils.damp(this.cockpit.rotation.x,vehicle.acceleration*.0006,8,dt);
-    this.cockpit.rotation.z=THREE.MathUtils.damp(this.cockpit.rotation.z,-vehicle.lateralAcceleration*.00045,8,dt);
-    this.displayAge+=dt;if(this.displayAge>.08){this.displayAge=0;this.paintDisplay(vehicle,feedback?.engine);}
+    this.cockpit.position.y=-.3+(feedback?.cockpitHeave??0);
+    this.cockpitSpring=THREE.MathUtils.damp(this.cockpitSpring,feedback?feedback.pitch*.3:vehicle.acceleration*.0006,8,dt);
+    this.cockpit.rotation.x=this.cockpitSpring+(feedback?.cockpitPitch??0);
+    this.cockpit.rotation.z=THREE.MathUtils.damp(this.cockpit.rotation.z,feedback?feedback.roll*.5:-vehicle.lateralAcceleration*.00045,8,dt);
+    const engine=feedback?.engine??this.fallbackEngine.advance(vehicle,dt);
+    this.displayAge+=dt;if(this.displayAge>.08||engine.gear!==this.displayGear){this.displayAge=0;this.displayGear=engine.gear;this.paintDisplay(vehicle,engine);}
   }
-  private paintDisplay(v:Vehicle,engine?:DrivingFeedbackFrame['engine']){
+  private paintDisplay(v:Vehicle,engine:DrivingFeedbackFrame['engine']){
     const ctx=this.display.getContext('2d')!;ctx.fillStyle='#070c12';ctx.fillRect(0,0,384,256);
-    for(let i=0;i<15;i++){ctx.fillStyle=i<(engine?Math.max(0,Math.min(1,(engine.rpm-6500)/5500)):(v.kmh%43)/43)*15?(i>10?'#a970ff':'#5cfc9c'):'#1d2c30';ctx.fillRect(12+i*24,7,17,13);}
-    ctx.textAlign='center';ctx.fillStyle='#eaffef';ctx.font='bold 115px monospace';ctx.fillText(v.kmh<2?'N':String(engine?.gear??Math.min(8,1+Math.floor(v.kmh/43))),192,148);
+    for(let i=0;i<15;i++){ctx.fillStyle=i<Math.max(0,Math.min(1,(engine.rpm-6500)/5500))*15?(i>10?'#a970ff':'#5cfc9c'):'#1d2c30';ctx.fillRect(12+i*24,7,17,13);}
+    ctx.textAlign='center';ctx.fillStyle='#eaffef';ctx.font='bold 115px monospace';ctx.fillText(String(engine.gear),192,148);
     ctx.fillStyle='#a6b4bd';ctx.font='18px monospace';ctx.fillText('GEAR',192,178);
     ctx.fillStyle='#fff';ctx.font='bold 34px monospace';ctx.fillText(String(v.kmh).padStart(3,'0'),320,98);ctx.font='14px monospace';ctx.fillText('KM/H',320,122);
     ctx.strokeStyle='#e9ed43';ctx.lineWidth=10;ctx.beginPath();ctx.arc(65,98,39,.6*Math.PI,(.6+v.boost/100*1.8)*Math.PI);ctx.stroke();ctx.font='bold 23px monospace';ctx.fillStyle='#e9ed43';ctx.fillText(`${Math.round(v.boost)}%`,65,108);
