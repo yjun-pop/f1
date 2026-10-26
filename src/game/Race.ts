@@ -45,12 +45,13 @@ export class Race {
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
   reset(){this.contacts.clear();this.pack.reset();this.state='ready';this.countdown=4;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=6;
-    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
+    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceGripAssist=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready')this.state='countdown';}
   private balanceRivals(player:Vehicle,dt:number){
     const sample=((player.progress%1+1)%1)*this.aiSpeeds.length,index=Math.floor(sample);
     const referenceSpeed=THREE.MathUtils.lerp(this.aiSpeeds[index],this.aiSpeeds[(index+1)%this.aiSpeeds.length],sample-index);
     this.pack.observe(player,referenceSpeed,player.position.distanceToSquared(this.track.point(player.progress))<18*18,dt);
+    const fastGrip=this.pack.active?THREE.MathUtils.smoothstep(this.pack.referencePace,1.32,1.44):0;
     // Snapshot standings once, using total race distance across lap seams.
     const order:{distance:number;rival:Rival|null}[]=[{distance:player.distance,rival:null},...this.opponents.map(rival=>({distance:rival.car.distance,rival}))];
     order.sort((a,b)=>b.distance-a.distance);
@@ -74,12 +75,13 @@ export class Race {
         const pack=this.pack.targets(gap,o.rank,this.position,o.pace,o.attack);
         targetCap=THREE.MathUtils.lerp(targetCap,pack.cap,matching);
         targetPower=THREE.MathUtils.lerp(targetPower,pack.power,matching);
-        o.racePace=THREE.MathUtils.damp(o.racePace??o.pace,THREE.MathUtils.lerp(o.pace,pack.pace,matching),.5,dt);
+        o.racePace=THREE.MathUtils.damp(o.racePace??o.pace,THREE.MathUtils.lerp(o.pace,pack.pace,THREE.MathUtils.smoothstep(this.elapsed,16,28)),.5,dt);
       }else if(o.racePace!==undefined)o.racePace=THREE.MathUtils.damp(o.racePace,o.pace,.5,dt);
       o.speedCap=THREE.MathUtils.damp(o.speedCap,THREE.MathUtils.clamp(targetCap,76,104),.7,dt);
-      o.powerAssist=THREE.MathUtils.damp(o.powerAssist,Math.min(1.15,targetPower),.5,dt);
+      o.powerAssist=THREE.MathUtils.damp(o.powerAssist,Math.min(1.35,targetPower),.5,dt);
       // Equal launch machinery, then gradually restore the established race pace.
       o.car.raceLaunchScale=THREE.MathUtils.lerp(o.launch/o.car.powerScale,1,THREE.MathUtils.smoothstep(this.elapsed,5,22));
+      o.car.raceGripAssist=THREE.MathUtils.damp(o.car.raceGripAssist??1,1+fastGrip*(1.5/1.4-1),.5,dt);
       o.car.raceSpeedCap=o.speedCap;o.car.raceCruiseCap=o.speedCap*87/94;o.car.racePowerAssist=o.powerAssist;
     }
   }
@@ -104,7 +106,7 @@ export class Race {
     if(this.state!=='racing')return;
     this.elapsed+=dt;this.lapTime=this.elapsed-this.lapStart;
     const done=Math.floor(player.distance+1e-6);
-    if(done>this.completed){this.lastLap=this.lapTime;if(!this.best||this.lastLap<this.best){this.best=this.lastLap;try{localStorage.setItem(this.storageKey,String(this.best));}catch{}}
+    if(done>this.completed){this.lastLap=this.lapTime;this.pack.recordLap(this.lastLap,this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;try{localStorage.setItem(this.storageKey,String(this.best));}catch{}}
       this.completed=done;this.lapStart=this.elapsed;this.lapTime=0;if(done>=3){this.state='finished';return;}}
     this.balanceRivals(player,dt);
     // All drivers observe the same instant, before any car advances.

@@ -5,7 +5,9 @@ import {Controls,integrateBody} from './Dynamics';
 import {createCar,CarVisual} from './CarModel';
 export class Vehicle {
   raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;
-  readonly gripScale:number;readonly powerScale:number;
+  private readonly baseGrip:number;raceGripAssist?:number;
+  get gripScale(){return Math.min(1.5,this.baseGrip*(this.raceGripAssist??1));}
+  readonly powerScale:number;
   readonly position=new THREE.Vector3();readonly group:THREE.Group;
   private model:CarVisual;
   speed=0;lateralSpeed=0;yawRate=0;heading=0;steer=0;steerAngle=0;progress=0;lap=1;offRoad=false;
@@ -13,7 +15,7 @@ export class Vehicle {
   distance=0;throttle=0;brake=0;boost=100;boosting=false;
   private lastProgress=0;
   constructor(private track:Track,scene:THREE.Scene,color=0x8c969f,performance={grip:1,power:1}){
-    this.gripScale=THREE.MathUtils.clamp(performance.grip,1,1.5);
+    this.baseGrip=THREE.MathUtils.clamp(performance.grip,1,1.5);
     this.powerScale=THREE.MathUtils.clamp(performance.power,1,1.5);
     this.model=createCar(color);this.group=this.model.group;scene.add(this.group);this.reset();
   }

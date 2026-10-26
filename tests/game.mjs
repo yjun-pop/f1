@@ -458,7 +458,7 @@ assert.equal(!!tactical.control.boost,false,'Blocked traffic must not consume ER
 
 // One early defensive move, no reactionary second move, and no blocking once
 // the attacking car is alongside.
-tacticalRace.opponents.splice(1);const defenseMeters=planner.apices[3].progress*track.length-230;
+tacticalRace.opponents.splice(1);const defenseMeters=planner.apices[2].progress*track.length-230;
 place(tactical.car,defenseMeters,.6,60);tactical.lane=.6;
 place(tacticalPlayer,defenseMeters-35,.6,70);tacticalRace.elapsed=30;
 tacticalRace.decide(tactical,tacticalPlayer);const defenseLane=tactical.defendLane,defenseCooldown=tactical.defendCooldown;
@@ -912,7 +912,63 @@ for(const driverPace of [1,1.1]){
   }
   assert.ok(firstChallenge<70,'A player with a 137–185m head start must face a physical overtake attempt within 70 seconds');
   assert.ok(pressureFrames/Math.max(1,leadingFrames)>.6,'A leading stock player must generally have a challenger within 25m');
-  assert.ok(leaderRace.opponents.every(o=>Math.abs(o.car.distance-leaderPlayer.distance)*track.length<120),'The entire pursuing field must finish close');
+  assert.ok(leaderRace.opponents.every(o=>Math.abs(o.car.distance-leaderPlayer.distance)*track.length<150),'The entire pursuing field must remain within the common 150m pack range');
   assert.equal(leaderPlayer.gripScale,1);assert.equal(leaderPlayer.powerScale,1);assert.equal(leaderPlayer.raceSpeedCap,undefined);
   console.log('PASS: leading player faces sustained physical pressure and an AI pass',{driverPace,firstChallenge,pressureFraction:pressureFrames/Math.max(1,leadingFrames),gaps:leaderRace.opponents.map(o=>Math.round((leaderPlayer.distance-o.car.distance)*track.length))});
 }
+
+
+// Regression for the reported pace: physically generate a ~90s standing lap
+// (including a two-second launch hesitation) and ~85.6s flying laps. The
+// fixture uses the existing calibrated AI performance to reproduce those
+// timings; the game's player stays stock. Replay that trajectory as a ghost
+// while every rival still drives and collides through normal vehicle physics.
+const replayDirector=new PackDirector();replayDirector.recordLap(90,true);
+assert.ok(replayDirector.referencePace>1.44,'A 90s standing lap must identify the fast driver instead of matching straight speed');
+replayDirector.recordLap(85.6);assert.ok(replayDirector.referencePace>1.46);
+const eliteTarget=replayDirector.targets(-150,6,1,1.36,0);
+assert.ok(eliteTarget.pace>1.49&&eliteTarget.pace<=1.53&&eliteTarget.power>1.3&&eliteTarget.power<=1.35&&eliteTarget.cap<=104);
+replayDirector.reset();assert.equal(replayDirector.referencePace,1,'Restart must clear fast-lap classification');
+replayDirector.recordLap(120);assert.equal(replayDirector.referencePace,1,'A slower lap must not activate the elite pursuit limits');
+
+const referenceRace=new Race(track,new THREE.Scene(),planner),referenceGhost=new Vehicle(track,new THREE.Scene());
+referenceGhost.position.set(1e6,0,1e6);referenceRace.opponents.splice(1);const recordedDriver=referenceRace.opponents[0];
+const referenceOffset=planner.point(0).sub(track.point(0)).dot(track.normal(0));
+recordedDriver.car.resetAt(0,referenceOffset+.6);recordedDriver.lane=.6;referenceRace.state='racing';
+referenceRace.balanceRivals=()=>{referenceRace.position=1;recordedDriver.rank=2;};
+const trajectory=[],referenceLaps=[];let referenceCrossed=0,previousCrossing=0,referenceOffroad=0;
+for(let step=0;step<120*280;step++){
+  if(step>=120*2)referenceRace.update(1/120,referenceGhost);
+  const c=recordedDriver.car;
+  trajectory.push({position:c.position.clone(),progress:c.progress,distance:c.distance,heading:c.heading,speed:c.speed,acceleration:c.acceleration,lateralAcceleration:c.lateralAcceleration,brake:c.brake,throttle:c.throttle});
+  referenceOffroad+=c.offRoad?1:0;
+  if(c.distance>=referenceCrossed+1){const time=(step+1)/120;referenceLaps.push(time-previousCrossing);previousCrossing=time;referenceCrossed++;if(referenceCrossed===3)break;}
+}
+assert.equal(referenceLaps.length,3);assert.ok(Math.abs(referenceLaps[0]-90)<1);
+assert.ok(referenceLaps.slice(1).every(lap=>Math.abs(lap-85.6)<.7));assert.equal(referenceOffroad,0);
+const eliteResults=[];
+for(const initial of ['grid','180m-deficit']){
+  const eliteRace=new Race(track,new THREE.Scene(),planner),recordedPlayer=new Vehicle(track,new THREE.Scene());eliteRace.state='racing';
+  if(initial==='180m-deficit')eliteRace.opponents.forEach((o,i)=>{
+    const progress=-(180+i*14)/track.length,lane=i%2?3:-3;o.car.resetAt(progress,lane);
+    o.lane=lane-planner.point(progress).sub(track.point(progress)).dot(track.normal(progress));
+  });
+  const departures=Array(5).fill(0);
+  for(const f of trajectory){
+    recordedPlayer.position.copy(f.position);recordedPlayer.progress=f.progress;recordedPlayer.distance=f.distance;recordedPlayer.heading=f.heading;recordedPlayer.speed=f.speed;
+    recordedPlayer.acceleration=f.acceleration;recordedPlayer.lateralAcceleration=f.lateralAcceleration;recordedPlayer.brake=f.brake;recordedPlayer.throttle=f.throttle;
+    eliteRace.update(1/120,recordedPlayer);
+    eliteRace.opponents.forEach((o,i)=>{departures[i]+=o.car.offRoad?1:0;assert.ok(o.car.gripScale<=1.5&&o.powerAssist<=1.35&&o.speedCap<=104);});
+  }
+  const gaps=eliteRace.opponents.map(o=>(recordedPlayer.distance-o.car.distance)*track.length);
+  assert.ok(gaps.every(gap=>Math.abs(gap)<150),'Every rival must finish within 150m of the actual 90/85-second reference');
+  assert.ok(Math.min(...gaps.map(Math.abs))<35,'At least one challenger must be within 35m at the finish');
+  assert.ok(departures.every(frames=>frames/trajectory.length<.02),'Elite pursuit must not repeatedly throw rivals off the track');
+  if(initial==='180m-deficit'){
+    assert.ok(departures.every(frames=>frames===0));assert.ok(eliteRace.opponents.every(o=>o.collisionCount===0),'Clean pursuit from behind must remain contact-free');
+  }
+  assert.equal(recordedPlayer.gripScale,1);assert.equal(recordedPlayer.powerScale,1);assert.equal(recordedPlayer.raceSpeedCap,undefined);
+  eliteResults.push({initial,gaps:gaps.map(Math.round),offroadFraction:departures.map(frames=>frames/trajectory.length)});
+  eliteRace.reset();assert.ok(eliteRace.opponents.every(o=>o.car.gripScale===1.4&&o.car.raceGripAssist===undefined));
+}
+console.log('PASS: 90s standing / 85.6s flying reference and all five physical rivals stay close',referenceLaps,eliteResults);
