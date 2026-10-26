@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {surfaceMaps} from './SurfaceTextures';
 import {MONZA_POINTS,MONZA_LENGTH,MONZA_SECTIONS,MONZA_ORIGIN} from './MonzaLayout';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
@@ -49,14 +50,23 @@ export class Track {
     }return best;
   }
   private buildRoad(){
-    const count=Math.ceil(this.length/2.5),positions:number[]=[],indices:number[]=[];
+    const count=Math.ceil(this.length/2.5),positions:number[]=[],uvs:number[]=[],indices:number[]=[];
     for(let i=0;i<=count;i++){
       const t=i/count,p=this.point(t),n=this.normal(t);
-      for(const side of [-1,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH);positions.push(q.x,.035,q.z);}
+      for(const side of [-1,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH);positions.push(q.x,.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);}
       if(i<count){const k=i*2;indices.push(k,k+1,k+2,k+1,k+3,k+2);}
     }
-    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setIndex(indices);geometry.computeVertexNormals();
-    this.group.add(new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0x59616a,side:THREE.DoubleSide,roughness:.6,metalness:.12})));
+    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();
+    const road=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({...surfaceMaps('asphalt'),color:0xb9bfc4,side:THREE.DoubleSide,roughness:.96,metalness:0,bumpScale:.018}));
+    road.receiveShadow=true;this.group.add(road);
+    // Broken rubber deposits follow actual braking/cornering areas, in one draw call.
+    const marks=new THREE.InstancedMesh(new THREE.PlaneGeometry(.24,5),new THREE.MeshBasicMaterial({color:0x141719,transparent:true,opacity:.16,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1}),400);
+    const stamp=new THREE.Object3D();let markCount=0;
+    for(let i=0;i<400;i++){
+      const t=i/400;if(this.tangent(t-12/this.length).angleTo(this.tangent(t+12/this.length))<.045)continue;
+      const p=this.point(t).addScaledVector(this.normal(t),((i*17)%11-5)*.43),f=this.tangent(t);
+      stamp.position.set(p.x,.048,p.z);stamp.rotation.set(-Math.PI/2,0,Math.atan2(f.x,f.z));stamp.scale.set(1+(i%3)*.2,1+(i%5)*.3,1);stamp.updateMatrix();marks.setMatrixAt(markCount++,stamp.matrix);
+    }marks.count=markCount;this.group.add(marks);
     for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>this.point(i/count).addScaledVector(this.normal(i/count),side*9.6).setY(.07));this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
     const start=new THREE.Group();start.position.copy(this.point(0));const t=this.tangent(0);start.rotation.y=Math.atan2(t.x,t.z);
     for(let row=0;row<2;row++)for(let col=0;col<20;col++){const tile=new THREE.Mesh(new THREE.BoxGeometry(1,.025,.7),new THREE.MeshBasicMaterial({color:(row+col)%2?0x14191f:0xfaf8f0}));tile.position.set(col-9.5,.1,row*.7);start.add(tile);}this.group.add(start);
@@ -66,24 +76,24 @@ export class Track {
   }
   private buildScenery(){
     const center=this.bounds.getCenter(new THREE.Vector3());
-    const grass=new THREE.Mesh(new THREE.PlaneGeometry(6500,6500),new THREE.MeshStandardMaterial({color:0x243b31,roughness:1}));grass.rotation.x=-Math.PI/2;grass.position.set(center.x,-.08,center.z);this.group.add(grass);
-    const trees=new THREE.InstancedMesh(new THREE.ConeGeometry(3.5,12,9),new THREE.MeshStandardMaterial({color:0x204c3e}),800);
+    const grass=new THREE.Mesh(new THREE.PlaneGeometry(6500,6500),new THREE.MeshStandardMaterial({...surfaceMaps('grass'),color:0xc0c8b4,roughness:1,bumpScale:.025}));grass.receiveShadow=true;grass.rotation.x=-Math.PI/2;grass.position.set(center.x,-.08,center.z);this.group.add(grass);
+    const trees=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(4.2,1),new THREE.MeshStandardMaterial({color:0x405542,roughness:1}),800);
     const trunks=new THREE.InstancedMesh(new THREE.CylinderGeometry(.35,.55,5,6),new THREE.MeshStandardMaterial({color:0x594e3e}),800);const dummy=new THREE.Object3D();let count=0;
     for(let i=0;i<800;i++){const t=i/800,side=i%2?1:-1,p=this.point(t).addScaledVector(this.normal(t),side*(38+(i*19%95)));
       // Don't put trees on a nearby return leg of this narrow, long circuit.
       let clear=true;for(let j=0;j<this.samples.length;j+=10)if(this.samples[j].distanceToSquared(p)<24*24){clear=false;break;}if(!clear)continue;
-      const size=.75+(i%7)*.1;dummy.scale.set(size,size,size);dummy.position.set(p.x,8*size,p.z);dummy.updateMatrix();trees.setMatrixAt(count,dummy.matrix);dummy.position.y=2.5*size;dummy.updateMatrix();trunks.setMatrixAt(count++,dummy.matrix);
+      const size=.75+(i%7)*.1;dummy.scale.set(size,1.7*size,size);dummy.rotation.y=i*2.39996;dummy.position.set(p.x,7.5*size,p.z);dummy.updateMatrix();trees.setMatrixAt(count,dummy.matrix);dummy.scale.set(size,size,size);dummy.position.y=2.5*size;dummy.updateMatrix();trunks.setMatrixAt(count++,dummy.matrix);
     }trees.count=trunks.count=count;this.group.add(trees,trunks);
   }
   private buildCircuit(){
     const dummy=new THREE.Object3D(),count=Math.ceil(this.length/3.1),barrierCount=Math.ceil(this.length/4.2);
-    const kerbs=new THREE.InstancedMesh(new THREE.BoxGeometry(1.4,.12,3.25),new THREE.MeshStandardMaterial({roughness:.9}),count*2);
+    const kerbs=new THREE.InstancedMesh(new THREE.BoxGeometry(1.4,.12,3.25),new THREE.MeshStandardMaterial({roughness:.82,metalness:0}),count*2);
     const barriers=new THREE.InstancedMesh(new THREE.BoxGeometry(.5,1.2,4.4),new THREE.MeshStandardMaterial({color:0x315248,roughness:.7}),barrierCount*2);let k=0,b=0;
     for(const side of [-1,1]){
       for(let i=0;i<count;i++){const t=i/count,angle=this.tangent(t-5/this.length).angleTo(this.tangent(t+5/this.length));if(angle<.018)continue;
         const p=this.point(t).addScaledVector(this.normal(t),side*10.35),v=this.tangent(t);dummy.position.set(p.x,.08,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();kerbs.setMatrixAt(k,dummy.matrix);kerbs.setColorAt(k++,new THREE.Color(i%2?0xf5f3e8:0xd6493b));}
       for(let i=0;i<barrierCount;i++){const t=i/barrierCount,p=this.point(t).addScaledVector(this.normal(t),side*16.2),v=this.tangent(t);dummy.position.set(p.x,.6,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();barriers.setMatrixAt(b++,dummy.matrix);}
-    }kerbs.count=k;this.group.add(kerbs,barriers);
+    }kerbs.receiveShadow=true;barriers.receiveShadow=true;kerbs.count=k;this.group.add(kerbs,barriers);
     const steel=new THREE.MeshStandardMaterial({color:0x263b36}),standMaterial=new THREE.MeshStandardMaterial({color:0x47545b});
     for(const t of [.007,.028,.15,.215,.35,.45,.59,.74,.9]){const p=this.point(t).addScaledVector(this.normal(t),-37),stand=new THREE.Group();
       for(let row=0;row<6;row++){const mesh=new THREE.Mesh(new THREE.BoxGeometry(55,.8,2.4),standMaterial);mesh.position.set(0,row*.9+.8,row*2.1);stand.add(mesh);}const roof=new THREE.Mesh(new THREE.BoxGeometry(58,.3,17),new THREE.MeshStandardMaterial({color:0xcbd6d5}));roof.position.set(0,9,5);stand.add(roof);stand.position.copy(p);stand.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z);this.group.add(stand);}

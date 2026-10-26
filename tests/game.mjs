@@ -8,6 +8,7 @@ function moduleURL(name){
   if(cache.has(name))return cache.get(name);
   const source=fs.readFileSync(new URL(`../src/game/${name}.ts`,import.meta.url),'utf8');
   let js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+  js=js.replace(/from 'three\/addons\/([^']+)'/g,(_,path)=>`from '${new URL('../node_modules/three/examples/jsm/'+path,import.meta.url).href}'`);
   js=js.replace(/from 'three'/g,`from '${threeURL}'`).replace(/from '\.\/(\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
   const url=`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;cache.set(name,url);return url;
 }
@@ -278,7 +279,7 @@ const {RearViewMirror}=await import(moduleURL('RearViewMirror'));
 const renderState={target:null,viewport:new THREE.Vector4(0,0,1280,800),scissor:new THREE.Vector4(0,0,1280,800),scissorTest:false};
 const mirrorDraws=[];let failMirrorRender=false;
 const fakeRenderer={
-  autoClear:true,
+  autoClear:true,shadowMap:{autoUpdate:true},
   domElement:{getBoundingClientRect:()=>({left:0,top:0,bottom:800,width:1280,height:800})},
   getSize:out=>out.set(1280,800),
   getRenderTarget:()=>renderState.target,setRenderTarget:target=>{renderState.target=target;},
@@ -287,7 +288,7 @@ const fakeRenderer={
   getScissorTest:()=>renderState.scissorTest,setScissorTest:value=>{renderState.scissorTest=value;},
   clearDepth:()=>{},
   render:(scene,camera)=>{
-    mirrorDraws.push({scene,camera,playerVisible:v.group.visible,target:renderState.target});
+    mirrorDraws.push({scene,camera,playerVisible:v.group.visible,target:renderState.target,shadowUpdate:fakeRenderer.shadowMap.autoUpdate});
     if(failMirrorRender)throw new Error('simulated render failure');
   }
 };
@@ -305,6 +306,8 @@ for(const heading of [0,.8,Math.PI,-Math.PI/2]){
 }
 v.group.visible=true;mirror.render(v);
 assert.equal(mirrorDraws.length,2,'Mirror must render the live scene and then its reflected texture');
+assert.equal(mirrorDraws[0].shadowUpdate,false,'Mirror must reuse the main shadow map instead of rendering it twice');
+assert.equal(fakeRenderer.shadowMap.autoUpdate,true,'Main shadow updates must be restored');
 assert.equal(mirrorDraws[0].scene,scene);assert.equal(mirrorDraws[0].playerVisible,false);
 assert.equal(mirrorDraws[1].playerVisible,true);
 assert.ok(mirrorDraws[0].target.width<=640&&mirrorDraws[0].target.height<=180,'Mirror texture must bound the extra render cost');
@@ -316,6 +319,7 @@ assert.ok(v.group.visible&&fakeRenderer.autoClear,'Main rendering state must be 
 failMirrorRender=true;
 assert.throws(()=>mirror.render(v),/simulated render failure/);
 assert.ok(v.group.visible&&fakeRenderer.autoClear&&renderState.target===null&&!renderState.scissorTest,'Render failures must still restore the main camera state');
+assert.equal(fakeRenderer.shadowMap.autoUpdate,true,'Shadow settings must also survive a failed mirror render');
 console.log('PASS: live rear-view mirror orientation, reflection, resolution cap and rendering state restoration');
 
 

@@ -37,9 +37,10 @@ export class RearViewMirror {
     const previousViewport=this.renderer.getViewport(new THREE.Vector4());
     const previousScissor=this.renderer.getScissor(new THREE.Vector4());
     const previousScissorTest=this.renderer.getScissorTest(),previousAutoClear=this.renderer.autoClear;
-    const visible=vehicle.group.visible;
+    const visible=vehicle.group.visible,shadowUpdate=this.renderer.shadowMap?.autoUpdate;
     try{
       vehicle.group.visible=false;
+      if(this.renderer.shadowMap)this.renderer.shadowMap.autoUpdate=false;
       this.renderer.setScissorTest(false);this.renderer.setRenderTarget(this.target);
       this.renderer.autoClear=true;this.renderer.render(this.scene,this.camera);
       vehicle.group.visible=visible;
@@ -48,7 +49,7 @@ export class RearViewMirror {
       this.renderer.autoClear=false;this.renderer.clearDepth();
       this.renderer.render(this.overlay,this.overlayCamera);
     }finally{
-      vehicle.group.visible=visible;this.renderer.setRenderTarget(previousTarget);
+      vehicle.group.visible=visible;if(this.renderer.shadowMap&&shadowUpdate!==undefined)this.renderer.shadowMap.autoUpdate=shadowUpdate;this.renderer.setRenderTarget(previousTarget);
       this.renderer.setViewport(previousViewport);this.renderer.setScissor(previousScissor);
       this.renderer.setScissorTest(previousScissorTest);this.renderer.autoClear=previousAutoClear;
     }
