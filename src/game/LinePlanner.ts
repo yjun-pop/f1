@@ -20,21 +20,25 @@ export class LinePlanner {
     const normals=centers.map((_,i)=>track.normal(i/this.count));
     this.points=centers.map(p=>p.clone());
     const wrap=(i:number)=>(i+this.count)%this.count;
-    // Discrete bending energy with a small path length penalty. Adjacent segments
-    // are evaluated together, and every candidate stays within usable road width.
+    // Offset samples are not equally spaced along the final path. Optimize
+    // geometric curvature per metre instead of raw second differences, which
+    // also penalized harmless spacing changes and trapped tight corners near
+    // the centerline. A small length cost avoids unnecessary straight detours.
     const energy=(start:number,end:number)=>{
       let cost=0;
       for(let j=start;j<=end;j++){
         const a=this.points[wrap(j-1)],b=this.points[wrap(j)],c=this.points[wrap(j+1)];
-        const dx=a.x-2*b.x+c.x,dz=a.z-2*b.z+c.z;
-        cost+=dx*dx+dz*dz+.002*b.distanceToSquared(c);
+        const ab=a.distanceTo(b),bc=b.distanceTo(c),ca=c.distanceTo(a);
+        const cross=(b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x);
+        const curvature=2*cross/Math.max(.001,ab*bc*ca);
+        cost+=curvature*curvature*(ab+bc)*.5+.00001*bc;
       }
       return cost;
     };
     // Move smooth spans, coarse to fine: independent point moves would stall
     // on the high-frequency bending penalty and barely leave the centerline.
-    for(const radius of [40,20,10,5,2,1])for(let pass=0;pass<18;pass++){
-      const step=pass<10?.9:.3,stride=Math.max(1,Math.floor(radius/2));
+    for(const radius of [60,30,15,8,4,2,1])for(let pass=0;pass<30;pass++){
+      const step=pass<10?.9:pass<20?.3:.1,stride=Math.max(1,Math.floor(radius/2));
       for(let i=pass%stride;i<this.count;i+=stride){
         const indices=Array.from({length:radius*2+1},(_,k)=>wrap(i-radius+k));
         const original=indices.map(j=>this.offsets[j]);

@@ -15,7 +15,7 @@ globalThis.window={innerWidth:1280,innerHeight:720};
 globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
 const {Vehicle}=await import(moduleURL('Vehicle'));
 const {CockpitCamera}=await import(moduleURL('Camera'));
-const {Track}=await import(moduleURL('Track'));
+const {Track,ROAD_HALF_WIDTH}=await import(moduleURL('Track'));
 const {Race}=await import(moduleURL('Race'));
 const {LinePlanner}=await import(moduleURL('LinePlanner'));
 const {brakingDeceleration,integrateBody,HANDLING,steeringLock}=await import(moduleURL('Dynamics'));
@@ -52,9 +52,26 @@ console.log('PASS: screen-relative steering at 4 headings, camera, acceleration/
 
 assert.ok([...planner.offsets].every(o=>Math.abs(o)<=7.8001),'Line must leave car-width clearance from kerbs');
 assert.ok([...planner.offsets].some(o=>Math.abs(o)>1),'Line must use road width, not simply follow center');
-const energy=(points)=>points.reduce((sum,p,i)=>{const a=points[(i+points.length-1)%points.length],b=points[(i+1)%points.length];return sum+(a.x-2*p.x+b.x)**2+(a.z-2*p.z+b.z)**2;},0);
+// Compare curvature per metre: final offset samples have unequal spacing,
+// so raw second differences are not a geometric bending measure.
+const energy=(points)=>points.reduce((sum,p,i)=>{
+  const a=points[(i+points.length-1)%points.length],c=points[(i+1)%points.length];
+  const ab=a.distanceTo(p),bc=p.distanceTo(c),ca=c.distanceTo(a);
+  const cross=(p.x-a.x)*(c.z-a.z)-(p.z-a.z)*(c.x-a.x);
+  const curvature=2*cross/Math.max(.001,ab*bc*ca);
+  return sum+curvature*curvature*(ab+bc)*.5;
+},0);
 const center=Array.from({length:planner.count},(_,i)=>track.point(i/planner.count));
-assert.ok(energy(planner.points)<energy(center),'Optimized path must reduce bending energy');
+assert.ok(energy(planner.points)<energy(center),'Optimized path must reduce geometric curvature energy');
+for(let i=0;i<planner.count;i++){
+  const t=i/planner.count,p=planner.point(t),q=planner.point(t+1/planner.count);
+  assert.ok(q.clone().sub(p).dot(track.tangent(t))>0,'Line must always advance along the circuit');
+  for(const fraction of [.25,.5,.75]){
+    const progress=(i+fraction)/planner.count,point=planner.point(progress);
+    const nearest=track.nearestProgress(point,progress);
+    assert.ok(point.distanceTo(track.point(nearest))<ROAD_HALF_WIDTH-2,'Segments must preserve vehicle clearance between optimization samples');
+  }
+}
 for(let i=0;i<planner.count;i++){const j=(i+1)%planner.count;assert.ok(planner.speeds[i]**2<=planner.speeds[j]**2+2*brakingDeceleration(planner.speeds[i])*.88*planner.distances[i]+1e-5,'Braking envelope including seam');assert.ok(Number.isFinite(planner.speeds[i])&&planner.speeds[i]>0);}
 assert.ok(planner.point(0).distanceTo(planner.point(1))<1e-9,'Closed line seam');
 console.log('PASS: optimized line clearance, non-centerline geometry, reduced bending, braking distance and closed-loop continuity');
@@ -132,6 +149,8 @@ for(let step=0;step<120*180;step++){
   if(follower.distance>=1){finishedAt=(step+1)/120;break;}
 }
 assert.ok(finishedAt>0,'Following the recommended speed must complete a physical lap');
+// The previous spacing-dependent line needed 139.9s with this controller.
+assert.ok(finishedAt<130,'The wider, curvature-based line must preserve its physical lap-time improvement');
 assert.equal(offRoadSteps,0,'The recommended line and speed must keep the follower on asphalt');
 assert.ok(peakSlip<10*Math.PI/180,'Guidance must avoid sustained large tire slip');
 assert.ok(planner.speed(600/track.length)>85,'Corner safety margin must preserve straight-line speed');
