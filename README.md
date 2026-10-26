@@ -63,3 +63,14 @@ LinePlanner는 트랙의 320개 샘플에서 차량 폭 여유를 남기고, 다
 - 다음 코너 이름·거리, 150/100/50 m 제동 표지판, 자동 축척 미니맵을 지원합니다.
 - 권장 경로를 약 4 m 간격으로 계산하고, 진행도는 약 2 m 간격의 선분 투영으로 추적합니다.
 - 최고 랩 기록은 이전 가상 트랙과 분리해 저장합니다.
+
+
+## 브라우저에서 바로 플레이 (GitHub Pages)
+
+배포 주소: https://yjun-pop.github.io/f1/
+
+최초 1회 저장소 **Settings → Pages → Build and deployment → Source**에서
+**GitHub Actions**를 선택하세요. 이후 **Actions → Deploy game to GitHub Pages → Run workflow**를 실행합니다.
+배포가 성공한 뒤 위 주소에서 플레이할 수 있습니다. 이후 `main` 업데이트마다 테스트·빌드·배포가 자동으로 실행됩니다.
+
+Pages용 빌드는 `npm run build -- --base=/f1/`입니다. 로컬 개발은 기존 `npm run dev`를 그대로 사용합니다.
