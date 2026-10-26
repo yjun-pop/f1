@@ -104,7 +104,12 @@ console.log('PASS: physics-based advice, surface grip, braking, persistent side-
 // Run the actual AI controls against the same physical car model.
 race.reset();race.start();race.update(4.1,v);v.resetAt(0);v.position.set(1000,0,1000);
 let offroad=0;const laneStart=race.opponents.map(o=>o.lane);
-for(let step=0;step<120*140;step++){race.update(1/120,v);offroad+=race.opponents.filter(o=>o.car.offRoad).length;}
+// Keep representative player telemetry moving while the player mesh stays
+// outside the circuit, so this endurance check isolates the AI vehicles.
+for(let step=0;step<120*140;step++){
+  v.distance=step/120*45/track.length;v.progress=v.distance%1;
+  race.update(1/120,v);offroad+=race.opponents.filter(o=>o.car.offRoad).length;
+}
 const summary=race.opponents.map(o=>({name:o.name,distance:o.distance,speed:o.speed,offRoad:o.car.offRoad,lane:o.lane}));
 console.log('AI run:',JSON.stringify(summary),'offroad fraction',offroad/(120*140*5));
 assert.ok(race.opponents.every(o=>Number.isFinite(o.speed)&&o.distance*track.length>4000),'Each AI should make physical progress');
@@ -168,3 +173,44 @@ guide.planner.speed=()=>30;guide.planner.advice=()=>30;v.speed=30;guide.update(v
 guide.arrows.getColorAt(30,marker);assert.ok(marker.r>.5&&marker.g>.5&&marker.b<.1,'Constant-speed zone must be yellow');
 guide.planner.speed=savedSpeed;guide.planner.advice=savedAdvice;
 console.log('PASS: braking, holding and exit acceleration colors describe their own road positions');
+
+
+// Run the same rival on the same circuit with a player consistently ahead,
+// alongside in race distance, or behind. All changes still go through tires,
+// throttle and brakes; there is no artificial position or velocity correction.
+function adaptiveRun(gapMeters){
+  const adaptiveRace=new Race(track,new THREE.Scene(),planner);
+  adaptiveRace.opponents.splice(1);
+  const rival=adaptiveRace.opponents[0],player=new Vehicle(track,new THREE.Scene());
+  rival.car.resetAt(200/track.length);rival.distance=rival.car.distance;
+  adaptiveRace.start();adaptiveRace.update(4.1,player);
+  let offroad=0,maxJump=0,previousPace=1;
+  for(let step=0;step<120*140;step++){
+    player.distance=rival.car.distance+gapMeters/track.length;
+    player.progress=((player.distance%1)+1)%1;
+    player.position.copy(track.point(player.progress));player.speed=rival.car.speed;
+    adaptiveRace.update(1/120,player);
+    offroad+=rival.car.offRoad?1:0;
+    maxJump=Math.max(maxJump,Math.abs(rival.adaptivePace-previousPace));previousPace=rival.adaptivePace;
+  }
+  return {race:adaptiveRace,rival,meters:rival.car.distance*track.length-200,offroadFraction:offroad/(120*140),maxJump};
+}
+const helpPlayer=adaptiveRun(-600),normalPlayer=adaptiveRun(-40),chasePlayer=adaptiveRun(600);
+assert.ok(helpPlayer.meters<normalPlayer.meters*.85,'An AI far ahead must meaningfully ease off for a struggling player');
+assert.ok(chasePlayer.meters>normalPlayer.meters*1.03,'An AI far behind must physically gain pace to chase a strong player');
+for(const run of [helpPlayer,normalPlayer,chasePlayer]){
+  assert.ok(run.offroadFraction<.02,'Adapting pace must preserve circuit driving');
+  assert.ok(run.maxJump<.001,'Pace must change gradually at the physics tick rate');
+}
+assert.ok(Math.abs(normalPlayer.rival.adaptivePace-1)<.001,"Close racing must preserve each rival's normal pace");
+// A full lap lead must not be mistaken for a nearby car at the same track point.
+const lapLead=chasePlayer.rival;lapLead.adaptivePace=1;
+const telemetry=new Vehicle(track,new THREE.Scene());telemetry.distance=lapLead.car.distance+1;
+for(let step=0;step<120*20;step++)chasePlayer.race.adaptPace(lapLead,telemetry,1/120);
+assert.ok(lapLead.adaptivePace>1.1,'Lap gaps must use total race distance');
+telemetry.distance=lapLead.car.distance-1;
+for(let step=0;step<120*20;step++)chasePlayer.race.adaptPace(lapLead,telemetry,1/120);
+assert.ok(lapLead.adaptivePace<.6,'An AI a lap ahead must ease off instead of treating the player as nearby');
+chasePlayer.race.reset();assert.equal(lapLead.adaptivePace,1,'Restart must clear the previous race adaptation');
+console.log('PASS: adaptive rivals ease off, chase, preserve smooth physical driving and handle lap gaps',
+  JSON.stringify({helpMeters:Math.round(helpPlayer.meters),normalMeters:Math.round(normalPlayer.meters),chaseMeters:Math.round(chasePlayer.meters)}));
