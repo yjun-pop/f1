@@ -145,7 +145,7 @@ console.log('AI run:',JSON.stringify(summary),'offroad fraction',offroad/(120*14
 assert.ok(race.opponents.every(o=>Number.isFinite(o.speed)&&o.distance*track.length>4000),'Each AI should make physical progress');
 assert.ok(new Set(race.opponents.map(o=>o.speed.toFixed(1))).size>=4,'Rivals should develop different speeds');
 assert.ok(race.opponents.some((o,i)=>Math.abs(o.lane-laneStart[i])>1),'AI should change lane decisions');
-assert.ok(offroad/(120*140*5)<.18,'AI must generally remain on the circuit');
+assert.ok(offroad/(120*140*5)<.04,'AI must generally remain on the circuit');
 console.log('PASS: individual AI pace, dynamic lane decisions and physical circuit driving');
 // A normal high-speed turn should not produce a sustained drift on dry asphalt.
 for(const speed of [40,60]){
@@ -218,54 +218,78 @@ v.resetAt(90/track.length);v.speed=0;guide.update(v);assert.equal(guide.ribbon.v
 guide.planner.speed=savedSpeed;guide.planner.advice=savedAdvice;guide.planner.cornerLimit=savedLimit;guide.zones=savedZones;guide.engagedZone=-1;
 console.log('PASS: continuous braking/holding/acceleration gradients, end fade and cyclic corner windows');
 
-// Run the same rival on the same circuit with a player consistently ahead,
-// alongside in race distance, or behind. All changes still go through tires,
-// throttle and brakes; there is no artificial position or velocity correction.
-function adaptiveRun(gapMeters){
-  const adaptiveRace=new Race(track,new THREE.Scene(),planner);
-  // Use VECTOR for the adaptation comparison; the fastest rival now starts
-  // close to the tire limit and has less catch-up headroom. With stronger base
-  // pace, a measurable 1% gain is required without exceeding the grip cap.
-  adaptiveRace.opponents.splice(0,1);adaptiveRace.opponents.splice(1);
-  const rival=adaptiveRace.opponents[0],player=new Vehicle(track,new THREE.Scene());
-  rival.car.resetAt(200/track.length);rival.distance=rival.car.distance;
-  adaptiveRace.start();adaptiveRace.update(4.1,player);
-  let offroad=0,maxJump=0,previousPace=1;
-  for(let step=0;step<120*140;step++){
-    player.distance=rival.car.distance+gapMeters/track.length;
-    player.progress=((player.distance%1)+1)%1;
-    player.position.copy(track.point(player.progress));player.speed=rival.car.speed;
-    adaptiveRace.update(1/120,player);
-    offroad+=rival.car.offRoad?1:0;
-    maxJump=Math.max(maxJump,Math.abs(rival.adaptivePace-previousPace));previousPace=rival.adaptivePace;
-  }
-  return {race:adaptiveRace,rival,meters:rival.car.distance*track.length-200,offroadFraction:offroad/(120*140),maxJump};
+// Rank policy: tiny reductions ahead, stronger top-speed/power assistance
+// behind, total-distance ranking across seams, and no kinematic corrections.
+const rankRace=new Race(track,new THREE.Scene(),planner),rankPlayer=new Vehicle(track,new THREE.Scene());
+rankPlayer.distance=1.01;rankRace.elapsed=30;
+const standings=[1.05,1.02,.99,.95,.9];
+rankRace.opponents.forEach((o,i)=>{o.car.distance=standings[i];o.car.speed=70;});
+const rankPositions=rankRace.opponents.map(o=>o.car.position.clone());
+let capJump=0;
+for(let step=0;step<120*20;step++){
+  const before=rankRace.opponents.map(o=>o.speedCap);rankRace.balanceRivals(rankPlayer,1/120);
+  rankRace.opponents.forEach((o,i)=>{capJump=Math.max(capJump,Math.abs(o.speedCap-before[i]));});
 }
-const helpPlayer=adaptiveRun(-600),normalPlayer=adaptiveRun(-40),chasePlayer=adaptiveRun(600);
-assert.ok(helpPlayer.meters<normalPlayer.meters*.85,'An AI far ahead must meaningfully ease off for a struggling player');
-assert.ok(chasePlayer.meters>normalPlayer.meters*1.01,'An AI far behind must physically gain pace to chase a strong player');
-for(const run of [helpPlayer,normalPlayer,chasePlayer]){
-  assert.ok(run.offroadFraction<.02,'Adapting pace must preserve circuit driving');
-  assert.ok(run.maxJump<.001,'Pace must change gradually at the physics tick rate');
+assert.equal(rankRace.position,3);assert.deepEqual(rankRace.opponents.map(o=>o.rank),[1,2,4,5,6]);
+for(const [i,o] of rankRace.opponents.entries()){
+  if(o.rank<rankRace.position){assert.ok(o.speedCap>=94*.9799&&o.speedCap<94*.989,'Ahead rivals must only lose about 1.2-2% of top speed');assert.equal(o.powerAssist,1);}
+  else{assert.ok(o.speedCap>96&&o.speedCap<=110,'All rivals behind must receive a bounded higher speed cap');assert.ok(o.powerAssist>1&&o.powerAssist<=1.35);}
+  assert.ok(o.car.position.equals(rankPositions[i])&&o.car.speed===70,'Balancing must never move a car or assign its velocity');
 }
-assert.ok(Math.abs(normalPlayer.rival.adaptivePace-1)<.001,"Close racing must preserve each rival's normal pace");
-// A full lap lead must not be mistaken for a nearby car at the same track point.
-const lapLead=chasePlayer.rival;lapLead.adaptivePace=1;
-const telemetry=new Vehicle(track,new THREE.Scene());telemetry.distance=lapLead.car.distance+1;
-for(let step=0;step<120*20;step++)chasePlayer.race.adaptPace(lapLead,telemetry,1/120);
-assert.ok(lapLead.adaptivePace>1.1,'Lap gaps must use total race distance');
-telemetry.distance=lapLead.car.distance-1;
-for(let step=0;step<120*20;step++)chasePlayer.race.adaptPace(lapLead,telemetry,1/120);
-assert.ok(lapLead.adaptivePace<.8,'An AI a lap ahead must ease off instead of treating the player as nearby');
-chasePlayer.race.reset();assert.equal(lapLead.adaptivePace,1,'Restart must clear the previous race adaptation');
-console.log('PASS: adaptive rivals ease off, chase, preserve smooth physical driving and handle lap gaps',
-  JSON.stringify({helpMeters:Math.round(helpPlayer.meters),normalMeters:Math.round(normalPlayer.meters),chaseMeters:Math.round(chasePlayer.meters)}));
+assert.ok(capJump<.12,'Top-speed changes must ease in gradually');
+// A leader's 2nd and 3rd place challengers alternate attack priority.
+rankPlayer.distance=1.1;rankRace.elapsed=28;
+rankRace.opponents.forEach((o,i)=>{o.car.distance=1.1-(20+i*15)/track.length;});
+for(let step=0;step<120*15;step++)rankRace.balanceRivals(rankPlayer,1/120);
+assert.equal(rankRace.position,1);assert.ok(rankRace.opponents[0].attack>.95&&rankRace.opponents[1].attack<.5);
+assert.ok(rankRace.opponents[0].speedCap>rankRace.opponents[1].speedCap+2,'The designated challenger must receive a stronger near-leader attack');
+assert.ok(rankRace.opponents.slice(2).every(o=>o.attack<.01),'Only the two closest challengers receive the leader-duel priority');
+rankRace.elapsed=42;
+for(let step=0;step<120*15;step++)rankRace.balanceRivals(rankPlayer,1/120);
+assert.ok(rankRace.opponents[1].attack>.95&&rankRace.opponents[0].attack<.5,'Attack priority must rotate between 2nd and 3rd');
+assert.ok(rankRace.opponents[1].speedCap>rankRace.opponents[0].speedCap+2,'The boosted top-speed advantage must rotate too');
+const reversing=rankRace.opponents[0],oldCap=reversing.speedCap;
+rankPlayer.distance=reversing.car.distance-.1;rankRace.balanceRivals(rankPlayer,1/120);
+assert.ok(reversing.speedCap<oldCap&&reversing.speedCap>94,'After passing the player, a rival must ease off gradually rather than instantly');
+for(let step=0;step<120*20;step++)rankRace.balanceRivals(rankPlayer,1/120);
+assert.ok(reversing.speedCap<94&&reversing.powerAssist<1.0001,'Former challengers must shed their catch-up advantage after overtaking');
+reversing.car.boost=5;
+rankRace.reset();assert.ok(rankRace.opponents.every(o=>o.speedCap===94&&o.powerAssist===1&&o.attack===0&&o.car.raceSpeedCap===undefined&&o.car.boost===100),'Restart must clear rank assistance');
+console.log('PASS: rank-based speed caps, slight leader reduction, rotating 2nd/3rd attacks, lap seams and reset');
 
+// Compare real rolling acceleration on the same main straight.
+function rankedStraight(gapMeters){
+  const race=new Race(track,new THREE.Scene(),planner),player=new Vehicle(track,new THREE.Scene());race.opponents.splice(1);
+  const rival=race.opponents[0],progress=100/track.length;
+  const lane=planner.point(progress).sub(track.point(progress)).dot(track.normal(progress))+.6;
+  rival.car.resetAt(progress,lane);rival.car.speed=75;rival.distance=progress;
+  player.distance=progress+gapMeters/track.length;race.state='racing';race.elapsed=20;
+  for(let step=0;step<120*20;step++)race.balanceRivals(player,1/120);
+  let peak=0,offroad=0;
+  for(let step=0;step<120*6;step++){
+    player.distance=rival.car.distance+gapMeters/track.length;player.progress=(player.distance%1+1)%1;
+    player.position.copy(track.point(player.progress));player.speed=80;
+    race.update(1/120,player);peak=Math.max(peak,rival.car.speed);offroad+=rival.car.offRoad?1:0;
+  }
+  return {peak,meters:rival.car.distance*track.length-100,offroad};
+}
+const aheadRun=rankedStraight(-400),behindRun=rankedStraight(400);
+assert.ok(behindRun.peak>94&&behindRun.peak>aheadRun.peak+8,'A trailing rival must actually exceed the old speed ceiling and close quickly');
+assert.ok(behindRun.meters>aheadRun.meters+40,'Higher caps must translate into physical progress, not only configuration');
+assert.equal(behindRun.offroad+aheadRun.offroad,0);
+const coasting={...body(),speed:100,raceSpeedCap:92,raceCruiseCap:85,racePowerAssist:1};
+integrateBody(coasting,{steer:0,throttle:0,brake:0},1/120);
+assert.ok(coasting.speed>99.8&&coasting.speed<100,'A reduced cap must let an over-speed car decelerate physically rather than snap to the cap');
+console.log('PASS: physical rank-based straight-line catch-up and smooth speed-limit reductions',JSON.stringify({aheadKmh:(aheadRun.peak*3.6).toFixed(1),behindKmh:(behindRun.peak*3.6).toFixed(1)}));
 
 // Measure a full solo lap: speed multipliers alone must not hide a poor driver.
 const skilledRace=new Race(track,new THREE.Scene(),planner),benchmarkPlayer=new Vehicle(track,new THREE.Scene());
 skilledRace.opponents.splice(1);skilledRace.start();skilledRace.update(4.1,benchmarkPlayer);
-const skilledRival=skilledRace.opponents[0];const calibratedLaps=[];let skilledOffroad=0,lastCrossing=0;
+const skilledRival=skilledRace.opponents[0];
+// Keep base caps fixed for this driver regression; rank-dependent gameplay is
+// measured separately above and in the physical lead-exchange test below.
+skilledRace.balanceRivals=()=>{skilledRace.position=1;skilledRival.rank=2;};
+const calibratedLaps=[];let skilledOffroad=0,lastCrossing=0;
 for(let step=0;step<120*270;step++){
   benchmarkPlayer.distance=skilledRival.car.distance-40/track.length;
   benchmarkPlayer.progress=(benchmarkPlayer.distance%1+1)%1;
@@ -382,8 +406,8 @@ assert.ok(implicitStock.position.equals(explicitStock.position),'Player physics 
 assert.ok(assistedBody.speed-35>(implicitStock.speed-35)*1.2,'Rival power calibration must produce real extra acceleration');
 assert.ok(assistedBody.position.distanceTo(new THREE.Vector3())>implicitStock.position.distanceTo(new THREE.Vector3()));
 for(let step=0;step<120*30;step++)integrateBody(assistedBody,{steer:0,throttle:1,brake:0,boost:true},1/120);
-assert.ok(assistedBody.speed<=94,'Rivals must still respect the shared hard speed limit');
-console.log('PASS: bounded rival performance calibration, unchanged player physics and shared hard speed limit');
+assert.ok(assistedBody.speed<=94,'Base performance without rank assistance must retain the stock hard speed limit');
+console.log('PASS: bounded rival performance calibration, unchanged player physics and baseline hard speed limit');
 
 // A return to the racing line must check the swept corridor, not just its
 // destination, so it cannot cut across a car already alongside.
@@ -395,3 +419,35 @@ sidePlayer.resetAt(sideProgress,offset+2.5);sidePlayer.speed=30;
 sideRace.elapsed=10;sideRace.decide(sideRival,sidePlayer);
 assert.ok(Math.abs(sideRival.lane-6)<.001,'AI must hold its corridor when a merge would cross an alongside vehicle');
 console.log('PASS: AI checks the full merge corridor before returning to the racing line');
+
+
+// Physical top-three contest. A reference driver with the calibrated 86-second
+// baseline uses normal throttle/brake/steering controls and no rank assistance.
+// Its fixture performance matches the benchmark AI, not the stock player car.
+const duelRace=new Race(track,new THREE.Scene(),planner),duelPlayer=new Vehicle(track,new THREE.Scene(),0xaaaaaa,{grip:1.4,power:1.35});
+const duelGhost=new Vehicle(track,new THREE.Scene());duelGhost.position.set(1e6,0,1e6);
+duelRace.opponents.splice(2);
+const duelLane=t=>THREE.MathUtils.clamp(planner.point(t).sub(track.point(t)).dot(track.normal(t))+.6,-7.2,7.2);
+duelPlayer.resetAt(200/track.length,duelLane(200/track.length));duelPlayer.speed=75;
+duelRace.opponents.forEach((o,i)=>{
+  const t=(180-i*16)/track.length;o.car.resetAt(t,THREE.MathUtils.clamp(duelLane(t)+(i%2?3.5:0),-7.2,7.2));
+  o.car.speed=75;o.distance=t;o.lane=o.car.position.clone().sub(planner.point(t)).dot(track.normal(t));
+});
+const referenceDriver={...duelRace.opponents[0],car:duelPlayer,pace:1.46,speedCap:94,powerAssist:1,attack:0,lane:.6,control:{steer:0,throttle:1,brake:0}};
+duelRace.state='racing';duelRace.elapsed=20;
+let lastLeader='PLAYER',lastChange=0,duelOffroad=0;const leaderStints=[];
+for(let step=0;step<120*250;step++){
+  referenceDriver.rank=duelRace.position;
+  if(step%3===0)duelRace.decide(referenceDriver,duelGhost);
+  duelPlayer.drive(1/120,referenceDriver.control);duelRace.update(1/120,duelPlayer);
+  const order=[{name:'PLAYER',distance:duelPlayer.distance},...duelRace.opponents.map(o=>({name:o.name,distance:o.car.distance}))].sort((a,b)=>b.distance-a.distance);
+  if(order[0].name!==lastLeader){leaderStints.push({name:lastLeader,seconds:step/120-lastChange});lastLeader=order[0].name;lastChange=step/120;}
+  duelOffroad+=duelRace.opponents.filter(o=>o.car.offRoad).length;
+}
+leaderStints.push({name:lastLeader,seconds:250-lastChange});
+const sustained=leaderStints.filter(stint=>stint.seconds>=2);
+assert.ok(sustained.filter(stint=>stint.name==='PLAYER').length>=3,'The reference player must lose and regain the lead more than once');
+assert.ok(sustained.filter(stint=>stint.name!=='PLAYER').length>=2,'Challengers must take and sustain the lead, not only flicker past the player');
+assert.ok(duelOffroad/(120*250*2)<.025,'Lead battles must generally stay on the circuit');
+assert.equal(duelPlayer.raceSpeedCap,undefined,'The player must never receive AI rank-speed assistance');
+console.log('PASS: repeated physical lead exchanges and player retakes',sustained.map(stint=>`${stint.name} ${stint.seconds.toFixed(1)}s`));
