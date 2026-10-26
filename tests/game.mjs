@@ -330,7 +330,7 @@ console.log('PASS: continuous braking/holding/acceleration gradients, end fade a
 // Rank policy: tiny reductions ahead, stronger top-speed/power assistance
 // behind, total-distance ranking across seams, and no kinematic corrections.
 const rankRace=new Race(track,new THREE.Scene(),planner),rankPlayer=new Vehicle(track,new THREE.Scene());
-rankPlayer.distance=1.01;rankRace.elapsed=30;
+rankPlayer.distance=1.01;rankRace.elapsed=40;
 const standings=[1.05,1.02,.99,.95,.9];
 rankRace.opponents.forEach((o,i)=>{o.car.distance=standings[i];o.car.speed=70;});
 const rankPositions=rankRace.opponents.map(o=>o.car.position.clone());
@@ -342,21 +342,21 @@ for(let step=0;step<120*20;step++){
 assert.equal(rankRace.position,3);assert.deepEqual(rankRace.opponents.map(o=>o.rank),[1,2,4,5,6]);
 for(const [i,o] of rankRace.opponents.entries()){
   if(o.rank<rankRace.position){assert.ok(o.speedCap>=94*.9799&&o.speedCap<94*.989,'Ahead rivals must only lose about 1.2-2% of top speed');assert.equal(o.powerAssist,1);}
-  else{assert.ok(o.speedCap>96&&o.speedCap<=110,'All rivals behind must receive a bounded higher speed cap');assert.ok(o.powerAssist>1&&o.powerAssist<=1.35);}
+  else{assert.ok(o.speedCap>94&&o.speedCap<=104,'All rivals behind must receive a bounded higher speed cap');assert.ok(o.powerAssist>1&&o.powerAssist<=1.15);}
   assert.ok(o.car.position.equals(rankPositions[i])&&o.car.speed===70,'Balancing must never move a car or assign its velocity');
 }
 assert.ok(capJump<.12,'Top-speed changes must ease in gradually');
 // A leader's 2nd and 3rd place challengers alternate attack priority.
-rankPlayer.distance=1.1;rankRace.elapsed=28;
+rankPlayer.distance=1.1;rankRace.elapsed=56;
 rankRace.opponents.forEach((o,i)=>{o.car.distance=1.1-(20+i*15)/track.length;});
 for(let step=0;step<120*15;step++)rankRace.balanceRivals(rankPlayer,1/120);
 assert.equal(rankRace.position,1);assert.ok(rankRace.opponents[0].attack>.95&&rankRace.opponents[1].attack<.5);
-assert.ok(rankRace.opponents[0].speedCap>rankRace.opponents[1].speedCap+2,'The designated challenger must receive a stronger near-leader attack');
+assert.ok(rankRace.opponents[0].speedCap>rankRace.opponents[1].speedCap+.6,'The designated challenger must receive a stronger near-leader attack');
 assert.ok(rankRace.opponents.slice(2).every(o=>o.attack<.01),'Only the two closest challengers receive the leader-duel priority');
-rankRace.elapsed=42;
+rankRace.elapsed=70;
 for(let step=0;step<120*15;step++)rankRace.balanceRivals(rankPlayer,1/120);
 assert.ok(rankRace.opponents[1].attack>.95&&rankRace.opponents[0].attack<.5,'Attack priority must rotate between 2nd and 3rd');
-assert.ok(rankRace.opponents[1].speedCap>rankRace.opponents[0].speedCap+2,'The boosted top-speed advantage must rotate too');
+assert.ok(rankRace.opponents[1].speedCap>rankRace.opponents[0].speedCap+.6,'The boosted top-speed advantage must rotate too');
 const reversing=rankRace.opponents[0],oldCap=reversing.speedCap;
 rankPlayer.distance=reversing.car.distance-.1;rankRace.balanceRivals(rankPlayer,1/120);
 assert.ok(reversing.speedCap<oldCap&&reversing.speedCap>94,'After passing the player, a rival must ease off gradually rather than instantly');
@@ -383,8 +383,8 @@ function rankedStraight(gapMeters){
   return {peak,meters:rival.car.distance*track.length-100,offroad};
 }
 const aheadRun=rankedStraight(-400),behindRun=rankedStraight(400);
-assert.ok(behindRun.peak>94&&behindRun.peak>aheadRun.peak+8,'A trailing rival must actually exceed the old speed ceiling and close quickly');
-assert.ok(behindRun.meters>aheadRun.meters+40,'Higher caps must translate into physical progress, not only configuration');
+assert.ok(behindRun.peak>aheadRun.peak+1&&behindRun.peak-aheadRun.peak<10,'Catch-up must be physical but bounded to avoid a visibly excessive speed advantage');
+assert.ok(behindRun.meters>aheadRun.meters+5,'Higher caps must translate into physical progress, not only configuration');
 assert.equal(behindRun.offroad+aheadRun.offroad,0);
 const coasting={...body(),speed:100,raceSpeedCap:92,raceCruiseCap:85,racePowerAssist:1};
 integrateBody(coasting,{steer:0,throttle:0,brake:0},1/120);
@@ -580,17 +580,18 @@ console.log('PASS: AI checks the full merge corridor before returning to the rac
 // Physical top-three contest. A reference driver with the calibrated 86-second
 // baseline uses normal throttle/brake/steering controls and no rank assistance.
 // Its fixture performance matches the benchmark AI, not the stock player car.
-// Pace 1.44 gives an approximately 86.4s reference on the apex-constrained line.
+// A slightly slower reference pace (1.40) allows a close contest without
+// requiring the previous large catch-up boost or scripted repeated exchanges.
 const duelRace=new Race(track,new THREE.Scene(),planner),duelPlayer=new Vehicle(track,new THREE.Scene(),0xaaaaaa,{grip:1.4,power:1.35});
 const duelGhost=new Vehicle(track,new THREE.Scene());duelGhost.position.set(1e6,0,1e6);
 duelRace.opponents.splice(2);
 const duelLane=t=>THREE.MathUtils.clamp(planner.point(t).sub(track.point(t)).dot(track.normal(t))+.6,-7.2,7.2);
 duelPlayer.resetAt(200/track.length,duelLane(200/track.length));duelPlayer.speed=75;
 duelRace.opponents.forEach((o,i)=>{
-  const t=(180-i*16)/track.length;o.car.resetAt(t,THREE.MathUtils.clamp(duelLane(t)+(i%2?3.5:0),-7.2,7.2));
+  const t=(188-i*12)/track.length;o.car.resetAt(t,THREE.MathUtils.clamp(duelLane(t)+(i%2?3.5:0),-7.2,7.2));
   o.car.speed=75;o.distance=t;o.lane=o.car.position.clone().sub(planner.point(t)).dot(track.normal(t));
 });
-const referenceDriver={...duelRace.opponents[0],car:duelPlayer,pace:1.44,speedCap:94,powerAssist:1,attack:0,lane:.6,control:{steer:0,throttle:1,brake:0}};
+const referenceDriver={...duelRace.opponents[0],car:duelPlayer,pace:1.40,speedCap:94,powerAssist:1,attack:0,lane:.6,control:{steer:0,throttle:1,brake:0}};
 duelRace.state='racing';duelRace.elapsed=20;
 let lastLeader='PLAYER',lastChange=0,duelOffroad=0;const leaderStints=[];
 for(let step=0;step<120*250;step++){
@@ -606,8 +607,80 @@ const sustained=leaderStints.filter(stint=>stint.seconds>=2).reduce((result,stin
   const previous=result.at(-1);if(previous?.name===stint.name)previous.seconds+=stint.seconds;else result.push({...stint});
   return result;
 },[]);
-assert.ok(sustained.filter(stint=>stint.name==='PLAYER').length>=3,'The reference player must lose and regain the lead more than once');
-assert.ok(sustained.filter(stint=>stint.name!=='PLAYER').length>=2,'Challengers must take and sustain the lead, not only flicker past the player');
+assert.ok(sustained.filter(stint=>stint.name==='PLAYER').length>=2,'The reference player must be able to retake the lead');
+assert.ok(sustained.filter(stint=>stint.name!=='PLAYER').length>=1,'Challengers must take and sustain the lead, not only flicker past the player');
 assert.ok(duelOffroad/(120*250*2)<.025,'Lead battles must generally stay on the circuit');
 assert.equal(duelPlayer.raceSpeedCap,undefined,'The player must never receive AI rank-speed assistance');
-console.log('PASS: repeated physical lead exchanges and player retakes',sustained.map(stint=>`${stint.name} ${stint.seconds.toFixed(1)}s`));
+console.log('PASS: physical AI overtake and player retake with bounded catch-up',sustained.map(stint=>`${stint.name} ${stint.seconds.toFixed(1)}s`));
+
+// Launch: all drivers use stock power during the first five seconds. Compare
+// real acceleration with full throttle on the straight, not just multipliers.
+const launchRace=new Race(track,new THREE.Scene(),planner),launchPlayer=new Vehicle(track,new THREE.Scene());
+launchRace.state='racing';
+for(let step=0;step<120*5;step++){
+  launchRace.elapsed=step/120;launchRace.balanceRivals(launchPlayer,1/120);
+  launchPlayer.drive(1/120,{throttle:1,brake:0,steer:0});
+  for(const o of launchRace.opponents)o.car.drive(1/120,{throttle:1,brake:0,steer:0});
+}
+assert.ok(launchRace.opponents.every(o=>Math.abs(o.car.speed-launchPlayer.speed)<1),'Opening acceleration must stay within 1 m/s of the stock player');
+assert.equal(new Set(launchRace.opponents.map(o=>o.personality)).size,5,'Each rival must have its own personality');
+assert.ok(launchRace.opponents.every(o=>o.speedCap<=94.01),'Rank assistance must not affect the opening launch');
+console.log('PASS: five individual personalities and comparable five-second standing starts');
+
+const contactRace=new Race(track,new THREE.Scene(),planner),contactPlayer=new Vehicle(track,new THREE.Scene());
+const driver=contactRace.opponents[0];contactRace.elapsed=20;
+contactRace.scoreContact(driver.car,contactPlayer,'0:1',4);
+const score=driver.collisionScore;
+assert.ok(score<0&&driver.collisionCount===1&&driver.avoidance>0);
+contactRace.elapsed+=.1;contactRace.scoreContact(driver.car,contactPlayer,'0:1',4);
+assert.equal(driver.collisionScore,score,'Sustained contact must not produce a new penalty every physics frame');
+contactRace.elapsed+=1;contactRace.scoreContact(driver.car,contactPlayer,'0:1',4);
+assert.ok(driver.collisionScore<score&&driver.collisionCount===2,'A later separate incident must count again');
+// The penalty changes an actual decision: a previously safe following gap now
+// causes more conservative braking. Block both overtaking corridors.
+contactRace.opponents.splice(1);place(driver.car,400,0,40);driver.lane=0;
+place(contactPlayer,413,0,36);
+for(const bias of [-3.5,3.5]){const car=new Vehicle(track,new THREE.Scene());place(car,408,bias,36);contactRace.opponents.push({...driver,car});}
+driver.avoidance=0;contactRace.decide(driver,contactPlayer);const ordinaryThrottle=driver.control.throttle,ordinaryBrake=driver.control.brake;
+driver.avoidance=1.5;contactRace.decide(driver,contactPlayer);
+assert.ok(driver.control.brake>ordinaryBrake||driver.control.throttle<ordinaryThrottle,'Negative contact feedback must increase following margin in real control decisions');
+contactRace.reset();assert.ok(contactRace.opponents.every(o=>o.collisionScore===0&&o.collisionCount===0&&o.avoidance===0&&o.car.raceLaunchScale===undefined));
+console.log('PASS: contact penalty, incident debounce, changed driving decisions and restart');
+
+
+// Exercise the actual collision-resolution path for both player/AI and AI/AI.
+const physicalContactRace=new Race(track,new THREE.Scene(),planner),physicalContactPlayer=new Vehicle(track,new THREE.Scene());
+physicalContactRace.opponents.splice(2);physicalContactRace.state='racing';physicalContactRace.elapsed=40;
+const [contactA,contactB]=physicalContactRace.opponents;
+place(physicalContactPlayer,400,0,0);place(contactA.car,400,0,0);place(contactB.car,600,0,0);
+physicalContactRace.update(1/120,physicalContactPlayer);
+assert.equal(contactA.collisionCount,1);assert.equal(contactB.collisionCount,0);
+place(physicalContactPlayer,100,0,0);place(contactA.car,700,0,0);place(contactB.car,700,0,0);
+physicalContactRace.update(1/120,physicalContactPlayer);
+assert.equal(contactA.collisionCount,2);assert.equal(contactB.collisionCount,1);
+assert.ok(contactA.collisionScore<0&&contactB.collisionScore<0);
+console.log('PASS: physical player/AI and AI/AI collisions apply separate agent penalties');
+
+const {soundTelemetry,DrivingAudio}=await import(moduleURL('DrivingAudio'));
+const telemetry={speed:0,throttle:0,brake:0,lateralSpeed:0,gripUsage:0,offRoad:false};
+assert.equal(soundTelemetry({...telemetry,brake:1}).brake,0,'Stationary braking must be silent');
+assert.equal(soundTelemetry(telemetry).tire,0);
+assert.ok(soundTelemetry({...telemetry,speed:30,throttle:1}).rpm>soundTelemetry({...telemetry,speed:30}).rpm);
+assert.ok(soundTelemetry({...telemetry,speed:30,brake:1}).brake>0);
+assert.ok(soundTelemetry({...telemetry,speed:30,lateralSpeed:4,gripUsage:1}).tire>soundTelemetry({...telemetry,speed:30}).tire);
+assert.ok(soundTelemetry({...telemetry,speed:30,offRoad:true}).road>soundTelemetry({...telemetry,speed:30}).road);
+// A fake Web Audio graph verifies actual routing, silence and gesture reuse.
+const audioNodes=[];let resumes=0;
+class AudioParam {value=0;setTargetAtTime(value){this.value=value;}}
+class AudioNode {gain=new AudioParam();frequency=new AudioParam();pan=new AudioParam();Q=new AudioParam();connections=[];connect(node){this.connections.push(node);}start(){this.started=true;}}
+globalThis.AudioContext=class {currentTime=0;sampleRate=48000;destination={};createGain(){const n=new AudioNode();audioNodes.push(n);return n;}createDynamicsCompressor(){return new AudioNode();}createOscillator(){return new AudioNode();}createStereoPanner(){return new AudioNode();}createBiquadFilter(){return new AudioNode();}createBuffer(){return {getChannelData:()=>new Float32Array(96000)};}createBufferSource(){return new AudioNode();}close(){return Promise.resolve();}resume(){resumes++;return Promise.resolve();}};
+const audio=new DrivingAudio();audio.unlock([v,a]);const nodeCount=audioNodes.length;audio.unlock([v,a]);assert.equal(audioNodes.length,nodeCount,'Repeated gestures must reuse voices');
+audio.update(v,true);assert.ok(audioNodes[0].gain.value>0);audio.toggleMute();assert.equal(audioNodes[0].gain.value,0);audio.toggleMute();
+audio.setVolume(.3);assert.equal(audioNodes[0].gain.value,.3);audio.silence();assert.equal(audioNodes[0].gain.value,0);audio.update(v,true);assert.equal(audioNodes[0].gain.value,.3);audio.update(v,false);assert.equal(audioNodes[0].gain.value,0);
+assert.ok(resumes===2);
+const goodAudioContext=globalThis.AudioContext;
+globalThis.AudioContext=class extends goodAudioContext {createStereoPanner(){throw new Error('Unsupported stereo audio');}};
+const unavailableAudio=new DrivingAudio();assert.doesNotThrow(()=>{unavailableAudio.unlock([v]);unavailableAudio.update(v,true);unavailableAudio.silence();});
+assert.equal(unavailableAudio.context,undefined,'Partial failed graphs must be discarded');
+delete globalThis.AudioContext;
+console.log('PASS: engine/load, moving brake, tire slip, surface sound, graph reuse, mute, volume and pause/resume silence');

@@ -5,6 +5,7 @@ import {LinePlanner} from './LinePlanner';
 import {Controls,HANDLING,steeringLock,brakingDeceleration,cornerSpeed} from './Dynamics';
 export interface Rival {
   car:Vehicle;distance:number;speed:number;name:string;
+  personality:string;caution:number;launch:number;collisionScore:number;collisionCount:number;avoidance:number;
   passLane?:number;passUntil:number;defendUntil:number;defendCooldown:number;defendLane:number;
   rank:number;speedCap:number;powerAssist:number;attack:number;pace:number;aggression:number;reaction:number;lineBias:number;phase:number;lane:number;decision:number;stuck:number;control:Controls;
 }
@@ -12,6 +13,7 @@ export class Race {
   state:'ready'|'countdown'|'racing'|'finished'='ready';
   countdown=4;elapsed=0;lapTime=0;best=0;lastLap=0;position=6;
   private aiSpeeds:Float64Array;
+  private contacts=new Map<string,number>();
   private lapStart=0;private completed=0;private storageKey:string;
   readonly opponents:Rival[]=[];
   constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner){
@@ -30,17 +32,17 @@ export class Race {
     }
     this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
     const profiles=[
-      {name:'NOVA',color:0x31bca6,pace:1.46,aggression:.92,reaction:.025,lineBias:-.35},
-      {name:'VECTOR',color:0x2564d3,pace:1.38,aggression:.45,reaction:.03,lineBias:.55},
-      {name:'SOLAR',color:0xeab442,pace:1.42,aggression:.72,reaction:.027,lineBias:-.7},
-      {name:'POLAR',color:0xc6cdd1,pace:1.36,aggression:.25,reaction:.035,lineBias:.3},
-      {name:'ORBIT',color:0x9768d1,pace:1.45,aggression:.83,reaction:.025,lineBias:.8}
+      {name:'NOVA',personality:'공격형',caution:0.25,launch:0.99,color:0x31bca6,pace:1.46,aggression:.92,reaction:.025,lineBias:-.35},
+      {name:'VECTOR',personality:'전략형',caution:0.65,launch:1.01,color:0x2564d3,pace:1.38,aggression:.45,reaction:.03,lineBias:.55},
+      {name:'SOLAR',personality:'균형형',caution:0.5,launch:1,color:0xeab442,pace:1.42,aggression:.72,reaction:.027,lineBias:-.7},
+      {name:'POLAR',personality:'신중형',caution:0.9,launch:0.98,color:0xc6cdd1,pace:1.36,aggression:.25,reaction:.035,lineBias:.3},
+      {name:'ORBIT',personality:'추월형',caution:0.35,launch:1.02,color:0x9768d1,pace:1.45,aggression:.83,reaction:.025,lineBias:.8}
     ];
-    profiles.forEach((p,i)=>this.opponents.push({...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1.35}),distance:0,speed:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}}));this.reset();
+    profiles.forEach((p,i)=>this.opponents.push({...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1.35}),distance:0,speed:0,collisionScore:0,collisionCount:0,avoidance:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}}));this.reset();
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
-  reset(){this.state='ready';this.countdown=4;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=6;
-    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
+  reset(){this.contacts.clear();this.state='ready';this.countdown=4;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=6;
+    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready')this.state='countdown';}
   private racingSpeed(progress:number){
     const f=((progress%1+1)%1)*this.aiSpeeds.length,i=Math.floor(f);
@@ -54,7 +56,7 @@ export class Race {
     order.forEach((entry,i)=>{if(entry.rival)entry.rival.rank=i+1;});
     const contenders=this.position<=3?this.opponents.filter(o=>o.rank<=3&&o.rank>this.position).sort((a,b)=>a.rank-b.rank):[];
     const attacker=contenders[Math.floor(this.elapsed/14)%Math.max(1,contenders.length)];
-    const warmup=THREE.MathUtils.smoothstep(this.elapsed,2,8);
+    const warmup=THREE.MathUtils.smoothstep(this.elapsed,12,35);
     for(const o of this.opponents){
       const gap=(o.car.distance-player.distance)*this.track.length;
       const behind=o.rank>this.position,strength=THREE.MathUtils.smoothstep(Math.max(0,Math.abs(gap)-12),0,350);
@@ -63,10 +65,12 @@ export class Race {
       // Ahead: only 1.2-2% off top speed, with no large corner-pace penalty.
       // Behind: more straight-line speed/power; 2nd/3rd take turns attacking
       // a leading player. Neither position nor velocity is directly changed.
-      const targetCap=behind?94+warmup*(2+12*strength+8*o.attack):94*(1-warmup*(.012+.008*strength));
-      const targetPower=behind?1+warmup*(.04+.24*strength+.16*o.attack):1;
-      o.speedCap=THREE.MathUtils.damp(o.speedCap,THREE.MathUtils.clamp(targetCap,92,110),.7,dt);
-      o.powerAssist=THREE.MathUtils.damp(o.powerAssist,Math.min(1.35,targetPower),.5,dt);
+      const targetCap=behind?94+warmup*(1+4*strength+5*o.attack):94*(1-warmup*(.012+.008*strength));
+      const targetPower=behind?1+warmup*(.01+.08*strength+.06*o.attack):1;
+      o.speedCap=THREE.MathUtils.damp(o.speedCap,THREE.MathUtils.clamp(targetCap,92,104),.7,dt);
+      o.powerAssist=THREE.MathUtils.damp(o.powerAssist,Math.min(1.15,targetPower),.5,dt);
+      // Equal launch machinery, then gradually restore the established race pace.
+      o.car.raceLaunchScale=THREE.MathUtils.lerp(o.launch/o.car.powerScale,1,THREE.MathUtils.smoothstep(this.elapsed,5,22));
       o.car.raceSpeedCap=o.speedCap;o.car.raceCruiseCap=o.speedCap*87/94;o.car.racePowerAssist=o.powerAssist;
     }
   }
@@ -78,6 +82,8 @@ export class Race {
     const offsetAt=(progress:number)=>this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));
     const gapTo=(other:Vehicle)=>{let gap=other.progress-car.progress;if(gap<-.5)gap+=1;if(gap>.5)gap-=1;return gap*this.track.length;};
     const currentBias=biasAt(car);
+    // Each independent driver remembers contact and spends more margin afterward.
+    const caution=o.caution+o.avoidance,clearance=2.8+caution*.3;
     let desiredLane=this.elapsed<2?currentBias:o.lineBias;
     // AI uses the precomputed braking envelope with its own short reaction
     // distance, rather than the extra early-braking margin intended for a human.
@@ -103,9 +109,9 @@ export class Race {
         const low=Math.max(...offsets.map(offset=>-7.4-offset));
         const high=Math.min(...offsets.map(offset=>7.4-offset));
         const lanes=[otherBias-3.5,otherBias+3.5].filter(lane=>lane>=low&&lane<=high&&traffic.every(other=>{
-          if(other===ahead||Math.abs(biasAt(other)-lane)>2.8)return true;
-          const gap=gapTo(other),clearance=gap<0?14+Math.max(0,other.speed-car.speed)*.5:18;
-          return Math.abs(gap)>clearance;
+          if(other===ahead||Math.abs(biasAt(other)-lane)>clearance)return true;
+          const gap=gapTo(other),longitudinalClearance=gap<0?14+Math.max(0,other.speed-car.speed)*.5:18;
+          return Math.abs(gap)>longitudinalClearance;
         }));
         // Keep the selected side through small lateral movements of the
         // target instead of repeatedly swapping left/right passing lanes.
@@ -114,9 +120,9 @@ export class Race {
         if(lanes.length){desiredLane=lanes[0];passing=true;o.passLane=desiredLane;o.passUntil=this.elapsed+1.5;}
       }
       const closing=Math.max(0,car.speed-ahead.speed);
-      const brakingGap=7+car.speed*.12+closing*.35+closing*closing/(2*brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.8);
+      const brakingGap=7+caution*3+car.speed*(.12+caution*.05)+closing*.35+closing*closing/(2*brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.8);
       if(nearest<Math.max(9+car.speed*.2,brakingGap)&&Math.abs(currentBias-otherBias)<2.6){
-        target=Math.min(target,Math.max(5,ahead.speed+(nearest-7-car.speed*.12)*.9));
+        target=Math.min(target,Math.max(5,ahead.speed+(nearest-7-caution*3-car.speed*(.12+caution*.05))*.9));
       }
     }
     // Defend once before a corner while the attacker is still well behind.
@@ -127,7 +133,7 @@ export class Race {
     const alongside=traffic.some(other=>Math.abs(gapTo(other))<14);
     if(!passing&&!ahead&&straight&&!alongside){
       if(this.elapsed<o.defendUntil)desiredLane=o.defendLane;
-      else if(o.aggression>.5&&this.elapsed>o.defendCooldown&&apexDistance>200&&apexDistance<260&&traffic.some(other=>{
+      else if(o.aggression-o.avoidance*.35>.5&&this.elapsed>o.defendCooldown&&apexDistance>200&&apexDistance<260&&traffic.some(other=>{
         const gap=-gapTo(other),closing=other.speed-car.speed;
         return gap>22&&gap<45&&closing>1&&gap/closing>3;
       })){
@@ -142,7 +148,7 @@ export class Race {
       const rearClearance=8+Math.max(0,other.speed-car.speed-5)*.5;
       if(gap<0&&-gap>=rearClearance||gap>=8&&(passing||gap>35))return false;
       const lane=biasAt(other);
-      return lane>Math.min(currentBias,desiredLane)-2.8&&lane<Math.max(currentBias,desiredLane)+2.8;
+      return lane>Math.min(currentBias,desiredLane)-clearance&&lane<Math.max(currentBias,desiredLane)+clearance;
     }))desiredLane=currentBias;
     const baseOffset=this.planner.point(t).sub(this.track.point(t)).dot(this.track.normal(t));
     desiredLane=THREE.MathUtils.clamp(desiredLane,-7.2-baseOffset,7.2-baseOffset);
@@ -181,8 +187,19 @@ export class Race {
     const demand=acceleration+drag;
     const boost=wantsBoost&&demand>0;
     const pursuit=1+(o.powerAssist-1)*THREE.MathUtils.smoothstep(car.speed,45,75);
-    const engine=(boost?23:17)*car.powerScale*pursuit*(1-car.speed/140);
+    const engine=(boost?23:17)*car.powerScale*(car.raceLaunchScale??1)*pursuit*(1-car.speed/140);
     o.control={steer,throttle:THREE.MathUtils.clamp(demand/Math.max(1,engine),0,1),brake:THREE.MathUtils.clamp(-demand/brakingDeceleration(car.speed,car.offRoad,car.gripScale),0,1),boost};
+  }
+  private scoreContact(a:Vehicle,b:Vehicle,key:string,impact:number){
+    const previous=this.contacts.get(key);this.contacts.set(key,this.elapsed);
+    if(previous!==undefined&&this.elapsed-previous<.6)return;
+    const penalty=5+Math.min(20,impact*2);
+    for(const o of this.opponents){
+      if(o.car!==a&&o.car!==b)continue;
+      o.collisionScore-=penalty;o.collisionCount++;
+      o.avoidance=Math.min(1.5,o.avoidance+.35+impact*.025);
+      o.defendUntil=0;o.passUntil=0;o.passLane=undefined;o.decision=0;
+    }
   }
   update(dt:number,player:Vehicle){
     if(this.state==='countdown'){this.countdown-=dt;if(this.countdown<=0)this.state='racing';return;}
@@ -193,6 +210,7 @@ export class Race {
       this.completed=done;this.lapStart=this.elapsed;this.lapTime=0;if(done>=3){this.state='finished';return;}}
     this.balanceRivals(player,dt);
     this.opponents.forEach(o=>{
+      o.avoidance=Math.max(0,o.avoidance-dt*.012);
       o.decision-=dt;
       if(o.decision<=0){this.decide(o,player);o.decision=o.reaction;}
       o.car.drive(dt,o.control);
@@ -200,7 +218,12 @@ export class Race {
       if(o.stuck>2.5){o.car.recover();o.stuck=0;o.decision=0;}
       o.distance=o.car.distance;o.speed=o.car.speed;
     });
-    const cars=[player,...this.opponents.map(o=>o.car)];for(let a=0;a<cars.length;a++)for(let b=a+1;b<cars.length;b++)resolveCollision(cars[a],cars[b]);
+    const cars=[player,...this.opponents.map(o=>o.car)];
+    for(let a=0;a<cars.length;a++)for(let b=a+1;b<cars.length;b++){
+      const impact=cars[a].velocity.sub(cars[b].velocity).length();
+      if(resolveCollision(cars[a],cars[b]))this.scoreContact(cars[a],cars[b],`${a}:${b}`,impact);
+    }
+    for(const [key,time] of this.contacts)if(this.elapsed-time>.6)this.contacts.delete(key);
     this.position=1+this.opponents.filter(o=>o.distance>player.distance).length;
   }
 }

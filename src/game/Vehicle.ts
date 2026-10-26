@@ -4,7 +4,7 @@ import {Track} from './Track';
 import {Controls,integrateBody} from './Dynamics';
 import {createCar,CarVisual} from './CarModel';
 export class Vehicle {
-  raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;
+  raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;
   readonly gripScale:number;readonly powerScale:number;
   readonly position=new THREE.Vector3();readonly group:THREE.Group;
   private model:CarVisual;

@@ -8,7 +8,7 @@ export function steeringLock(speed:number,gripScale=1){const v=Math.abs(speed);
   // Keyboard input must not apply low-speed full lock at racing speeds.
   return Math.min(.43/(1+v*.025),Math.atan(HANDLING.wheelbase*lateralGrip(v)*gripScale*1.06/Math.max(36,v*v)));}
 export interface Controls {throttle:number;brake:number;steer:number;boost?:boolean;keyboard?:boolean}
-export interface DynamicBody {steerAngle?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;gripScale?:number;powerScale?:number;position:THREE.Vector3;speed:number;lateralSpeed:number;yawRate:number;heading:number;steer:number;offRoad:boolean;acceleration:number;lateralAcceleration:number;gripUsage:number}
+export interface DynamicBody {steerAngle?:number;raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;gripScale?:number;powerScale?:number;position:THREE.Vector3;speed:number;lateralSpeed:number;yawRate:number;heading:number;steer:number;offRoad:boolean;acceleration:number;lateralAcceleration:number;gripUsage:number}
 export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
   if(dt<=0)return;
   const speed=Math.max(0,body.speed),gripScale=body.gripScale??1,powerScale=body.powerScale??1;
@@ -24,7 +24,7 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
   const speedCap=governed?THREE.MathUtils.clamp(controls.boost?body.raceSpeedCap!:body.raceCruiseCap??87,72,110):(controls.boost?94:87);
   const pursuit=1+(THREE.MathUtils.clamp(body.racePowerAssist??1,1,1.35)-1)*THREE.MathUtils.smoothstep(speed,45,75);
   const throttle=THREE.MathUtils.clamp(controls.throttle,0,1)*(governed&&speed>=speedCap?0:1),brake=THREE.MathUtils.clamp(controls.brake,0,1);
-  const engine=(controls.boost?23:17)*powerScale*pursuit*(1-speed/140);
+  const engine=(controls.boost?23:17)*powerScale*(body.raceLaunchScale??1)*pursuit*(1-speed/140);
   const drag=.00105*speed*speed+(body.offRoad?4.2:.35);
   const steeringLimit=controls.keyboard?Math.min(steeringLock(speed,gripScale),Math.atan(HANDLING.wheelbase*grip*THREE.MathUtils.lerp(.84,.88,THREE.MathUtils.smoothstep(speed,10,45))/Math.max(36,speed*speed))):steeringLock(speed,gripScale);
   const slipAngle=Math.atan2(body.lateralSpeed,Math.max(6,speed));

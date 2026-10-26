@@ -23,3 +23,5 @@
 .mapbox,.cockpit-view .mapbox{left:auto;right:30px;top:135px;bottom:auto;transform:none;transform-origin:top right;background:#0b1421cf;border:1px solid #ffffff24;border-top:2px solid #c2d1db;backdrop-filter:blur(8px)}
 @media(max-width:850px){.mapbox,.cockpit-view .mapbox{right:15px;top:105px;left:auto;bottom:auto;transform:scale(.7);transform-origin:top right}}
 @media(max-height:600px){.mapbox,.cockpit-view .mapbox{top:85px;transform:scale(.65);transform-origin:top right}}
+
+.rival-summary{font:11px/1.9 sans-serif;color:#bbcedd;margin:14px 0}.rival-summary summary{cursor:pointer;color:#cebaff}.rival-summary summary:focus-visible{outline:2px solid #91ffe1}.rival-summary div{font-variant-numeric:tabular-nums}
