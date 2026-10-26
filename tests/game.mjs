@@ -434,6 +434,53 @@ assert.ok((passer.car.distance-slowCar.distance)*track.length>20,'AI must comple
 assert.equal(passingOffroad,0,'Passing must stay on the road');
 console.log('PASS: AI finds a free corridor and overtakes a slower car on asphalt');
 
+// Small target movements must not flip a pass, but a newly occupied lane
+// must override the preference immediately.
+const tacticalRace=new Race(track,new THREE.Scene(),planner),tacticalPlayer=new Vehicle(track,new THREE.Scene());
+tacticalRace.opponents.splice(1);const tactical=tacticalRace.opponents[0];tacticalRace.elapsed=20;
+const place=(car,meters,bias,speed)=>{const t=meters/track.length,offset=planner.point(t).sub(track.point(t)).dot(track.normal(t));car.resetAt(t,offset+bias);car.speed=speed;};
+place(tactical.car,300,3.5,45);tactical.lane=3.5;place(tacticalPlayer,340,3.5,30);
+tacticalRace.decide(tactical,tacticalPlayer);const chosenSide=Math.sign(tactical.passLane-3.5);
+assert.ok(chosenSide!==0&&tactical.passUntil>tacticalRace.elapsed,'A clear pass must establish a side preference');
+place(tacticalPlayer,340,3.5+chosenSide*.15,30);tacticalRace.elapsed+=.03;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(Math.sign(tactical.passLane-3.5),chosenSide,'A slight target movement must not reverse the passing side');
+const blocker=new Vehicle(track,new THREE.Scene());place(blocker,315,tactical.passLane,30);
+tacticalRace.opponents.push({...tactical,car:blocker});tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(Math.sign(tactical.passLane-3.5),-chosenSide,'A blocked corridor must override the remembered passing side');
+
+// A large closing speed requires braking earlier than the old fixed gap.
+tacticalRace.opponents.splice(1);place(tactical.car,400,0,90);tactical.lane=0;
+place(tacticalPlayer,445,0,30);
+for(const bias of [-3.5,3.5]){const car=new Vehicle(track,new THREE.Scene());place(car,420,bias,30);tacticalRace.opponents.push({...tactical,car});}
+tacticalRace.decide(tactical,tacticalPlayer);
+assert.ok(tactical.control.brake>.3,'A rapidly closing rival must brake before entering the old fixed following gap');
+assert.equal(!!tactical.control.boost,false,'Blocked traffic must not consume ERS');
+
+// One early defensive move, no reactionary second move, and no blocking once
+// the attacking car is alongside.
+tacticalRace.opponents.splice(1);const defenseMeters=planner.apices[0].progress*track.length-230;
+place(tactical.car,defenseMeters,.6,60);tactical.lane=.6;
+place(tacticalPlayer,defenseMeters-35,.6,70);tacticalRace.elapsed=30;
+tacticalRace.decide(tactical,tacticalPlayer);const defenseLane=tactical.defendLane,defenseCooldown=tactical.defendCooldown;
+assert.ok(tactical.defendUntil>30&&defenseCooldown>=38,'An early approaching attack must trigger one bounded defensive move');
+place(tacticalPlayer,defenseMeters-35,-.6,70);tacticalRace.elapsed=30.3;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.defendLane,defenseLane,'Defense must not follow a trailing car from side to side');
+place(tacticalPlayer,defenseMeters-5,-.6,70);tacticalRace.elapsed=30.4;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.defendUntil,0,'A car alongside must cancel the defensive move');
+place(tacticalPlayer,defenseMeters-35,.6,70);tacticalRace.elapsed=31.5;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.defendCooldown,defenseCooldown,'A continuous threat must not bypass the defensive cooldown');
+assert.ok(tactical.defendUntil<=tacticalRace.elapsed);
+
+// A designated challenger may spend a partial battery on a clear straight.
+place(tactical.car,200,0,75);tactical.lane=0;tactical.car.boost=25;tactical.control.boost=false;
+tactical.speedCap=108;tactical.rank=2;tacticalRace.position=1;tactical.attack=1;
+tacticalPlayer.position.set(1e6,0,1e6);tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.control.boost,true,'The designated attacker must use a partial ERS battery when a pass is available');
+tactical.control.boost=false;tactical.attack=0;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.control.boost,false,'A non-attacker must keep its normal ERS reserve');
+tacticalRace.reset();assert.ok(tacticalRace.opponents.every(o=>o.passLane===undefined&&o.passUntil===0&&o.defendUntil===0&&o.defendCooldown===0),'Restart must clear tactical memory');
+console.log('PASS: stable passing side, blocked-lane escape, closing-speed braking, single defensive move, cooldown, alongside clearance and tactical ERS');
+
 // Exercise five rivals together against a fast player over more than two laps.
 const packRace=new Race(track,new THREE.Scene(),planner),fastPlayer=new Vehicle(track,new THREE.Scene());
 packRace.start();packRace.update(4.1,fastPlayer);

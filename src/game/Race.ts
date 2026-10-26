@@ -5,6 +5,7 @@ import {LinePlanner} from './LinePlanner';
 import {Controls,HANDLING,steeringLock,brakingDeceleration,cornerSpeed} from './Dynamics';
 export interface Rival {
   car:Vehicle;distance:number;speed:number;name:string;
+  passLane?:number;passUntil:number;defendUntil:number;defendCooldown:number;defendLane:number;
   rank:number;speedCap:number;powerAssist:number;attack:number;pace:number;aggression:number;reaction:number;lineBias:number;phase:number;lane:number;decision:number;stuck:number;control:Controls;
 }
 export class Race {
@@ -35,11 +36,11 @@ export class Race {
       {name:'POLAR',color:0xc6cdd1,pace:1.36,aggression:.25,reaction:.035,lineBias:.3},
       {name:'ORBIT',color:0x9768d1,pace:1.45,aggression:.83,reaction:.025,lineBias:.8}
     ];
-    profiles.forEach((p,i)=>this.opponents.push({...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1.35}),distance:0,speed:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}}));this.reset();
+    profiles.forEach((p,i)=>this.opponents.push({...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1.35}),distance:0,speed:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}}));this.reset();
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
   reset(){this.state='ready';this.countdown=4;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=6;
-    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
+    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready')this.state='countdown';}
   private racingSpeed(progress:number){
     const f=((progress%1+1)%1)*this.aiSpeeds.length,i=Math.floor(f);
@@ -106,18 +107,40 @@ export class Race {
           const gap=gapTo(other),clearance=gap<0?14+Math.max(0,other.speed-car.speed)*.5:18;
           return Math.abs(gap)>clearance;
         }));
-        lanes.sort((a,b)=>Math.abs(a-currentBias)-Math.abs(b-currentBias));
-        if(lanes.length){desiredLane=lanes[0];passing=true;}
+        // Keep the selected side through small lateral movements of the
+        // target instead of repeatedly swapping left/right passing lanes.
+        const cost=(lane:number)=>Math.abs(lane-currentBias)+(this.elapsed<o.passUntil&&o.passLane!==undefined&&Math.abs(lane-o.passLane)>3?.8:0);
+        lanes.sort((a,b)=>cost(a)-cost(b));
+        if(lanes.length){desiredLane=lanes[0];passing=true;o.passLane=desiredLane;o.passUntil=this.elapsed+1.5;}
       }
-      if(nearest<9+car.speed*.2&&Math.abs(currentBias-otherBias)<2.6){
+      const closing=Math.max(0,car.speed-ahead.speed);
+      const brakingGap=7+car.speed*.12+closing*.35+closing*closing/(2*brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.8);
+      if(nearest<Math.max(9+car.speed*.2,brakingGap)&&Math.abs(currentBias-otherBias)<2.6){
         target=Math.min(target,Math.max(5,ahead.speed+(nearest-7-car.speed*.12)*.9));
       }
     }
+    // Defend once before a corner while the attacker is still well behind.
+    // A short hold and cooldown prevent reactive weaving or late blocking.
+    const nextApex=this.planner.apices.find(apex=>apex.progress>car.progress)??this.planner.apices[0];
+    const apexDistance=nextApex?((nextApex.progress-car.progress+1)%1)*this.track.length:Infinity;
+    const straight=[0,20,40,60].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>60);
+    const alongside=traffic.some(other=>Math.abs(gapTo(other))<14);
+    if(!passing&&!ahead&&straight&&!alongside){
+      if(this.elapsed<o.defendUntil)desiredLane=o.defendLane;
+      else if(o.aggression>.5&&this.elapsed>o.defendCooldown&&apexDistance>200&&apexDistance<260&&traffic.some(other=>{
+        const gap=-gapTo(other),closing=other.speed-car.speed;
+        return gap>22&&gap<45&&closing>1&&gap/closing>3;
+      })){
+        desiredLane=o.lineBias+(nextApex?.direction??1)*1.2;
+        o.defendLane=desiredLane;o.defendUntil=this.elapsed+1.2;o.defendCooldown=this.elapsed+8;
+      }
+    }else o.defendUntil=0;
     // Stay in the current corridor until an alongside car has cleared,
     // including when finishing a pass and returning to the racing line.
     if(traffic.some(other=>{
       const gap=gapTo(other);
-      if(Math.abs(gap)>=8&&(passing||gap<0||gap>35))return false;
+      const rearClearance=8+Math.max(0,other.speed-car.speed-5)*.5;
+      if(gap<0&&-gap>=rearClearance||gap>=8&&(passing||gap>35))return false;
       const lane=biasAt(other);
       return lane>Math.min(currentBias,desiredLane)-2.8&&lane<Math.max(currentBias,desiredLane)+2.8;
     }))desiredLane=currentBias;
@@ -150,7 +173,7 @@ export class Race {
     // Feed forward the acceleration required by the speed profile and road
     // drag. Error-only throttle used to coast below the target and brake late.
     // Front runners bank ERS; a trailing challenger can spend it on the pass.
-    const wantsBoost=target>78&&car.speed>35&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>(o.control.boost?5:35)&&o.rank>=this.position;
+    const wantsBoost=target>78&&car.speed>35&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>(o.control.boost?5:o.attack>.7?18:35)&&o.rank>=this.position&&(!ahead||passing||gapTo(ahead)>35);
     if(!wantsBoost)target=Math.min(target,o.speedCap*87/94);
     const feedforward=target<plannedTarget-.1?0:plannedAcceleration;
     const acceleration=feedforward+(target-car.speed)*2;
