@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import {Track} from './Track';
 import {Vehicle} from './Vehicle';
 import {LinePlanner} from './LinePlanner';
-import {brakingDeceleration} from './Dynamics';
 export class RacingLine {
   readonly planner:LinePlanner;
   private arrows:THREE.InstancedMesh;
@@ -29,11 +28,12 @@ export class RacingLine {
     const step=2.6/this.track.length,start=Math.ceil(vehicle.progress/step)*step;
     for(let i=0;i<80;i++){
       const t=start+i*step,p=this.planner.point(t),q=this.planner.point(t+.001);
-      const distance=i*2.6,limit=this.planner.cornerLimit(t);
-      const brakingDistance=Math.max(0,(vehicle.speed*vehicle.speed-limit*limit)/(2*brakingDeceleration(vehicle.speed)));
-      const deficit=vehicle.speed-limit;
-      const needsBrake=deficit>2.5&&distance<brakingDistance+vehicle.speed*.22;
-      this.color.setHex(needsBrake?0xff3025:deficit>0&&distance<brakingDistance+30?0xffd728:0x45ff34);
+      // Color the action required at each road position, not every future
+      // corner against the car's current speed (which painted exits red).
+      const localSpeed=this.planner.speed(t),nextSpeed=this.planner.speed(t+12/this.track.length);
+      const acceleration=(nextSpeed*nextSpeed-localSpeed*localSpeed)/24;
+      const overspeed=i*2.6<15&&this.instruction==='BRAKE';
+      this.color.setHex(overspeed||acceleration<-.8?0xff3025:acceleration>.8?0x45ff34:0xffd728);
       this.dummy.position.set(p.x,.27,p.z);this.dummy.rotation.set(0,Math.atan2(q.x-p.x,q.z-p.z),0);
       const scale=1-.4*Math.max(0,(i-55)/25);this.dummy.scale.set(scale,1,scale);this.dummy.updateMatrix();
       this.arrows.setMatrixAt(i,this.dummy.matrix);this.arrows.setColorAt(i,this.color);

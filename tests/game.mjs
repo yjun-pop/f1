@@ -18,7 +18,7 @@ const {CockpitCamera}=await import(moduleURL('Camera'));
 const {Track}=await import(moduleURL('Track'));
 const {Race}=await import(moduleURL('Race'));
 const {LinePlanner}=await import(moduleURL('LinePlanner'));
-const {brakingDeceleration,integrateBody}=await import(moduleURL('Dynamics'));
+const {brakingDeceleration,integrateBody,HANDLING,steeringLock}=await import(moduleURL('Dynamics'));
 const scene=new THREE.Scene(),track=new Track(scene),v=new Vehicle(track,scene),camera=new CockpitCamera(scene);
 const input=(key)=>({down:(...keys)=>keys.includes(key)});
 for(const heading of [0,.8,Math.PI,-Math.PI/2]){
@@ -114,3 +114,38 @@ const moved=v.position.clone().sub(first),sideways=moved.clone().addScaledVector
 assert.ok(sideways<.5&&!v.offRoad,'A straight launch should not need steering input');
 assert.ok(moved.length()>400,'Main straight should permit sustained acceleration');
 console.log('PASS: real Monza lap length, long straight, 11 corners and unsteered full-throttle launch');
+
+// The guide must be driveable with the actual tire model, not just have a
+// mathematically valid curvature envelope. Follow one lap without opponents.
+const follower=new Vehicle(track,new THREE.Scene());
+let finishedAt=0,offRoadSteps=0,peakSlip=0;
+for(let step=0;step<120*180;step++){
+  const lookahead=THREE.MathUtils.clamp(7+follower.speed*.3,9,26);
+  const to=planner.point(follower.progress+lookahead/track.length).sub(follower.position);
+  const desired=Math.atan2(to.x,to.z),error=Math.atan2(Math.sin(desired-follower.heading),Math.cos(desired-follower.heading));
+  const angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));
+  const steer=THREE.MathUtils.clamp((angle-follower.yawRate*.018)/steeringLock(follower.speed),-1,1);
+  const difference=planner.advice(follower.progress,follower.speed)-follower.speed;
+  follower.drive(1/120,{steer,throttle:THREE.MathUtils.clamp(difference/3,0,1),brake:THREE.MathUtils.clamp(-difference/4,0,1)});
+  if(follower.offRoad)offRoadSteps++;
+  peakSlip=Math.max(peakSlip,Math.abs(Math.atan2(follower.lateralSpeed,Math.max(1,follower.speed))));
+  if(follower.distance>=1){finishedAt=(step+1)/120;break;}
+}
+assert.ok(finishedAt>0,'Following the recommended speed must complete a physical lap');
+assert.equal(offRoadSteps,0,'The recommended line and speed must keep the follower on asphalt');
+assert.ok(peakSlip<10*Math.PI/180,'Guidance must avoid sustained large tire slip');
+assert.ok(planner.speed(600/track.length)>85,'Corner safety margin must preserve straight-line speed');
+console.log(`PASS: guided physical lap in ${finishedAt.toFixed(1)}s, no off-road frames, peak slip ${(peakSlip*180/Math.PI).toFixed(1)} degrees`);
+
+// A fast car before a chicane must still see the exit as an acceleration zone.
+const savedSpeed=guide.planner.speed.bind(guide.planner),savedAdvice=guide.planner.advice.bind(guide.planner);
+guide.planner.speed=t=>{const distance=((t%1+1)%1)*track.length;return distance<65?50-distance*.4:24+(distance-65)*.2;};
+guide.planner.advice=()=>30;
+v.resetAt(0);v.speed=70;guide.toggle();guide.update(v);
+const marker=new THREE.Color();
+guide.arrows.getColorAt(10,marker);assert.ok(marker.r>marker.g*1.5,'Deceleration zone must be red');
+guide.arrows.getColorAt(40,marker);assert.ok(marker.g>marker.r*1.5,'Exit must be green even when the approaching car is too fast');
+guide.planner.speed=()=>30;guide.planner.advice=()=>30;v.speed=30;guide.update(v);
+guide.arrows.getColorAt(30,marker);assert.ok(marker.r>.5&&marker.g>.5&&marker.b<.1,'Constant-speed zone must be yellow');
+guide.planner.speed=savedSpeed;guide.planner.advice=savedAdvice;
+console.log('PASS: braking, holding and exit acceleration colors describe their own road positions');

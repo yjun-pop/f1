@@ -1,7 +1,12 @@
 import * as THREE from 'three';
 import {Track,ROAD_HALF_WIDTH} from './Track';
 import {cornerSpeed,brakingDeceleration} from './Dynamics';
-/** Offline constrained minimum-bending path and a cyclic braking speed envelope. */
+// Leave grip for steering transients and simultaneous braking/turning. The
+// steady-state tire limit alone is not a usable keyboard driving target.
+const CORNER_SPEED_MARGIN=.8;
+const BRAKING_GRIP_USAGE=.65;
+const REACTION_TIME=.4;
+/** Offline constrained minimum-bending path and a conservative cyclic speed envelope. */
 export class LinePlanner {
   readonly count:number;
   readonly points:THREE.Vector3[]=[];
@@ -50,23 +55,24 @@ export class LinePlanner {
       const curvature=2*cross/Math.max(.001,ab*bc*ca);
       this.distances[i]=bc;
       // Conservative dry grip, with a small downforce contribution.
-      this.speeds[i]=this.cornerSpeeds[i]=cornerSpeed(curvature);
+      this.speeds[i]=this.cornerSpeeds[i]=Math.min(87,cornerSpeed(curvature/(CORNER_SPEED_MARGIN*CORNER_SPEED_MARGIN)));
     }
     // Two whole-lap passes propagate braking through the start/finish seam.
     for(let pass=0;pass<12;pass++){
-      for(let i=this.count-1;i>=0;i--){const n=wrap(i+1);this.speeds[i]=Math.min(this.speeds[i],Math.sqrt(this.speeds[n]**2+2*brakingDeceleration(this.speeds[n])*.88*this.distances[i]));}
-      for(let i=0;i<this.count;i++){const n=wrap(i+1);this.speeds[n]=Math.min(this.speeds[n],Math.sqrt(this.speeds[i]**2+2*7*this.distances[i]));}
+      for(let i=this.count-1;i>=0;i--){const n=wrap(i+1);this.speeds[i]=Math.min(this.speeds[i],Math.sqrt(this.speeds[n]**2+2*brakingDeceleration(this.speeds[n])*BRAKING_GRIP_USAGE*this.distances[i]));}
+      for(let i=0;i<this.count;i++){const n=wrap(i+1);this.speeds[n]=Math.min(this.speeds[n],Math.sqrt(this.speeds[i]**2+2*5*this.distances[i]));}
     }
   }
   point(t:number){const f=((t%1+1)%1)*this.count,i=Math.floor(f);return this.points[i].clone().lerp(this.points[(i+1)%this.count],f-i);}
   cornerLimit(t:number){const f=((t%1+1)%1)*this.count,i=Math.floor(f);return THREE.MathUtils.lerp(this.cornerSpeeds[i],this.cornerSpeeds[(i+1)%this.count],f-i);}
   advice(progress:number,speed:number,offRoad=false){
     let allowed=94;
-    const decel=brakingDeceleration(speed,offRoad)*.86;
+    const decel=brakingDeceleration(speed,offRoad)*BRAKING_GRIP_USAGE;
     // Ask for braking only when the corner is within the actual stopping range.
     for(let distance=0;distance<=240;distance+=4){
-      const limit=this.cornerLimit(progress+distance/this.track.length);
-      const usableDistance=Math.max(0,distance-speed*.22);
+      const t=progress+distance/this.track.length;
+      const limit=Math.min(this.speed(t),this.cornerLimit(t));
+      const usableDistance=Math.max(0,distance-speed*REACTION_TIME);
       allowed=Math.min(allowed,Math.sqrt(limit*limit+2*decel*usableDistance));
     }
     return allowed;
