@@ -383,7 +383,7 @@ function rankedStraight(gapMeters){
   return {peak,meters:rival.car.distance*track.length-100,offroad};
 }
 const aheadRun=rankedStraight(-400),behindRun=rankedStraight(400);
-assert.ok(behindRun.peak>aheadRun.peak+1&&behindRun.peak-aheadRun.peak<10,'Catch-up must be physical but bounded to avoid a visibly excessive speed advantage');
+assert.ok(behindRun.peak>aheadRun.peak+1&&behindRun.peak<=104&&aheadRun.peak>=72,'A distant leader must ease off and a distant trailing car must close within physical speed bounds');
 assert.ok(behindRun.meters>aheadRun.meters+5,'Higher caps must translate into physical progress, not only configuration');
 assert.equal(behindRun.offroad+aheadRun.offroad,0);
 const coasting={...body(),speed:100,raceSpeedCap:92,raceCruiseCap:85,racePowerAssist:1};
@@ -739,15 +739,17 @@ for(const scenario of ['grid','mirrored-grid','rolling-pack']){
     o.car.resetAt(progress,lane);o.car.speed=scenario==='rolling-pack'?75:0;
     o.lane=lane-planner.point(progress).sub(track.point(progress)).dot(track.normal(progress));
   });
-  let offroad=0,cleared=false,time=0;
+  let offroad=0,cleared=false,time=0;const firstHeavyBrake=Array(5).fill(Infinity);
   for(let step=0;step<120*45;step++){
     testRace.update(1/120,ghost);time=(step+1)/120;
     offroad+=testRace.opponents.filter(o=>o.car.offRoad).length;
+    testRace.opponents.forEach((o,i)=>{const meters=o.car.progress*track.length;if(meters>650&&meters<1080&&o.control.brake>.4)firstHeavyBrake[i]=Math.min(firstHeavyBrake[i],meters);});
     if(testRace.opponents.every(o=>o.car.distance*track.length>1180)){cleared=true;break;}
   }
   assert.ok(cleared,`${scenario}: all five must clear the chicane without stopping indefinitely`);
   assert.equal(testRace.opponents.reduce((sum,o)=>sum+o.collisionCount,0),0,`${scenario}: no AI contact at the first chicane`);
   assert.equal(offroad,0,`${scenario}: chicane traffic must stay on asphalt`);
+  if(scenario==='grid')assert.ok(firstHeavyBrake.every(meters=>meters>800&&meters<1080),'Normal launch must not panic-brake 350m before the chicane');
   chicaneResults.push({scenario,seconds:time.toFixed(2),contacts:0,offroad:0});
 }
 const queueRace=new Race(track,new THREE.Scene(),planner),queuePlayer=new Vehicle(track,new THREE.Scene());
@@ -820,3 +822,49 @@ for(const a of orderA.opponents){
   assert.ok(Math.abs(a.control.steer-b.control.steer)<1e-8&&Math.abs(a.control.throttle-b.control.throttle)<1e-8);
 }
 console.log('PASS: five independent driver agents, individual reaction clocks, snapshot perception, private contact memory, tactical settling, reset and iteration-order independence');
+
+
+// Both sides of the field must converge on the active player's pace. Match
+// normalized pace, so braking at a corner does not park the other cars.
+const {PackDirector}=await import(moduleURL('PackDirector'));
+const director=new PackDirector(),paceCar=new Vehicle(track,new THREE.Scene());paceCar.speed=60;
+for(let i=0;i<120*10;i++)director.observe(paceCar,60,true,1/120);
+assert.ok(director.active);assert.ok(Math.abs(director.pace-1)<1e-9);
+const closeTarget=director.targets(28,1,3,1.46,0),escaped=director.targets(250,1,3,1.46,0),lagging=director.targets(-250,5,3,1.45,1);
+assert.ok(escaped.cap<closeTarget.cap&&escaped.pace<closeTarget.pace,'A distant leader must ease corner pace as well as straight speed');
+assert.ok(lagging.cap>closeTarget.cap&&lagging.pace>closeTarget.pace&&lagging.power>1,'Every distant trailing rival must get useful catch-up targets');
+assert.ok(lagging.cap<=104&&lagging.pace<=1.47&&lagging.power<=1.15);
+paceCar.speed=30;for(let i=0;i<120*10;i++)director.observe(paceCar,30,true,1/120);
+assert.ok(Math.abs(director.pace-1)<1e-9,'A slower corner at the same relative pace must not reduce the field to that absolute speed');
+paceCar.speed=0;for(let i=0;i<120*3;i++)director.observe(paceCar,87,true,1/120);assert.equal(director.active,false,'Parking must not stop the entire race');
+director.reset();assert.equal(director.pace,1);assert.equal(director.active,false);
+
+// Run a stock keyboard-handling reference driver for a full three-lap race.
+// This controller follows the guide and brakes for physical traffic, just as
+// a driver must; it receives no AI grip/power or rank-speed assistance.
+const closeRace=new Race(track,new THREE.Scene(),planner),closePlayer=new Vehicle(track,new THREE.Scene());
+closeRace.state='racing';let nearFrames=0,measuredFrames=0;const earlyStops=Array(5).fill(0);
+for(let step=0;step<120*400&&closeRace.state==='racing';step++){
+  const lookahead=THREE.MathUtils.clamp(7+closePlayer.speed*.3,9,26),to=planner.point(closePlayer.progress+lookahead/track.length).sub(closePlayer.position);
+  const desired=Math.atan2(to.x,to.z),error=Math.atan2(Math.sin(desired-closePlayer.heading),Math.cos(desired-closePlayer.heading));
+  const angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));
+  const steer=THREE.MathUtils.clamp((angle-closePlayer.yawRate*.018)/steeringLock(closePlayer.speed),-1,1);
+  let advised=planner.advice(closePlayer.progress,closePlayer.speed);
+  for(const o of closeRace.opponents){
+    let gap=o.car.progress-closePlayer.progress;if(gap<-.5)gap+=1;if(gap>.5)gap-=1;gap*=track.length;
+    const lateral=o.car.position.clone().sub(closePlayer.position).dot(track.normal(closePlayer.progress));
+    if(gap>0&&gap<40&&Math.abs(lateral)<2.8)advised=Math.min(advised,Math.max(0,o.car.speed+(gap-8-closePlayer.speed*.12)*.5));
+  }
+  const difference=advised-closePlayer.speed;
+  closePlayer.drive(1/120,{keyboard:true,steer,throttle:THREE.MathUtils.clamp(difference/3,0,1),brake:THREE.MathUtils.clamp(-difference/4,0,1)});
+  closeRace.update(1/120,closePlayer);
+  if(step>120*30){measuredFrames++;if(closeRace.opponents.every(o=>Math.abs(o.car.distance-closePlayer.distance)*track.length<150))nearFrames++;}
+  closeRace.opponents.forEach((o,i)=>{const meters=o.car.progress*track.length;if(meters>650&&meters<970&&o.car.speed<10)earlyStops[i]++;});
+}
+assert.equal(closeRace.state,'finished');
+assert.ok(nearFrames/measuredFrames>.9,'All five rivals must remain within 150m for most of an actual stock-player race');
+assert.ok(closeRace.opponents.every(o=>Math.abs(o.car.distance-closePlayer.distance)*track.length<100),'The leader and every trailing rival must finish close to the player');
+assert.ok(earlyStops.every(frames=>frames===0),'Rivals must not crawl or stop on the first-corner approach');
+assert.equal(closePlayer.gripScale,1);assert.equal(closePlayer.powerScale,1);assert.equal(closePlayer.raceSpeedCap,undefined);
+console.log('PASS: two-sided player-pace matching and full three-lap close field',{nearFraction:nearFrames/measuredFrames,gaps:closeRace.opponents.map(o=>Math.round((o.car.distance-closePlayer.distance)*track.length)),earlyStops});
+closeRace.reset();assert.ok(closeRace.opponents.every(o=>o.racePace===undefined));

@@ -74,7 +74,7 @@ export class DriverAgent {
     if(chicaneTraffic){o.passLane=undefined;o.passUntil=0;o.defendUntil=0;this.intent='yield';}
     // AI uses the precomputed braking envelope with its own short reaction
     // distance, rather than the extra early-braking margin intended for a human.
-    const pace=Math.min(1.47,o.pace);
+    const pace=Math.min(1.47,o.racePace??o.pace);
     const reference=car.progress+car.speed*.12/this.track.length;
     // At the tire limit, spend the remaining grip on turning rather than
     // making the more aggressive exit acceleration compete with cornering.
@@ -109,10 +109,14 @@ export class DriverAgent {
       }
       if(chicaneTraffic){
         // Include cars in the other lane: both corridors soon share an apex.
-        // Yield with throttle/brakes until the merge is clear, never by moving
-        // a car or forcing its speed. Remove the old 5m/s minimum in a queue.
-        const safeGap=10+car.speed*.65+caution*2;
-        target=Math.min(target,Math.max(0,ahead.speed+(nearest-safeGap)*.7));
+        // Build headway progressively, not by demanding the full braking-zone
+        // gap 360m early. Bound following speed by the actual braking distance;
+        // a moving queue can roll through while a stopped obstacle still stops it.
+        const approach=THREE.MathUtils.smoothstep(meters,first.progress*this.track.length-360,first.progress*this.track.length-160);
+        const safeGap=8+car.speed*THREE.MathUtils.lerp(.12,.60,approach)+caution*1.5;
+        const braking=brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.7;
+        const safeSpeed=Math.sqrt(ahead.speed*ahead.speed+2*braking*Math.max(0,nearest-7));
+        target=Math.min(target,safeSpeed,Math.max(0,ahead.speed+(nearest-safeGap)*.35));
       }
       const closing=Math.max(0,car.speed-ahead.speed);
       const brakingGap=7+caution*3+car.speed*(.12+caution*.05)+closing*.35+closing*closing/(2*brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.8);

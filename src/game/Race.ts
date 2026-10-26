@@ -4,17 +4,19 @@ import {Vehicle,resolveCollision} from './Vehicle';
 import {LinePlanner} from './LinePlanner';
 import {Controls,brakingDeceleration} from './Dynamics';
 import {DriverAgent,observeTraffic} from './DriverAgent';
+import {PackDirector} from './PackDirector';
 export interface Rival {
   agent:DriverAgent;car:Vehicle;distance:number;speed:number;name:string;
   personality:string;caution:number;launch:number;collisionScore:number;collisionCount:number;avoidance:number;
   passLane?:number;passUntil:number;defendUntil:number;defendCooldown:number;defendLane:number;
-  rank:number;speedCap:number;powerAssist:number;attack:number;pace:number;aggression:number;reaction:number;lineBias:number;phase:number;lane:number;decision:number;stuck:number;control:Controls;
+  racePace?:number;rank:number;speedCap:number;powerAssist:number;attack:number;pace:number;aggression:number;reaction:number;lineBias:number;phase:number;lane:number;decision:number;stuck:number;control:Controls;
 }
 export class Race {
   state:'ready'|'countdown'|'racing'|'finished'='ready';
   countdown=4;elapsed=0;lapTime=0;best=0;lastLap=0;position=6;
   private aiSpeeds:Float64Array;
   private contacts=new Map<string,number>();
+  private pack=new PackDirector();
   private lapStart=0;private completed=0;private storageKey:string;
   readonly opponents:Rival[]=[];
   constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner){
@@ -42,10 +44,13 @@ export class Race {
     profiles.forEach((p,i)=>{const driver:Omit<Rival,'agent'>={...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1.35}),distance:0,speed:0,collisionScore:0,collisionCount:0,avoidance:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}};const rival=Object.assign(driver,{agent:new DriverAgent(driver,track,planner,this.aiSpeeds)});this.opponents.push(rival);});this.reset();
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
-  reset(){this.contacts.clear();this.state='ready';this.countdown=4;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=6;
-    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
+  reset(){this.contacts.clear();this.pack.reset();this.state='ready';this.countdown=4;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=6;
+    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready')this.state='countdown';}
   private balanceRivals(player:Vehicle,dt:number){
+    const sample=((player.progress%1+1)%1)*this.aiSpeeds.length,index=Math.floor(sample);
+    const referenceSpeed=THREE.MathUtils.lerp(this.aiSpeeds[index],this.aiSpeeds[(index+1)%this.aiSpeeds.length],sample-index);
+    this.pack.observe(player,referenceSpeed,player.position.distanceToSquared(this.track.point(player.progress))<18*18,dt);
     // Snapshot standings once, using total race distance across lap seams.
     const order:{distance:number;rival:Rival|null}[]=[{distance:player.distance,rival:null},...this.opponents.map(rival=>({distance:rival.car.distance,rival}))];
     order.sort((a,b)=>b.distance-a.distance);
@@ -59,12 +64,19 @@ export class Race {
       const behind=o.rank>this.position,strength=THREE.MathUtils.smoothstep(Math.max(0,Math.abs(gap)-12),0,350);
       const attack=behind&&contenders.includes(o)?(o===attacker?1:.45):0;
       o.attack=THREE.MathUtils.damp(o.attack,attack,.65,dt);
-      // Ahead: only 1.2-2% off top speed, with no large corner-pace penalty.
-      // Behind: more straight-line speed/power; 2nd/3rd take turns attacking
-      // a leading player. Neither position nor velocity is directly changed.
-      const targetCap=behind?94+warmup*(1+4*strength+5*o.attack):94*(1-warmup*(.012+.008*strength));
-      const targetPower=behind?1+warmup*(.01+.08*strength+.06*o.attack):1;
-      o.speedCap=THREE.MathUtils.damp(o.speedCap,THREE.MathUtils.clamp(targetCap,92,104),.7,dt);
+      // Free-racing baseline while the player is parked or unavailable.
+      // During active driving, the pack director adjusts both sides of the
+      // field, including corner pace. Motion remains entirely physical.
+      let targetCap=behind?94+warmup*(1+4*strength+5*o.attack):94*(1-warmup*(.012+.008*strength));
+      let targetPower=behind?1+warmup*(.01+.08*strength+.06*o.attack):1;
+      if(this.pack.active){
+        const matching=THREE.MathUtils.smoothstep(this.elapsed,4,18);
+        const pack=this.pack.targets(gap,o.rank,this.position,o.pace,o.attack);
+        targetCap=THREE.MathUtils.lerp(targetCap,pack.cap,matching);
+        targetPower=THREE.MathUtils.lerp(targetPower,pack.power,matching);
+        o.racePace=THREE.MathUtils.damp(o.racePace??o.pace,THREE.MathUtils.lerp(o.pace,pack.pace,matching),.5,dt);
+      }else if(o.racePace!==undefined)o.racePace=THREE.MathUtils.damp(o.racePace,o.pace,.5,dt);
+      o.speedCap=THREE.MathUtils.damp(o.speedCap,THREE.MathUtils.clamp(targetCap,76,104),.7,dt);
       o.powerAssist=THREE.MathUtils.damp(o.powerAssist,Math.min(1.15,targetPower),.5,dt);
       // Equal launch machinery, then gradually restore the established race pace.
       o.car.raceLaunchScale=THREE.MathUtils.lerp(o.launch/o.car.powerScale,1,THREE.MathUtils.smoothstep(this.elapsed,5,22));
