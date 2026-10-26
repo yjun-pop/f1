@@ -769,3 +769,54 @@ assert.ok(balancedVoice.filter.frequency.value<=4500,'Full load must keep a boun
 assert.ok(balancedVoice.lowGain.gain.value>0||balancedVoice.highGain.gain.value>0,'Engine body must remain audible');
 delete globalThis.AudioContext;
 console.log('PASS: first-chicane queue, cross-lane braking and balanced high-frequency audio',chicaneResults);
+
+// Each car owns a distinct brain, reaction clock and opponent memory. All
+// first-step decisions use the same pre-integration snapshot of the field.
+const agentRace=new Race(track,new THREE.Scene(),planner),agentGhost=new Vehicle(track,new THREE.Scene());
+agentGhost.position.set(1e6,0,1e6);agentRace.state='racing';
+const brains=agentRace.opponents.map(o=>o.agent);
+assert.equal(new Set(brains).size,5);
+agentRace.update(1/120,agentGhost);
+const sharedObservation=brains[0].observation.traffic;
+for(const [i,o] of agentRace.opponents.entries()){
+  assert.equal(o.agent.driver,o);assert.equal(o.agent.decisions,1);
+  assert.equal(o.agent.observation.traffic,sharedObservation);
+  const observed=sharedObservation.find(sample=>sample.car===o.car);
+  assert.notEqual(observed.position,o.car.position,'Perception must not change as another car integrates motion');
+  const previous=observed.position.clone();o.car.position.x+=1;assert.ok(observed.position.equals(previous));o.car.position.x-=1;
+  assert.equal(o.agent,brains[i]);
+}
+for(let i=0;i<120*2;i++)agentRace.update(1/120,agentGhost);
+assert.ok(brains.every(brain=>brain.decisions>1&&brain.memorySize>0));
+assert.ok(new Set(brains.map(brain=>brain.decisions)).size>1,'Reaction profiles must produce independent decision clocks');
+agentRace.scoreContact(agentRace.opponents[0].car,agentGhost,'isolated-contact',3);
+assert.equal(brains[0].memoryFor(agentGhost).contacts,1);
+assert.ok(brains.slice(1).every(brain=>brain.memoryFor(agentGhost)===undefined),'An unrelated driver must not inherit another driver\'s incident');
+assert.ok(agentRace.opponents.slice(1).every(o=>o.collisionScore===0));
+agentRace.reset();assert.ok(brains.every(brain=>brain.memorySize===0&&brain.decisions===0&&brain.intent==='race'));
+assert.ok(agentRace.opponents.every((o,i)=>o.agent===brains[i]),'Restart must reset the existing brains rather than leak controllers');
+
+// A recent incident changes only that driver's tactical decision, then the
+// same safe corridor becomes available again after its local settling time.
+const learningRace=new Race(track,new THREE.Scene(),planner),learningTarget=new Vehicle(track,new THREE.Scene());
+learningRace.opponents.splice(1);const learningDriver=learningRace.opponents[0];learningRace.elapsed=20;
+place(learningDriver.car,300,0,45);learningDriver.lane=0;place(learningTarget,340,0,30);
+learningRace.decide(learningDriver,learningTarget);assert.equal(learningDriver.agent.intent,'overtake');
+assert.equal(learningDriver.agent.target,learningTarget);
+learningRace.scoreContact(learningDriver.car,learningTarget,'learning-contact',2);
+learningRace.elapsed=20.3;learningRace.decide(learningDriver,learningTarget);
+assert.equal(learningDriver.agent.intent,'yield');assert.equal(learningDriver.passLane,undefined);
+learningRace.elapsed=21.5;learningRace.decide(learningDriver,learningTarget);assert.equal(learningDriver.agent.intent,'overtake');
+assert.equal(learningDriver.agent.memoryFor(learningTarget).contacts,1);
+
+// Reversing iteration order must not change decisions just because one car
+// happened to move first. Keep the original grid positions when reversing.
+const orderA=new Race(track,new THREE.Scene(),planner),orderB=new Race(track,new THREE.Scene(),planner);
+orderA.state=orderB.state='racing';orderB.opponents.reverse();
+for(let i=0;i<120*2;i++){orderA.update(1/120,agentGhost);orderB.update(1/120,agentGhost);}
+for(const a of orderA.opponents){
+  const b=orderB.opponents.find(o=>o.name===a.name);
+  assert.ok(a.car.position.distanceTo(b.car.position)<1e-7,'Driver iteration order must not alter the launch');
+  assert.ok(Math.abs(a.control.steer-b.control.steer)<1e-8&&Math.abs(a.control.throttle-b.control.throttle)<1e-8);
+}
+console.log('PASS: five independent driver agents, individual reaction clocks, snapshot perception, private contact memory, tactical settling, reset and iteration-order independence');

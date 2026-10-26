@@ -1,0 +1,188 @@
+import * as THREE from 'three';
+import type {Rival} from './Race';
+import {Track} from './Track';
+import {Vehicle} from './Vehicle';
+import {LinePlanner} from './LinePlanner';
+import {HANDLING,steeringLock,brakingDeceleration,cornerSpeed} from './Dynamics';
+
+export interface TrafficSample {
+  readonly car:Vehicle;readonly position:THREE.Vector3;readonly progress:number;readonly speed:number;
+}
+export interface DriverObservation {readonly elapsed:number;readonly playerPosition:number;readonly traffic:readonly TrafficSample[]}
+export function observeTraffic(cars:readonly Vehicle[]):readonly TrafficSample[]{
+  return cars.map(car=>({car,position:car.position.clone(),progress:car.progress,speed:car.speed}));
+}
+export type DriverIntent='race'|'follow'|'overtake'|'defend'|'yield'|'recover';
+interface OpponentMemory {lastSeen:number;gap:number;closing:number;contacts:number;riskUntil:number;lane:number;lateralRate:number}
+/** One autonomous controller per car: private perception, opponent memory,
+ * tactical state and decisions. Only immutable track data is shared. */
+export class DriverAgent {
+  intent:DriverIntent='race';decisions=0;lastDecision=0;lastIncident=-Infinity;
+  target?:Vehicle;observation?:DriverObservation;
+  private elapsed=0;private playerPosition=6;
+  private memory=new Map<Vehicle,OpponentMemory>();
+  constructor(readonly driver:Omit<Rival,'agent'>,private track:Track,private planner:LinePlanner,private aiSpeeds:Readonly<Float64Array>){}
+  get memorySize(){return this.memory.size;}
+  get status(){return {race:'주행',follow:'추종',overtake:'추월',defend:'방어',yield:'양보',recover:'복귀'}[this.intent];}
+  memoryFor(car:Vehicle):Readonly<OpponentMemory>|undefined{return this.memory.get(car);}
+  reset(){this.intent='race';this.decisions=0;this.lastDecision=0;this.lastIncident=-Infinity;this.target=undefined;this.observation=undefined;this.memory.clear();}
+  onContact(other:Vehicle,impact:number,time:number){
+    const o=this.driver,remembered=this.memory.get(other);
+    this.memory.set(other,{lastSeen:time,gap:remembered?.gap??0,closing:remembered?.closing??0,contacts:(remembered?.contacts??0)+1,riskUntil:time+6+o.caution*4,lane:remembered?.lane??0,lateralRate:remembered?.lateralRate??0});
+    this.lastIncident=time;this.intent='yield';this.target=other;
+    o.collisionScore-=5+Math.min(20,impact*2);o.collisionCount++;
+    o.avoidance=Math.min(1.5,o.avoidance+.35+impact*.025);
+    o.defendUntil=0;o.passUntil=0;o.passLane=undefined;o.decision=0;
+  }
+  private perceive(traffic:readonly TrafficSample[],gapTo:(other:TrafficSample)=>number,speed:number){
+    this.target=undefined;
+    for(const other of traffic){
+      const previous=this.memory.get(other.car);
+      const lane=other.position.clone().sub(this.planner.point(other.progress)).dot(this.track.normal(other.progress));
+      const drift=previous?THREE.MathUtils.clamp((lane-previous.lane)/Math.max(.01,this.elapsed-previous.lastSeen),-4,4):0;
+      this.memory.set(other.car,{lane,lateralRate:previous?previous.lateralRate*.5+drift*.5:0,lastSeen:this.elapsed,gap:gapTo(other),closing:speed-other.speed,contacts:previous?.contacts??0,riskUntil:previous?.riskUntil??0});
+    }
+    for(const [car,memory] of this.memory)if(this.elapsed-memory.lastSeen>8)this.memory.delete(car);
+  }
+  private racingSpeed(progress:number){
+    const f=((progress%1+1)%1)*this.aiSpeeds.length,i=Math.floor(f);
+    return THREE.MathUtils.lerp(this.aiSpeeds[i],this.aiSpeeds[(i+1)%this.aiSpeeds.length],f-i);
+  }
+  think(observation:DriverObservation){
+    const o=this.driver;
+    this.decisions++;this.lastDecision=observation.elapsed;this.observation=observation;
+    this.elapsed=observation.elapsed;this.playerPosition=observation.playerPosition;
+    this.intent=this.elapsed-this.lastIncident<1.25?'yield':'race';
+    const car=o.car,lookahead=THREE.MathUtils.clamp(7+car.speed*.3,9,26),t=car.progress+lookahead/this.track.length;
+    const traffic=observation.traffic.filter(other=>other.car!==car&&other.position.distanceToSquared(car.position)<100*100);
+    const biasAt=(other:Pick<Vehicle,'position'|'progress'>)=>other.position.clone().sub(this.planner.point(other.progress)).dot(this.track.normal(other.progress));
+    const offsetAt=(progress:number)=>this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));
+    const gapTo=(other:TrafficSample)=>{let gap=other.progress-car.progress;if(gap<-.5)gap+=1;if(gap>.5)gap-=1;return gap*this.track.length;};
+    this.perceive(traffic,gapTo,car.speed);
+    const settling=this.elapsed-this.lastIncident<1.25;
+    const currentBias=biasAt(car);
+    // Rettifilo funnels two grid lanes into two opposite, closely spaced turns.
+    // Establish a queue on the approach, before the racing line sweeps across
+    // the road. A frozen straight-line passing offset is unsafe in the chicane.
+    const first=this.planner.apices[0],second=this.planner.apices[1];
+    const meters=car.progress*this.track.length;
+    const firstChicane=!!first&&!!second&&meters>first.progress*this.track.length-360&&meters<second.progress*this.track.length+100;
+    const chicaneTraffic=firstChicane&&traffic.some(other=>Math.abs(gapTo(other))<100);
+    // Each independent driver remembers contact and spends more margin afterward.
+    const caution=o.caution+o.avoidance,clearance=2.8+caution*.3;
+    let desiredLane=this.elapsed<2?currentBias:chicaneTraffic?0:o.lineBias;
+    if(chicaneTraffic){o.passLane=undefined;o.passUntil=0;o.defendUntil=0;this.intent='yield';}
+    // AI uses the precomputed braking envelope with its own short reaction
+    // distance, rather than the extra early-braking margin intended for a human.
+    const pace=Math.min(1.47,o.pace);
+    const reference=car.progress+car.speed*.12/this.track.length;
+    // At the tire limit, spend the remaining grip on turning rather than
+    // making the more aggressive exit acceleration compete with cornering.
+    const gripReserve=THREE.MathUtils.smoothstep(pace/Math.sqrt(car.gripScale),1.2,1.26);
+    const speedAt=(t:number)=>THREE.MathUtils.lerp(this.racingSpeed(t),this.planner.speed(t),gripReserve);
+    const plannedTarget=Math.min(o.speedCap,speedAt(reference)*pace);
+    const nextTarget=Math.min(o.speedCap,speedAt(reference+8/this.track.length)*pace);
+    const plannedAcceleration=(nextTarget*nextTarget-plannedTarget*plannedTarget)/16;
+    let target=plannedTarget,passing=false;
+    const ahead=traffic.filter(other=>gapTo(other)>0&&gapTo(other)<(chicaneTraffic?100:70)&&(chicaneTraffic||Math.abs(biasAt(other)-currentBias)<3))
+      .sort((a,b)=>gapTo(a)-gapTo(b))[0];
+    if(ahead){
+      this.target=ahead.car;if(!chicaneTraffic&&!settling)this.intent='follow';
+      const nearest=gapTo(ahead),otherBias=biasAt(ahead);
+      if(!settling&&!chicaneTraffic&&nearest<Math.min(70,25+car.speed*.7)&&car.speed>=ahead.speed-1&&[0,15,30,45].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>60)){
+        // Try both passing corridors and reject ones that clip the edge at
+        // either car or at the steering target. Clamping an impossible pass
+        // to the same lane used to create queues and repeated contact.
+        const offsets=[offsetAt(car.progress),offsetAt(ahead.progress),offsetAt(t)];
+        const low=Math.max(...offsets.map(offset=>-7.4-offset));
+        const high=Math.min(...offsets.map(offset=>7.4-offset));
+        const lanes=[otherBias-3.5,otherBias+3.5].filter(lane=>lane>=low&&lane<=high&&traffic.every(other=>{
+          if(other===ahead||Math.abs(biasAt(other)-lane)>clearance)return true;
+          const gap=gapTo(other),longitudinalClearance=gap<0?14+Math.max(0,other.speed-car.speed)*.5:18;
+          return Math.abs(gap)>longitudinalClearance;
+        }));
+        // Keep the selected side through small lateral movements of the
+        // target instead of repeatedly swapping left/right passing lanes.
+        const cost=(lane:number)=>Math.abs(lane-currentBias)+(this.elapsed<o.passUntil&&o.passLane!==undefined&&Math.abs(lane-o.passLane)>3?.8:0)+((this.memory.get(ahead.car)?.riskUntil??0)>this.elapsed?Math.max(0,4.2-Math.abs(lane-(otherBias+(this.memory.get(ahead.car)?.lateralRate??0)*.5)))*.4:0);
+        lanes.sort((a,b)=>cost(a)-cost(b));
+        if(lanes.length){desiredLane=lanes[0];passing=true;o.passLane=desiredLane;o.passUntil=this.elapsed+1.25+o.aggression*.5;this.intent='overtake';}
+      }
+      if(chicaneTraffic){
+        // Include cars in the other lane: both corridors soon share an apex.
+        // Yield with throttle/brakes until the merge is clear, never by moving
+        // a car or forcing its speed. Remove the old 5m/s minimum in a queue.
+        const safeGap=10+car.speed*.65+caution*2;
+        target=Math.min(target,Math.max(0,ahead.speed+(nearest-safeGap)*.7));
+      }
+      const closing=Math.max(0,car.speed-ahead.speed);
+      const brakingGap=7+caution*3+car.speed*(.12+caution*.05)+closing*.35+closing*closing/(2*brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.8);
+      if(nearest<Math.max(9+car.speed*.2,brakingGap)&&Math.abs(currentBias-otherBias)<2.6){
+        target=Math.min(target,Math.max(5,ahead.speed+(nearest-7-caution*3-car.speed*(.12+caution*.05))*.9));
+      }
+    }
+    // Defend once before a corner while the attacker is still well behind.
+    // A short hold and cooldown prevent reactive weaving or late blocking.
+    const nextApex=this.planner.apices.find(apex=>apex.progress>car.progress)??this.planner.apices[0];
+    const apexDistance=nextApex?((nextApex.progress-car.progress+1)%1)*this.track.length:Infinity;
+    const straight=[0,20,40,60].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>60);
+    const alongside=traffic.some(other=>Math.abs(gapTo(other))<14);
+    if(!settling&&!chicaneTraffic&&!passing&&!ahead&&straight&&!alongside){
+      if(this.elapsed<o.defendUntil){desiredLane=o.defendLane;this.intent='defend';}
+      else if(o.aggression-o.avoidance*.35>.5&&this.elapsed>o.defendCooldown&&apexDistance>200&&apexDistance<260&&traffic.some(other=>{
+        const gap=-gapTo(other),closing=other.speed-car.speed;
+        return gap>22&&gap<45&&closing>1&&gap/closing>3;
+      })){
+        desiredLane=o.lineBias+(nextApex?.direction??1)*1.2;
+        this.intent='defend';o.defendLane=desiredLane;o.defendUntil=this.elapsed+1.2;o.defendCooldown=this.elapsed+8;
+      }
+    }else o.defendUntil=0;
+    // Stay in the current corridor until an alongside car has cleared,
+    // including when finishing a pass and returning to the racing line.
+    if(traffic.some(other=>{
+      const gap=gapTo(other);
+      const rearClearance=8+Math.max(0,other.speed-car.speed-5)*.5;
+      if(gap<0&&-gap>=rearClearance||gap>=8&&(passing||gap>35))return false;
+      const lane=biasAt(other);
+      return lane>Math.min(currentBias,desiredLane)-clearance&&lane<Math.max(currentBias,desiredLane)+clearance;
+    })){desiredLane=currentBias;if(!passing)this.intent='yield';}
+    const baseOffset=this.planner.point(t).sub(this.track.point(t)).dot(this.track.normal(t));
+    desiredLane=THREE.MathUtils.clamp(desiredLane,-7.2-baseOffset,7.2-baseOffset);
+    o.lane=THREE.MathUtils.damp(o.lane,desiredLane,1.2+o.aggression,o.reaction);
+    const lane=THREE.MathUtils.clamp(o.lane,-7.2-baseOffset,7.2-baseOffset);
+    const point=this.planner.point(t).addScaledVector(this.track.normal(t),lane);
+    const to=point.sub(car.position),desired=Math.atan2(to.x,to.z);
+    const error=Math.atan2(Math.sin(desired-car.heading),Math.cos(desired-car.heading));
+    const angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));
+    const steer=THREE.MathUtils.clamp((angle-car.yawRate*.01)/steeringLock(car.speed,car.gripScale),-1,1);
+    if(Math.abs(lane)>1.2){
+      // A passing corridor can have a tighter radius than the racing line.
+      // Anticipate its corners instead of carrying the ideal line's speed
+      // into the grass while racing side by side.
+      const lanePoint=(progress:number)=>this.planner.point(progress).addScaledVector(this.track.normal(progress),THREE.MathUtils.clamp(lane,-7.2-offsetAt(progress),7.2-offsetAt(progress)));
+      for(const distance of [0,12,24,40,60,90]){
+        const progress=car.progress+distance/this.track.length;
+        const a=lanePoint(progress-4/this.track.length),b=lanePoint(progress),c=lanePoint(progress+4/this.track.length);
+        const ab=a.distanceTo(b),bc=b.distanceTo(c),ca=c.distanceTo(a);
+        const curvature=2*Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x))/Math.max(.001,ab*bc*ca);
+        const limit=cornerSpeed(curvature/car.gripScale,o.speedCap/.92)*.92;
+        target=Math.min(target,Math.sqrt(limit*limit+2*brakingDeceleration(car.speed,false,car.gripScale)*.75*Math.max(0,distance-car.speed*.15)));
+      }
+    }
+    if(this.planner.cornerLimit(car.progress)<60&&Math.abs(currentBias-o.lane)>1.5)target=Math.min(target,this.planner.speed(reference)*Math.sqrt(car.gripScale));
+    if(car.offRoad){target=Math.min(target,14);this.intent='recover';}
+    if(Math.abs(error)>.5)target=Math.min(target,Math.max(9,22-Math.abs(error)*8));
+    // Feed forward the acceleration required by the speed profile and road
+    // drag. Error-only throttle used to coast below the target and brake late.
+    // Front runners bank ERS; a trailing challenger can spend it on the pass.
+    const wantsBoost=target>78&&car.speed>35&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>(o.control.boost?5:o.attack>.7?18:35)&&o.rank>=this.playerPosition&&(!ahead||passing||gapTo(ahead)>35);
+    if(!wantsBoost)target=Math.min(target,o.speedCap*87/94);
+    const feedforward=target<plannedTarget-.1?0:plannedAcceleration;
+    const acceleration=feedforward+(target-car.speed)*2;
+    const drag=.00105*car.speed*car.speed+(car.offRoad?4.2:.35);
+    const demand=acceleration+drag;
+    const boost=wantsBoost&&demand>0;
+    const pursuit=1+(o.powerAssist-1)*THREE.MathUtils.smoothstep(car.speed,45,75);
+    const engine=(boost?23:17)*car.powerScale*(car.raceLaunchScale??1)*pursuit*(1-car.speed/140);
+    o.control={steer,throttle:THREE.MathUtils.clamp(demand/Math.max(1,engine),0,1),brake:THREE.MathUtils.clamp(-demand/brakingDeceleration(car.speed,car.offRoad,car.gripScale),0,1),boost};
+  }
+}

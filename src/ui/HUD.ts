@@ -36,7 +36,7 @@ export class HUD {
     (this.root.querySelector('#pause-menu') as HTMLElement).hidden=!paused;
     if(paused&&!this.wasPaused)(this.root.querySelector('#resume') as HTMLElement).focus();
     if(!paused&&this.wasPaused)(document.activeElement as HTMLElement)?.blur();
-    if(paused){const scores=this.root.querySelector('#rival-scores')!;scores.replaceChildren(...r.opponents.map(o=>{const row=document.createElement('div');row.textContent=`${o.name} · ${o.personality} / ${o.collisionScore.toFixed(0)}점 (${o.collisionCount}회)`;return row;}));}
+    if(paused){const scores=this.root.querySelector('#rival-scores')!;scores.replaceChildren(...r.opponents.map(o=>{const row=document.createElement('div');row.textContent=`${o.name} · ${o.personality} · ${o.agent.status} / ${o.collisionScore.toFixed(0)}점 (${o.collisionCount}회)`;return row;}));}
     this.wasPaused=paused;
     this.root.classList.toggle('cockpit-view',cameraMode===1);
     this.text('position',String(r.position).padStart(2,'0'));this.text('lap',`${Math.min(v.lap,3)} / 3`);this.text('current',formatTime(r.lapTime));this.text('last',formatTime(r.lastLap));this.text('best',formatTime(r.best));
