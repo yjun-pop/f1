@@ -78,12 +78,41 @@ assert.ok(planner.point(0).distanceTo(planner.point(1))<1e-9,'Closed line seam')
 console.log('PASS: optimized line clearance, non-centerline geometry, reduced bending, braking distance and closed-loop continuity');
 const {RacingLine}=await import(moduleURL('RacingLine'));
 const guide=new RacingLine(track,scene);v.reset();guide.update(v);
-guide.arrows.geometry.computeBoundingBox();const bounds=guide.arrows.geometry.boundingBox;
-assert.ok(bounds.max.y-bounds.min.y>.1,'Guidance must have real vertical thickness');
-assert.equal(guide.arrows.count,80,'Guide should use one instanced batch');
-v.resetAt(track.sections[0].progress-30/track.length);v.speed=86;guide.update(v);const red=new THREE.Color();let hasBrakeMarker=false;for(let i=0;i<80;i++){guide.arrows.getColorAt(i,red);if(red.r>red.g*1.5)hasBrakeMarker=true;}assert.ok(hasBrakeMarker,'Excess speed approaching T1 requires red braking guidance');
-guide.toggle();guide.update(v);assert.equal(guide.arrows.visible,false);
-console.log('PASS: extruded 3D arrow geometry, instanced rendering, braking color and guide toggle');
+assert.equal(guide.ribbon.visible,false,'Guide must be hidden on the long starting straight');
+assert.equal(guide.markers.visible,false,'Upright cues must also disappear on straights');
+v.resetAt(600/track.length);v.speed=80;guide.update(v);
+assert.equal(guide.ribbon.visible,false,'High speed alone must not enable guidance far from a corner');
+v.resetAt(track.sections[0].progress-90/track.length);v.speed=70;guide.update(v);
+assert.ok(guide.ribbon.visible&&guide.sampleCount>50,'Approaching T1 must show entry through the chicane exit');
+assert.ok(guide.markers.visible&&guide.markers.count>0,'The line must remain readable head-on through upright cues');
+const cueMatrix=new THREE.Matrix4();guide.markers.getMatrixAt(0,cueMatrix);
+assert.ok(cueMatrix.elements[5]>0&&Math.abs(cueMatrix.elements[4])<1e-6&&Math.abs(cueMatrix.elements[6])<1e-6,'Cues must stand vertically instead of lying on asphalt');
+assert.ok(cueMatrix.elements[13]>.2,'Cues must float above the road');
+const ribbonPositions=guide.ribbon.geometry.getAttribute('position');
+for(let sample=0;sample<guide.sampleCount;sample++){
+  const base=sample*3;
+  assert.equal(ribbonPositions.getX(base),ribbonPositions.getX(base+2));
+  assert.equal(ribbonPositions.getZ(base),ribbonPositions.getZ(base+2));
+  assert.ok(ribbonPositions.getY(base)>.2,'Ribbon must float clear of the asphalt');
+  assert.ok(ribbonPositions.getY(base+2)-ribbonPositions.getY(base)>.45,'Ribbon must be vertical, not painted on the road');
+}
+const startMeters=Math.ceil((v.progress*track.length+2)/2.5)*2.5;
+for(let sample=0;sample<guide.sampleCount-1;sample++){
+  const expected=guide.planner.point((startMeters+sample*2.5)/track.length);
+  assert.ok(Math.hypot(ribbonPositions.getX(sample*3)-expected.x,ribbonPositions.getZ(sample*3)-expected.z)<.001,'Ribbon must follow the actual optimized path');
+}
+const ribbonColors=guide.ribbon.geometry.getAttribute('color');
+const fastColor=new THREE.Color().fromBufferAttribute(ribbonColors,10);
+v.speed=8;guide.update(v);const slowColor=new THREE.Color().fromBufferAttribute(ribbonColors,10);
+assert.ok(fastColor.r-fastColor.g>slowColor.r-slowColor.g,'Actual overspeed must shift the guide toward braking colors');
+assert.ok(slowColor.g>slowColor.r,'Low speed relative to the recommended speed must invite acceleration');
+// Enter the braking zone at high speed, then brake early without moving.
+v.resetAt(800/track.length);v.speed=86;guide.update(v);assert.ok(guide.ribbon.visible);
+v.speed=10;guide.update(v);assert.ok(guide.ribbon.visible,'Braking must not make an already active corner guide disappear');
+v.resetAt(1130/track.length);v.speed=10;guide.update(v);assert.equal(guide.ribbon.visible,false,'After the corner exit the guide must disappear');
+v.resetAt(920/track.length);v.speed=40;guide.toggle();guide.update(v);assert.equal(guide.ribbon.visible,false,'G must still disable corner guidance');
+guide.toggle();guide.update(v);assert.ok(guide.ribbon.visible);
+console.log('PASS: corner-only visibility, floating vertical geometry, optimized path alignment, actual speed colors and toggle');
 
 // A 72 km/h corner far ahead must not demand braking at 126 km/h yet.
 const actualCornerLimit=guide.planner.cornerLimit.bind(guide.planner);
@@ -162,19 +191,32 @@ assert.ok(peakSlip<10*Math.PI/180,'Guidance must avoid sustained large tire slip
 assert.ok(planner.speed(600/track.length)>85,'Corner safety margin must preserve straight-line speed');
 console.log(`PASS: guided physical lap in ${finishedAt.toFixed(1)}s, no off-road frames, peak slip ${(peakSlip*180/Math.PI).toFixed(1)} degrees`);
 
-// A fast car before a chicane must still see the exit as an acceleration zone.
+// A speed profile that brakes into a chicane and accelerates out must be
+// painted continuously, using attainable future speed instead of coloring
+// every future point against the unchanged approach speed.
 const savedSpeed=guide.planner.speed.bind(guide.planner),savedAdvice=guide.planner.advice.bind(guide.planner);
+const savedLimit=guide.planner.cornerLimit.bind(guide.planner),savedZones=guide.zones;
+guide.zones=[{start:30,end:180,minimumSpeed:24}];guide.engagedZone=-1;
 guide.planner.speed=t=>{const distance=((t%1+1)%1)*track.length;return distance<65?50-distance*.4:24+(distance-65)*.2;};
-guide.planner.advice=()=>30;
-v.resetAt(0);v.speed=70;guide.toggle();guide.update(v);
-const marker=new THREE.Color();
-guide.arrows.getColorAt(10,marker);assert.ok(marker.r>marker.g*1.5,'Deceleration zone must be red');
-guide.arrows.getColorAt(40,marker);assert.ok(marker.g>marker.r*1.5,'Exit must be green even when the approaching car is too fast');
-guide.planner.speed=()=>30;guide.planner.advice=()=>30;v.speed=30;guide.update(v);
-guide.arrows.getColorAt(30,marker);assert.ok(marker.r>.5&&marker.g>.5&&marker.b<.1,'Constant-speed zone must be yellow');
-guide.planner.speed=savedSpeed;guide.planner.advice=savedAdvice;
-console.log('PASS: braking, holding and exit acceleration colors describe their own road positions');
-
+guide.planner.cornerLimit=()=>87;guide.planner.advice=()=>30;
+v.resetAt(0);v.speed=70;guide.update(v);
+const colors=guide.ribbon.geometry.getAttribute('color');
+const brakingColor=new THREE.Color().fromBufferAttribute(colors,10*3+1),exitColor=new THREE.Color().fromBufferAttribute(colors,50*3+1);
+assert.ok(brakingColor.r>brakingColor.g,'Braking demand must be red/orange');
+assert.ok(exitColor.g>exitColor.r,'The exit must invite acceleration after the predicted braking');
+const shades=new Set(Array.from({length:guide.sampleCount},(_,i)=>[colors.getX(i*3+1),colors.getY(i*3+1),colors.getZ(i*3+1)].map(v=>v.toFixed(3)).join(',')));
+assert.ok(shades.size>12,'Color strength must be a continuous gradient, not three discrete states');
+assert.equal(colors.getW((guide.sampleCount-1)*3+1),0,'The ribbon must fade out at the end of the exit');
+guide.planner.speed=()=>30;v.speed=30;guide.update(v);
+const holdColor=new THREE.Color().fromBufferAttribute(colors,10*3+1);
+assert.ok(holdColor.r>.9&&holdColor.g>.5&&holdColor.b<.2,'Matching a constant optimal speed must show the neutral yellow');
+// The same corner must remain active across the start/finish seam.
+guide.zones=[{start:track.length-50,end:track.length+65,minimumSpeed:20}];guide.engagedZone=-1;
+v.resetAt(1-100/track.length);v.speed=30;guide.update(v);assert.ok(guide.ribbon.visible);
+v.resetAt(20/track.length);guide.update(v);assert.ok(guide.ribbon.visible,'Wrapping progress must not lose the corner exit');
+v.resetAt(90/track.length);v.speed=0;guide.update(v);assert.equal(guide.ribbon.visible,false,'Wrapped exit must clear normally');
+guide.planner.speed=savedSpeed;guide.planner.advice=savedAdvice;guide.planner.cornerLimit=savedLimit;guide.zones=savedZones;guide.engagedZone=-1;
+console.log('PASS: continuous braking/holding/acceleration gradients, end fade and cyclic corner windows');
 
 // Run the same rival on the same circuit with a player consistently ahead,
 // alongside in race distance, or behind. All changes still go through tires,
