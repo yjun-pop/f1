@@ -82,9 +82,17 @@ export class Race {
     const offsetAt=(progress:number)=>this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));
     const gapTo=(other:Vehicle)=>{let gap=other.progress-car.progress;if(gap<-.5)gap+=1;if(gap>.5)gap-=1;return gap*this.track.length;};
     const currentBias=biasAt(car);
+    // Rettifilo funnels two grid lanes into two opposite, closely spaced turns.
+    // Establish a queue on the approach, before the racing line sweeps across
+    // the road. A frozen straight-line passing offset is unsafe in the chicane.
+    const first=this.planner.apices[0],second=this.planner.apices[1];
+    const meters=car.progress*this.track.length;
+    const firstChicane=!!first&&!!second&&meters>first.progress*this.track.length-360&&meters<second.progress*this.track.length+100;
+    const chicaneTraffic=firstChicane&&traffic.some(other=>Math.abs(gapTo(other))<100);
     // Each independent driver remembers contact and spends more margin afterward.
     const caution=o.caution+o.avoidance,clearance=2.8+caution*.3;
-    let desiredLane=this.elapsed<2?currentBias:o.lineBias;
+    let desiredLane=this.elapsed<2?currentBias:chicaneTraffic?0:o.lineBias;
+    if(chicaneTraffic){o.passLane=undefined;o.passUntil=0;o.defendUntil=0;}
     // AI uses the precomputed braking envelope with its own short reaction
     // distance, rather than the extra early-braking margin intended for a human.
     const pace=Math.min(1.47,o.pace);
@@ -97,11 +105,11 @@ export class Race {
     const nextTarget=Math.min(o.speedCap,speedAt(reference+8/this.track.length)*pace);
     const plannedAcceleration=(nextTarget*nextTarget-plannedTarget*plannedTarget)/16;
     let target=plannedTarget,passing=false;
-    const ahead=traffic.filter(other=>gapTo(other)>0&&gapTo(other)<70&&Math.abs(biasAt(other)-currentBias)<3)
+    const ahead=traffic.filter(other=>gapTo(other)>0&&gapTo(other)<(chicaneTraffic?100:70)&&(chicaneTraffic||Math.abs(biasAt(other)-currentBias)<3))
       .sort((a,b)=>gapTo(a)-gapTo(b))[0];
     if(ahead){
       const nearest=gapTo(ahead),otherBias=biasAt(ahead);
-      if(nearest<Math.min(70,25+car.speed*.7)&&car.speed>=ahead.speed-1&&[0,15,30,45].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>60)){
+      if(!chicaneTraffic&&nearest<Math.min(70,25+car.speed*.7)&&car.speed>=ahead.speed-1&&[0,15,30,45].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>60)){
         // Try both passing corridors and reject ones that clip the edge at
         // either car or at the steering target. Clamping an impossible pass
         // to the same lane used to create queues and repeated contact.
@@ -119,6 +127,13 @@ export class Race {
         lanes.sort((a,b)=>cost(a)-cost(b));
         if(lanes.length){desiredLane=lanes[0];passing=true;o.passLane=desiredLane;o.passUntil=this.elapsed+1.5;}
       }
+      if(chicaneTraffic){
+        // Include cars in the other lane: both corridors soon share an apex.
+        // Yield with throttle/brakes until the merge is clear, never by moving
+        // a car or forcing its speed. Remove the old 5m/s minimum in a queue.
+        const safeGap=10+car.speed*.65+caution*2;
+        target=Math.min(target,Math.max(0,ahead.speed+(nearest-safeGap)*.7));
+      }
       const closing=Math.max(0,car.speed-ahead.speed);
       const brakingGap=7+caution*3+car.speed*(.12+caution*.05)+closing*.35+closing*closing/(2*brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.8);
       if(nearest<Math.max(9+car.speed*.2,brakingGap)&&Math.abs(currentBias-otherBias)<2.6){
@@ -131,7 +146,7 @@ export class Race {
     const apexDistance=nextApex?((nextApex.progress-car.progress+1)%1)*this.track.length:Infinity;
     const straight=[0,20,40,60].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>60);
     const alongside=traffic.some(other=>Math.abs(gapTo(other))<14);
-    if(!passing&&!ahead&&straight&&!alongside){
+    if(!chicaneTraffic&&!passing&&!ahead&&straight&&!alongside){
       if(this.elapsed<o.defendUntil)desiredLane=o.defendLane;
       else if(o.aggression-o.avoidance*.35>.5&&this.elapsed>o.defendCooldown&&apexDistance>200&&apexDistance<260&&traffic.some(other=>{
         const gap=-gapTo(other),closing=other.speed-car.speed;
