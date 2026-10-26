@@ -4,6 +4,8 @@
 
 ## 실행
 
+Node.js 버전은 `.nvmrc`의 24.19.0을 사용합니다. CI와 로컬의 장시간 물리 재현 결과를 맞추기 위해 동일한 런타임을 사용합니다.
+
 ```sh
 npm install
 npm run dev
