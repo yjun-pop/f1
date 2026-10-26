@@ -4,7 +4,7 @@ import {Vehicle} from './Vehicle';
 import {LinePlanner} from './LinePlanner';
 import {brakingDeceleration} from './Dynamics';
 
-interface CornerZone {start:number;end:number;minimumSpeed:number}
+interface CornerZone {start:number;end:number;minimumSpeed:number;minimumGrassSpeed?:number}
 const STEP=2.5,MAX_SAMPLES=512,HEIGHTS=[.25,.49,.73];
 /** Corner-only, upright guidance following the optimized path in world space. */
 export class RacingLine {
@@ -55,10 +55,10 @@ export class RacingLine {
     }
     const anchor=mask.findIndex(value=>!value),zones:CornerZone[]=[];
     if(anchor<0)return [{start:0,end:this.track.length,minimumSpeed:Math.min(...this.planner.cornerSpeeds)}];
-    let start=-1,minimumSpeed=87;
+    let start=-1,minimumSpeed=87,minimumGrassSpeed=87;
     for(let step=1;step<=n+1;step++){
       const index=anchor+step,curved=step<=n&&mask[index%n];
-      if(curved){if(start<0){start=index;minimumSpeed=87;}minimumSpeed=Math.min(minimumSpeed,this.planner.cornerSpeeds[index%n]);}
+      if(curved){if(start<0){start=index;minimumSpeed=87;minimumGrassSpeed=87;}minimumSpeed=Math.min(minimumSpeed,this.planner.cornerSpeeds[index%n]);minimumGrassSpeed=Math.min(minimumGrassSpeed,this.planner.cornerLimit(index/n,true));}
       else if(start>=0){
         const from=(start%n)*spacing-18;
         const end=from+(index-start)*spacing+63;
@@ -67,7 +67,7 @@ export class RacingLine {
           const meters=section.progress*this.track.length+lap*this.track.length;
           return meters>=from-42&&meters<=end+15;
         }));
-        if(named)zones.push({start:from,end,minimumSpeed});start=-1;
+        if(named)zones.push({start:from,end,minimumSpeed,minimumGrassSpeed});start=-1;
       }
     }
     return zones;
@@ -81,11 +81,12 @@ export class RacingLine {
     const meters=((vehicle.progress%1+1)%1)*this.track.length;
     let active:CornerZone|undefined,approach=0,best=Infinity,selected=-1;
     for(const [zoneIndex,zone] of this.zones.entries()){
-      const stopping=Math.max(0,(vehicle.speed**2-zone.minimumSpeed**2)/(2*brakingDeceleration(vehicle.speed,vehicle.offRoad)*.65));
-      const lead=THREE.MathUtils.clamp(Math.max(75,vehicle.speed*2.5,stopping+vehicle.speed*.4+35),75,300);
+      const minimum=vehicle.offRoad?(zone.minimumGrassSpeed??zone.minimumSpeed*Math.sqrt(.43)):zone.minimumSpeed;
+      const stopping=this.planner.brakingDistance(vehicle.speed,minimum,vehicle.offRoad);
+      const lead=THREE.MathUtils.clamp(Math.max(75,vehicle.speed*2.5,stopping+vehicle.speed*.4+35),75,900);
       for(const lap of [-1,0,1]){
         const start=zone.start+lap*this.track.length,end=zone.end+lap*this.track.length;
-        const distance=start-meters,score=Math.max(0,distance);
+        const distance=this.planner.pathDistance(meters/this.track.length,start/this.track.length),score=Math.max(0,distance);
         if(meters<=end&&(distance<=lead||(this.engagedZone===zoneIndex&&distance<=350))&&score<best){active={...zone,start,end};approach=lead;best=score;selected=zoneIndex;}
       }
     }
@@ -97,12 +98,13 @@ export class RacingLine {
     const end=Math.min(active.end,first+(MAX_SAMPLES-1)*STEP);
     const count=Math.min(MAX_SAMPLES,Math.ceil((end-first)/STEP)+1);
     if(count<2){this.ribbon.visible=false;this.markers.visible=false;return;}
-    let forecast=vehicle.speed,previousDistance=0;
+    let forecast=vehicle.speed,previousProgress=meters/this.track.length;
     for(let i=0;i<count;i++){
       const s=Math.min(end,first+i*STEP),t=s/this.track.length,p=this.planner.point(t),distance=s-meters;
-      const target=Math.min(this.planner.speed(t),this.planner.cornerLimit(t));
-      const next=Math.min(this.planner.speed(t+8/this.track.length),this.planner.cornerLimit(t+8/this.track.length));
-      const profileAcceleration=(next*next-target*target)/16;
+      const target=Math.min(this.planner.speed(t),this.planner.cornerLimit(t,vehicle.offRoad));
+      const next=Math.min(this.planner.speed(t+8/this.track.length),this.planner.cornerLimit(t+8/this.track.length,vehicle.offRoad));
+      const profileDistance=this.planner.pathDistance(t,t+8/this.track.length);
+      const profileAcceleration=(next*next-target*target)/(2*Math.max(.1,profileDistance));
       // Start with the actual car speed. Predict attainable braking/acceleration
       // along the guide, so a corner exit is not painted red just because the
       // car is still fast before braking at the entry.
@@ -124,8 +126,8 @@ export class RacingLine {
         this.positions[position]=p.x;this.positions[position+1]=p.y+HEIGHTS[row];this.positions[position+2]=p.z;
         this.colors[color]=this.color.r;this.colors[color+1]=this.color.g;this.colors[color+2]=this.color.b;this.colors[color+3]=fade*(row===1?.9:.12);
       }
-      forecast=Math.sqrt(Math.max(0,forecast*forecast+2*THREE.MathUtils.clamp(demand,-deceleration,acceleration)*(distance-previousDistance)));
-      previousDistance=distance;
+      forecast=Math.sqrt(Math.max(0,forecast*forecast+2*THREE.MathUtils.clamp(demand,-deceleration,acceleration)*this.planner.pathDistance(previousProgress,t)));
+      previousProgress=t;
     }
     this.sampleCount=count;
     this.ribbon.material.opacity=Math.max(latched?this.ribbon.material.opacity:0,.88*THREE.MathUtils.smoothstep(approach-(active.start-meters),0,25));

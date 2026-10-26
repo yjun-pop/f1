@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {Track,ROAD_HALF_WIDTH} from './Track';
-import {cornerSpeed,brakingDeceleration} from './Dynamics';
+import {cornerSpeed,brakingDeceleration,HANDLING} from './Dynamics';
 // Leave grip for steering transients and simultaneous braking/turning. The
 // steady-state tire limit alone is not a usable keyboard driving target.
 const CORNER_SPEED_MARGIN=.8;
@@ -15,8 +15,10 @@ export class LinePlanner {
   readonly speeds:Float64Array;
   readonly cornerSpeeds:Float64Array;
   readonly distances:Float64Array;
+  private pathLengths:Float64Array;
+  private curvatures:Float64Array;
   constructor(private track:Track){
-    this.count=Math.ceil(track.length/4);this.offsets=new Float64Array(this.count);this.speeds=new Float64Array(this.count);this.cornerSpeeds=new Float64Array(this.count);this.distances=new Float64Array(this.count);
+    this.count=Math.ceil(track.length/4);this.offsets=new Float64Array(this.count);this.speeds=new Float64Array(this.count);this.cornerSpeeds=new Float64Array(this.count);this.distances=new Float64Array(this.count);this.pathLengths=new Float64Array(this.count+1);this.curvatures=new Float64Array(this.count);
     const centers=Array.from({length:this.count},(_,i)=>track.point(i/this.count));
     const normals=centers.map((_,i)=>track.normal(i/this.count));
     const apexWidths:number[]=[];
@@ -101,7 +103,7 @@ export class LinePlanner {
       const ab=a.distanceTo(b),bc=b.distanceTo(c),ca=c.distanceTo(a);
       const cross=Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x));
       const curvature=2*cross/Math.max(.001,ab*bc*ca);
-      this.distances[i]=bc;
+      this.distances[i]=bc;this.pathLengths[i+1]=this.pathLengths[i]+bc;this.curvatures[i]=curvature;
       // Conservative dry grip, with a small downforce contribution.
       this.speeds[i]=this.cornerSpeeds[i]=Math.min(87,cornerSpeed(curvature/(CORNER_SPEED_MARGIN*CORNER_SPEED_MARGIN)));
     }
@@ -112,16 +114,47 @@ export class LinePlanner {
     }
   }
   point(t:number){const f=((t%1+1)%1)*this.count,i=Math.floor(f);return this.points[i].clone().lerp(this.points[(i+1)%this.count],f-i);}
-  cornerLimit(t:number){const f=((t%1+1)%1)*this.count,i=Math.floor(f);return THREE.MathUtils.lerp(this.cornerSpeeds[i],this.cornerSpeeds[(i+1)%this.count],f-i);}
+  cornerLimit(t:number,offRoad=false){
+    const f=((t%1+1)%1)*this.count,i=Math.floor(f),next=(i+1)%this.count;
+    if(!offRoad)return THREE.MathUtils.lerp(this.cornerSpeeds[i],this.cornerSpeeds[next],f-i);
+    const curvature=THREE.MathUtils.lerp(this.curvatures[i],this.curvatures[next],f-i)/(CORNER_SPEED_MARGIN*CORNER_SPEED_MARGIN);
+    // Both mechanical grip and downforce grip fall on grass, just as in
+    // Dynamics. Reducing braking alone does not make the corner speed safe.
+    return Math.min(THREE.MathUtils.lerp(this.cornerSpeeds[i],this.cornerSpeeds[next],f-i),Math.sqrt(HANDLING.baseGrip*.94*.43/Math.max(.0001,curvature-HANDLING.downforce*.94*.43)));
+  }
+  /** Signed distance along the guide, including any full laps. */
+  pathDistance(from:number,to:number){
+    const at=(t:number)=>{
+      const lap=Math.floor(t),f=(t-lap)*this.count,i=Math.min(this.count-1,Math.floor(f));
+      return lap*this.pathLengths[this.count]+this.pathLengths[i]+this.distances[i]*(f-i);
+    };
+    return at(to)-at(from);
+  }
+  brakingDistance(speed:number,target:number,offRoad=false){
+    let distance=0,current=Math.max(0,speed);target=Math.max(0,target);
+    while(current>target){
+      const next=Math.max(target,current-1);
+      distance+=(current*current-next*next)/(2*brakingDeceleration(next,offRoad)*BRAKING_GRIP_USAGE);
+      current=next;
+    }
+    return distance;
+  }
   advice(progress:number,speed:number,offRoad=false){
-    let allowed=94;
-    const decel=brakingDeceleration(speed,offRoad)*BRAKING_GRIP_USAGE;
-    // Ask for braking only when the corner is within the actual stopping range.
-    for(let distance=0;distance<=240;distance+=4){
-      const t=progress+distance/this.track.length;
-      const limit=Math.min(this.speed(t),this.cornerLimit(t));
-      const usableDistance=Math.max(0,distance-speed*REACTION_TIME);
-      allowed=Math.min(allowed,Math.sqrt(limit*limit+2*decel*usableDistance));
+    // Bound the search by the full stop distance, then propagate
+    // a speed-dependent braking envelope backwards along the actual path.
+    // Using the approach-speed downforce throughout the stop brakes too late.
+    const stoppingRange=Math.max(240,speed*REACTION_TIME+this.brakingDistance(speed,0,offRoad)+40);
+    const samples:{distance:number;limit:number}[]=[];
+    for(let distance=0;distance<=this.track.length;distance+=4){
+      const t=progress+distance/this.track.length,pathDistance=this.pathDistance(progress,t);
+      samples.push({distance:Math.max(0,pathDistance-speed*REACTION_TIME),limit:Math.min(this.speed(t),this.cornerLimit(t,offRoad))});
+      if(pathDistance>=stoppingRange)break;
+    }
+    let allowed=samples[samples.length-1].limit;
+    for(let i=samples.length-2;i>=0;i--){
+      const distance=samples[i+1].distance-samples[i].distance;
+      const decel=brakingDeceleration(allowed,offRoad)*BRAKING_GRIP_USAGE;
+      allowed=Math.min(samples[i].limit,Math.sqrt(allowed*allowed+2*decel*distance));
     }
     return allowed;
   }

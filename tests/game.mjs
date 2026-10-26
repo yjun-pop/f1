@@ -241,6 +241,65 @@ assert.ok(peakSlip<10*Math.PI/180,'Guidance must avoid sustained large tire slip
 assert.ok(planner.speed(600/track.length)>85,'Corner safety margin must preserve straight-line speed');
 console.log(`PASS: guided physical lap in ${finishedAt.toFixed(1)}s, no off-road frames, peak slip ${(peakSlip*180/Math.PI).toFixed(1)} degrees`);
 
+const keyboardFollower=new Vehicle(track,new THREE.Scene());
+let keyboardFinish=0,keyboardOffRoad=0,keyboardSlip=0;const visitedApices=new Set();let cornerError=0;
+for(let step=0;step<120*180;step++){
+  const lookahead=THREE.MathUtils.clamp(7+keyboardFollower.speed*.3,9,26);
+  const to=planner.point(keyboardFollower.progress+lookahead/track.length).sub(keyboardFollower.position);
+  const desired=Math.atan2(to.x,to.z),error=Math.atan2(Math.sin(desired-keyboardFollower.heading),Math.cos(desired-keyboardFollower.heading));
+  const angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));
+  const steer=THREE.MathUtils.clamp((angle-keyboardFollower.yawRate*.018)/steeringLock(keyboardFollower.speed),-1,1);
+  const difference=planner.advice(keyboardFollower.progress,keyboardFollower.speed)-keyboardFollower.speed;
+  keyboardFollower.drive(1/120,{keyboard:true,steer,throttle:THREE.MathUtils.clamp(difference/3,0,1),brake:THREE.MathUtils.clamp(-difference/4,0,1)});
+  for(const [index,apex] of planner.apices.entries())if(Math.abs(keyboardFollower.progress-apex.progress)*track.length<5){visitedApices.add(index);cornerError=Math.max(cornerError,keyboardFollower.position.distanceTo(planner.point(keyboardFollower.progress)));}
+  if(keyboardFollower.offRoad)keyboardOffRoad++;
+  keyboardSlip=Math.max(keyboardSlip,Math.abs(Math.atan2(keyboardFollower.lateralSpeed,Math.max(1,keyboardFollower.speed))));
+  if(keyboardFollower.distance>=1){keyboardFinish=(step+1)/120;break;}
+}
+assert.ok(keyboardFinish>0,'Following the recommended speed must complete a physical lap');
+assert.ok(keyboardFinish<130,'The wider, curvature-based line must preserve its physical lap-time improvement');
+assert.equal(keyboardOffRoad,0,'The recommended line and speed must keep player handling on asphalt');
+assert.ok(keyboardSlip<10*Math.PI/180,'Guidance must avoid sustained large tire slip');
+assert.ok(planner.speed(600/track.length)>85,'Corner safety margin must preserve straight-line speed');
+console.log(`PASS: guided physical lap in ${keyboardFinish.toFixed(1)}s, no off-road frames, peak slip ${(keyboardSlip*180/Math.PI).toFixed(1)} degrees`);
+
+assert.equal(visitedApices.size,11,'Player handling must physically traverse all eleven apex zones');
+assert.ok(cornerError<2,'Player handling must remain within two metres of the line at every apex');
+console.log('PASS: player keyboard handling, eleven apex zones and maximum apex tracking error',cornerError);
+
+// Independently sum the guide polyline, including partial segments and seams.
+const guideLength=planner.points.reduce((sum,p,i)=>sum+p.distanceTo(planner.points[(i+1)%planner.count]),0);
+assert.ok(Math.abs(planner.pathDistance(0,1)-guideLength)<1e-7);
+assert.ok(Math.abs(planner.pathDistance(.99,1.01)-planner.pathDistance(.99,1)-planner.pathDistance(0,.01))<1e-7);
+assert.ok(Math.abs(planner.pathDistance(-.01,.01)-planner.pathDistance(.99,1.01))<1e-7);
+assert.equal(planner.pathDistance(.3,.3),0);
+for(let i=0;i<planner.count;i++){
+  const t=(i+.5)/planner.count;
+  assert.ok(planner.cornerLimit(t,true)<=planner.cornerLimit(t)+1e-8,'Low-grip guidance must never exceed dry corner limits');
+}
+for(const apex of planner.apices){
+  assert.ok(planner.cornerLimit(apex.progress,true)<planner.cornerLimit(apex.progress)*.8,'Every grass corner target must reflect reduced lateral grip');
+}
+for(const grass of [false,true]){
+  let speed=94,travelled=0;
+  while(speed>20){const next=Math.max(20,speed-brakingDeceleration(speed,grass)*.65/1000);travelled+=(speed+next)*.5/1000;speed=next;}
+  const predicted=planner.brakingDistance(94,20,grass);
+  assert.ok(predicted>=travelled-1&&predicted<travelled*1.03,'Stopping distance must match numerical braking with falling downforce');
+}
+assert.equal(planner.brakingDistance(20,30),0,'An acceleration target requires no braking distance');
+const realSpeed=planner.speed,realLimit=planner.cornerLimit;
+planner.speed=()=>94;
+planner.cornerLimit=t=>{const meters=((t%1+1)%1)*track.length;return meters>=400&&meters<440?20:94;};
+assert.equal(planner.advice(0,94,false),94,'Dry braking must not react to a distant isolated corner prematurely');
+assert.ok(planner.advice(0,94,true)<90,'Low-grip braking must look beyond the old 240 metre cutoff');
+planner.speed=realSpeed;planner.cornerLimit=realLimit;
+const realZones=guide.zones;
+guide.zones=[{start:400,end:500,minimumSpeed:20}];guide.engagedZone=-1;
+v.resetAt(0);v.speed=94;guide.update(v);assert.equal(guide.ribbon.visible,false);
+v.offRoad=true;guide.update(v);assert.ok(guide.ribbon.visible,'The line must appear early enough for low-grip braking');
+v.offRoad=false;guide.zones=realZones;guide.engagedZone=-1;
+console.log('PASS: guide arc distance, lap seams, grass corner limits, extended stopping horizon and early low-grip visibility');
+
 // A speed profile that brakes into a chicane and accelerates out must be
 // painted continuously, using attainable future speed instead of coloring
 // every future point against the unchanged approach speed.
