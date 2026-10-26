@@ -8,7 +8,7 @@ export class Track {
   readonly group=new THREE.Group();
   readonly sections:{number:number;name:string;progress:number}[]=[];
   readonly bounds=new THREE.Box3();
-  private samples:THREE.Vector3[]=[];private sampleCount=0;
+  private samples:THREE.Vector3[]=[];private sampleCount=0;private kerbSegments=new Uint8Array(0);
   constructor(scene:THREE.Scene){
     let raw=MONZA_POINTS.map(([x,z])=>new THREE.Vector3(x,0,z));
     // Long sparse source segments must remain straight. Densification prevents
@@ -39,6 +39,17 @@ export class Track {
   point(t:number){return this.curve.getPointAt(((t%1)+1)%1);}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
+  kerbContact(position:THREE.Vector3,heading:number,progress:number){
+    let contact=0;
+    for(const axle of [-1.8,1.8])for(const side of [-1,1]){
+      const wheel=position.clone().add(new THREE.Vector3(Math.sin(heading)*axle+Math.cos(heading)*side,0,Math.cos(heading)*axle-Math.sin(heading)*side));
+      const t=this.nearestProgress(wheel,progress),index=Math.round(t*this.kerbSegments.length)%this.kerbSegments.length;
+      if(!this.kerbSegments[index])continue;
+      const lateral=Math.abs(wheel.sub(this.point(t)).dot(this.normal(t)));
+      contact+=Math.max(0,Math.min(lateral+.26,11.05)-Math.max(lateral-.26,9.65))/.52;
+    }
+    return Math.min(1,contact/2);
+  }
   nextSection(progress:number){return this.sections.find(s=>s.progress>progress+.002)||this.sections[0];}
   nearestProgress(position:THREE.Vector3,guess:number){
     const origin=Math.floor(((guess%1+1)%1)*this.sampleCount);let best=guess,min=Infinity;
@@ -87,10 +98,11 @@ export class Track {
   }
   private buildCircuit(){
     const dummy=new THREE.Object3D(),count=Math.ceil(this.length/3.1),barrierCount=Math.ceil(this.length/4.2);
+    this.kerbSegments=new Uint8Array(count);
     const kerbs=new THREE.InstancedMesh(new THREE.BoxGeometry(1.4,.12,3.25),new THREE.MeshStandardMaterial({roughness:.82,metalness:0}),count*2);
     const barriers=new THREE.InstancedMesh(new THREE.BoxGeometry(.5,1.2,4.4),new THREE.MeshStandardMaterial({color:0x315248,roughness:.7}),barrierCount*2);let k=0,b=0;
     for(const side of [-1,1]){
-      for(let i=0;i<count;i++){const t=i/count,angle=this.tangent(t-5/this.length).angleTo(this.tangent(t+5/this.length));if(angle<.018)continue;
+      for(let i=0;i<count;i++){const t=i/count,angle=this.tangent(t-5/this.length).angleTo(this.tangent(t+5/this.length));if(angle<.018)continue;this.kerbSegments[i]=1;
         const p=this.point(t).addScaledVector(this.normal(t),side*10.35),v=this.tangent(t);dummy.position.set(p.x,.08,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();kerbs.setMatrixAt(k,dummy.matrix);kerbs.setColorAt(k++,new THREE.Color(i%2?0xf5f3e8:0xd6493b));}
       for(let i=0;i<barrierCount;i++){const t=i/barrierCount,p=this.point(t).addScaledVector(this.normal(t),side*16.2),v=this.tangent(t);dummy.position.set(p.x,.6,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();barriers.setMatrixAt(b++,dummy.matrix);}
     }kerbs.receiveShadow=true;barriers.receiveShadow=true;kerbs.count=k;this.group.add(kerbs,barriers);

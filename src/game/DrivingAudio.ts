@@ -1,4 +1,5 @@
 import type {Vehicle} from './Vehicle';
+import {windLevel,type DrivingFeedbackFrame} from './DrivingFeedback';
 import {EngineSoundState,ENGINE_TIMBRES,soundTelemetry} from './EngineSound';
 export {soundTelemetry} from './EngineSound';
 interface Voice {
@@ -10,7 +11,7 @@ interface Voice {
 }
 export class DrivingAudio {
   private context?:AudioContext;private master?:GainNode;private voices:Voice[]=[];
-  private brake?:GainNode;private tire?:GainNode;private road?:GainNode;
+  private brake?:GainNode;private tire?:GainNode;private road?:GainNode;private wind?:GainNode;private kerb?:GainNode;
   private volume=.65;private muted=false;private active=false;private lastUpdate=0;
   constructor(){try{const saved=localStorage.getItem('apex-audio-volume');if(saved!==null&&Number.isFinite(Number(saved)))this.volume=Math.max(0,Math.min(1,Number(saved)));}catch{}}
   get level(){return this.volume;}
@@ -59,22 +60,22 @@ export class DrivingAudio {
           low.start();high.start();turbo.start();body.start();pulse.start();
           this.voices.push({car,state:new EngineSoundState(),low,high,lowGain,highGain,turbo,turboGain,body,bodyGain,bodyFilter,bodyShelf,pulse,pulseDepth,previousLoad:0,previousCut:1,thump:0,texture,filter,shelf,gain,pan});
         });
-        this.brake=noise(2300,3,master);this.tire=noise(1100,.8,master);this.road=noise(320,.5,master);
+        this.brake=noise(2300,3,master);this.tire=noise(1100,.8,master);this.road=noise(320,.5,master);this.wind=noise(700,.4,master);this.kerb=noise(430,.8,master);
       }
       void this.context.resume().catch(()=>{});this.applyGain();
     }catch{
       if(this.context)void this.context.close().catch(()=>{});
       this.context=undefined;this.master=undefined;this.voices=[];
-      this.brake=undefined;this.tire=undefined;this.road=undefined;
+      this.brake=undefined;this.tire=undefined;this.road=undefined;this.wind=undefined;this.kerb=undefined;
     }
   }
   private applyGain(){if(this.context&&this.master)this.master.gain.setTargetAtTime(this.active&&!this.muted?this.volume:0,this.context.currentTime,.025);}
-  update(player:Vehicle,active:boolean){
+  update(player:Vehicle,active:boolean,feedback?:DrivingFeedbackFrame){
     if(active!==this.active){this.active=active;this.lastUpdate=this.context?.currentTime??0;this.applyGain();}
     const context=this.context;if(!context||!active)return;
     const now=context.currentTime,dt=Math.max(1/240,Math.min(.1,now-this.lastUpdate||1/60));this.lastUpdate=now;
     for(const voice of this.voices){
-      const car=voice.car,sample=voice.state.advance(car,dt),self=car===player;
+      const car=voice.car,self=car===player,sample=self&&feedback?feedback.engine:voice.state.advance(car,dt);
       const dx=car.position.x-player.position.x,dz=car.position.z-player.position.z,distance=Math.hypot(dx,dz);
       const attenuation=self?1:.4/(1+(distance/13)**2);
       // The measured reference has ~100Hz periodic spacing at high RPM;
@@ -97,6 +98,8 @@ export class DrivingAudio {
       voice.pan.pan.setTargetAtTime(self?0:Math.max(-1,Math.min(1,(-dx*Math.cos(player.heading)+dz*Math.sin(player.heading))/Math.max(8,distance))),now,.06);
     }
     const sample=soundTelemetry(player);
+    this.wind!.gain.setTargetAtTime(feedback?.wind??windLevel(player.speed),now,.14);
+    this.kerb!.gain.setTargetAtTime((feedback?.kerb??0)*Math.min(1,player.speed/25)*.045,now,.025);
     this.brake!.gain.setTargetAtTime(sample.brake,now,.04);this.tire!.gain.setTargetAtTime(sample.tire,now,.04);this.road!.gain.setTargetAtTime(sample.road,now,.07);
   }
   silence(){this.active=false;this.applyGain();}

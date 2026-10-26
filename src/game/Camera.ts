@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {Vehicle} from './Vehicle';
+import type {DrivingFeedbackFrame} from './DrivingFeedback';
 export class CockpitCamera {
   readonly camera=new THREE.PerspectiveCamera(76,1,.06,1800);
   mode=1;
@@ -32,24 +33,30 @@ export class CockpitCamera {
     this.wheel.position.set(0,-.30,-.95);this.cockpit.add(this.wheel);this.cockpit.position.y=-.3;this.camera.add(this.cockpit);scene.add(this.camera);this.resize();
   }
   toggle(){this.mode=1-this.mode;this.initialized=false;}
-  update(vehicle:Vehicle,dt=1/60){
+  update(vehicle:Vehicle,dt=1/60,feedback?:DrivingFeedbackFrame){
     const forward=new THREE.Vector3(Math.sin(vehicle.heading),0,Math.cos(vehicle.heading));
     const desired=vehicle.position.clone().addScaledVector(forward,this.mode===0?-10:-.85).add(new THREE.Vector3(0,this.mode===0?5:this.eyeHeight,0));
+    if(feedback){
+      desired.y+=feedback.heave;
+      desired.addScaledVector(new THREE.Vector3(-forward.z,0,forward.x),feedback.sway);
+      desired.addScaledVector(forward,feedback.longitudinal);
+    }
     if(!this.initialized||this.mode===1)this.camera.position.copy(desired);else this.camera.position.lerp(desired,1-Math.exp(-7*dt));
     this.initialized=true;this.camera.up.set(0,1,0);
     this.camera.lookAt(vehicle.position.clone().addScaledVector(forward,26).add(new THREE.Vector3(0,this.mode===0?1.3:-.35,0)));
-    this.camera.fov=THREE.MathUtils.damp(this.camera.fov,(this.mode===1?76:62)+vehicle.speed*.055,4,dt);this.camera.updateProjectionMatrix();
+    if(feedback){this.camera.rotateX(feedback.pitch);this.camera.rotateZ(feedback.roll);}
+    this.camera.fov=THREE.MathUtils.damp(this.camera.fov,(this.mode===1?76:62)+vehicle.speed*.055+(feedback?.boostFov??0),4,dt);this.camera.updateProjectionMatrix();
     vehicle.group.visible=true;vehicle.group.traverse(child=>{if(child.name==='driver')child.visible=this.mode===0;});
     this.cockpit.visible=this.mode===1;this.wheel.rotation.z=vehicle.steer*.32;
-    // Small sprung-body motion, without rotating the horizon or masking the road.
+    // Cockpit-only sprung motion stays small relative to the stabilized road view.
     this.cockpit.rotation.x=THREE.MathUtils.damp(this.cockpit.rotation.x,vehicle.acceleration*.0006,8,dt);
     this.cockpit.rotation.z=THREE.MathUtils.damp(this.cockpit.rotation.z,-vehicle.lateralAcceleration*.00045,8,dt);
-    this.displayAge+=dt;if(this.displayAge>.08){this.displayAge=0;this.paintDisplay(vehicle);}
+    this.displayAge+=dt;if(this.displayAge>.08){this.displayAge=0;this.paintDisplay(vehicle,feedback?.engine);}
   }
-  private paintDisplay(v:Vehicle){
+  private paintDisplay(v:Vehicle,engine?:DrivingFeedbackFrame['engine']){
     const ctx=this.display.getContext('2d')!;ctx.fillStyle='#070c12';ctx.fillRect(0,0,384,256);
-    for(let i=0;i<15;i++){ctx.fillStyle=i<(v.kmh%43)/43*15?(i>10?'#a970ff':'#5cfc9c'):'#1d2c30';ctx.fillRect(12+i*24,7,17,13);}
-    ctx.textAlign='center';ctx.fillStyle='#eaffef';ctx.font='bold 115px monospace';ctx.fillText(v.kmh<2?'N':String(Math.min(8,1+Math.floor(v.kmh/43))),192,148);
+    for(let i=0;i<15;i++){ctx.fillStyle=i<(engine?Math.max(0,Math.min(1,(engine.rpm-6500)/5500)):(v.kmh%43)/43)*15?(i>10?'#a970ff':'#5cfc9c'):'#1d2c30';ctx.fillRect(12+i*24,7,17,13);}
+    ctx.textAlign='center';ctx.fillStyle='#eaffef';ctx.font='bold 115px monospace';ctx.fillText(v.kmh<2?'N':String(engine?.gear??Math.min(8,1+Math.floor(v.kmh/43))),192,148);
     ctx.fillStyle='#a6b4bd';ctx.font='18px monospace';ctx.fillText('GEAR',192,178);
     ctx.fillStyle='#fff';ctx.font='bold 34px monospace';ctx.fillText(String(v.kmh).padStart(3,'0'),320,98);ctx.font='14px monospace';ctx.fillText('KM/H',320,122);
     ctx.strokeStyle='#e9ed43';ctx.lineWidth=10;ctx.beginPath();ctx.arc(65,98,39,.6*Math.PI,(.6+v.boost/100*1.8)*Math.PI);ctx.stroke();ctx.font='bold 23px monospace';ctx.fillStyle='#e9ed43';ctx.fillText(`${Math.round(v.boost)}%`,65,108);

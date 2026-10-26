@@ -3,6 +3,7 @@ export class Input {
   private justPressed = new Set<string>();
   constructor() {
     window.addEventListener('keydown', e => {
+      if(e.code!=='Escape'&&(e.target as HTMLElement)?.matches?.('input,textarea,select,[contenteditable="true"]'))return;
       if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
       if (!e.repeat && !this.keys.has(e.code)) this.justPressed.add(e.code);
       this.keys.add(e.code);

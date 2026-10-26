@@ -1005,3 +1005,72 @@ bodyAudio.update(bodyPlayer,true);assert.ok(bodyAudio.master.gain.value>0);
 bodyAudio.setVolume(.4);assert.equal(bodyAudio.master.gain.value,.4);
 delete globalThis.AudioContext;
 console.log('PASS: low exhaust body, load-linked roughness, transient decay, gear punch, bounded bass, preserved treble balance and unified mute');
+
+// Presentation must read real wheel/kerb overlap, leave physics untouched,
+// and keep the road readable even under maximum braking and camera strength.
+const {DrivingFeedback,windLevel}=await import(moduleURL('DrivingFeedback'));
+const feelCar=new Vehicle(track,new THREE.Scene()),feel=new DrivingFeedback();feel.strength=1;
+const kerbProgress=planner.apices[0].progress,kerbHeading=Math.atan2(track.tangent(kerbProgress).x,track.tangent(kerbProgress).z);
+assert.equal(track.kerbContact(track.point(kerbProgress),kerbHeading,kerbProgress),0,'Track centre must not shake as if it were a kerb');
+const edge=track.point(kerbProgress).addScaledVector(track.normal(kerbProgress),9.6);
+assert.ok(track.kerbContact(edge,kerbHeading,kerbProgress)>.25,'A wheel overlapping a rendered corner kerb must be detected');
+const straightProgress=400/track.length,straightHeading=Math.atan2(track.tangent(straightProgress).x,track.tangent(straightProgress).z);
+assert.equal(track.kerbContact(track.point(straightProgress).addScaledVector(track.normal(straightProgress),9.3),straightHeading,straightProgress),0,'A road edge without rendered kerbs must stay smooth');
+feelCar.resetAt(straightProgress);feelCar.speed=60;feelCar.acceleration=-35;feelCar.lateralAcceleration=30;
+const physicalBefore={position:feelCar.position.clone(),heading:feelCar.heading,speed:feelCar.speed,distance:feelCar.distance,progress:feelCar.progress,lateral:feelCar.lateralSpeed,boost:feelCar.boost};
+let feedback;
+for(let i=0;i<120;i++)feedback=feel.update(feelCar,track,1/120,true);
+assert.ok(feedback.pitch<0&&feedback.heave<0&&Math.abs(feedback.pitch)<.02&&Math.abs(feedback.roll)<.005);
+assert.ok(Math.abs(feedback.heave)<.05&&Math.abs(feedback.sway)<.03&&Math.abs(feedback.longitudinal)<.08);
+assert.ok(feelCar.position.equals(physicalBefore.position));assert.equal(feelCar.heading,physicalBefore.heading);assert.equal(feelCar.speed,physicalBefore.speed);assert.equal(feelCar.distance,physicalBefore.distance);assert.equal(feelCar.progress,physicalBefore.progress);assert.equal(feelCar.lateralSpeed,physicalBefore.lateral);assert.equal(feelCar.boost,physicalBefore.boost);
+const feelCamera=new CockpitCamera(new THREE.Scene());feelCamera.update(feelCar,1);
+const levelDirection=feelCamera.camera.getWorldDirection(new THREE.Vector3()).clone();
+feelCamera.update(feelCar,1/60,feedback);const brakeDirection=feelCamera.camera.getWorldDirection(new THREE.Vector3());
+assert.ok(brakeDirection.y<levelDirection.y,'Braking must produce a small nose-down camera cue');
+assert.ok(Math.abs(feelCamera.camera.position.y-feelCar.position.y-feelCamera.eyeHeight)<.05);
+feelCamera.camera.updateMatrixWorld(true);
+const visibleRoad=feelCar.position.clone().addScaledVector(track.tangent(straightProgress),15).setY(.27).project(feelCamera.camera);
+assert.ok(Math.abs(visibleRoad.x)<.5&&Math.abs(visibleRoad.y)<.6,'Feedback must preserve the central road view');
+feelCamera.mode=0;feelCamera.update(feelCar,1,feedback);assert.ok(Number.isFinite(feelCamera.camera.position.x));
+feel.strength=0;const noMotion=feel.update(feelCar,track,1/60,true);
+for(const key of ['pitch','roll','heave','sway','longitudinal','surfaceHeave','boostFov'])assert.equal(Math.abs(noMotion[key]),0,'Zero motion strength must disable added camera movement');
+assert.ok(noMotion.wind>0,'Motion preference must not silence wind audio');
+feel.strength=1;feelCar.resetAt(kerbProgress,9.6);feelCar.speed=35;
+let kerbFrame;for(let i=0;i<60;i++){feelCar.distance+=35/60/track.length;kerbFrame=feel.update(feelCar,track,1/60,true);}
+assert.ok(kerbFrame.kerb>.2&&Math.abs(kerbFrame.surfaceHeave)<=.012);
+feelCar.present(kerbFrame.surfaceHeave);assert.ok(Math.abs(feelCar.model.chassis.position.y)<=.012);
+const frozen=feel.update(feelCar,track,1/60,false);
+for(const key of ['pitch','roll','heave','sway','longitudinal','surfaceHeave','kerb','wind','boostFov'])assert.equal(frozen[key],0);
+feel.reset();assert.equal(feel.update(feelCar,track,1/60,false).longitudinal,0);
+
+// A single shared gearbox drives camera engagement, steering-wheel display
+// and engine sound, while wind and kerb audio share master mute/pause.
+feelCar.reset();feelCar.speed=0;feelCar.acceleration=0;feelCar.lateralAcceleration=0;feelCar.throttle=1;feel.reset();
+let engagementCount=0;
+for(let i=0;i<120*24;i++){
+  feelCar.speed=Math.min(94,feelCar.speed+4/120);feelCar.distance+=feelCar.speed/120/track.length;feelCar.progress=feelCar.distance%1;
+  feelCar.position.copy(track.point(feelCar.progress));const t=track.tangent(feelCar.progress);feelCar.heading=Math.atan2(t.x,t.z);
+  feedback=feel.update(feelCar,track,1/120,true);
+  if(feedback.engine.cut<1&&feedback.longitudinal<-.005)engagementCount++;
+}
+assert.equal(feedback.engine.gear,8);assert.ok(engagementCount>0,'Upshifts must create short camera engagement pulses');
+assert.equal(windLevel(0),0);assert.ok(windLevel(90)>windLevel(40));assert.ok(windLevel(200)<=.045);
+globalThis.AudioContext=goodAudioContext;
+const feelAudio=new DrivingAudio();feelAudio.unlock([feelCar]);feelAudio.update(feelCar,true,feedback);
+assert.equal(feelAudio.voices[0].low.frequency.value,feedback.engine.rpm/120,'Audio must consume the same RPM as camera feedback');
+assert.ok(feelAudio.wind.gain.value>0);feelAudio.update(feelCar,true,{...feedback,kerb:1});assert.ok(feelAudio.kerb.gain.value>0);
+feelAudio.toggleMute();assert.equal(feelAudio.master.gain.value,0);feelAudio.toggleMute();feelAudio.update(feelCar,false,frozen);assert.equal(feelAudio.master.gain.value,0);
+delete globalThis.AudioContext;
+// Damped motion should remain stable across common render frame rates.
+feelCar.resetAt(straightProgress);feelCar.speed=60;feelCar.acceleration=-30;feelCar.lateralAcceleration=25;
+const frameRateSamples=[30,60,144].map(fps=>{const f=new DrivingFeedback();f.strength=1;let result;for(let i=0;i<fps;i++)result=f.update(feelCar,track,1/fps,true);return result;});
+for(const sample of frameRateSamples.slice(1))for(const key of ['pitch','roll','heave','sway'])assert.ok(Math.abs(sample[key]-frameRateSamples[0][key])<1e-6);
+const {Input}=await import(moduleURL('Input'));const savedWindow=globalThis.window,listeners={};
+globalThis.window={...savedWindow,addEventListener:(name,handler)=>{listeners[name]=handler;}};
+const sliderInput=new Input();let prevented=false;
+listeners.keydown({code:'ArrowRight',repeat:false,target:{matches:()=>true},preventDefault:()=>{prevented=true;}});
+assert.equal(sliderInput.down('ArrowRight'),false);assert.equal(prevented,false,'Range inputs must retain their native keyboard controls');
+listeners.keydown({code:'Escape',repeat:false,target:{matches:()=>true},preventDefault:()=>{}});assert.equal(sliderInput.consume('Escape'),true,'Escape must still resume while a range input has focus');
+listeners.keydown({code:'ArrowRight',repeat:false,target:{matches:()=>false},preventDefault:()=>{prevented=true;}});assert.equal(sliderInput.down('ArrowRight'),true);assert.equal(prevented,true);
+globalThis.window=savedWindow;
+console.log('PASS: real kerb overlap, brake/gear camera feedback, stable horizon, adjustable motion, frame-rate independence, shared RPM, wind/kerb audio and pause/mute');

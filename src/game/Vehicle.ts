@@ -50,6 +50,7 @@ export class Vehicle {
     for(const wheel of this.model.frontWheels)wheel.rotation.y=this.steerAngle;
     for(const tire of this.model.tires)tire.rotateY(this.speed*dt/.61);
   }
+  present(bounce=0){this.model.chassis.position.y=bounce;}
   get kmh(){return Math.round(this.speed*3.6);}
 }
 /** Capsule-shaped bodies: equal-mass normal impulse plus tangential friction. */
