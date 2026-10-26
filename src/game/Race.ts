@@ -10,16 +10,29 @@ export interface Rival {
 export class Race {
   state:'ready'|'countdown'|'racing'|'finished'='ready';
   countdown=4;elapsed=0;lapTime=0;best=0;lastLap=0;position=6;
+  private aiSpeeds:Float64Array;
   private lapStart=0;private completed=0;private storageKey:string;
   readonly opponents:Rival[]=[];
   constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner){
+    // A stronger corner-exit acceleration envelope, validated with the same
+    // engine and tire model. Keep the human guide's more forgiving profile.
+    this.aiSpeeds=Float64Array.from(planner.cornerSpeeds);
+    const count=planner.count;
+    for(let pass=0;pass<12;pass++){
+      for(let i=count-1;i>=0;i--){const next=(i+1)%count;this.aiSpeeds[i]=Math.min(this.aiSpeeds[i],Math.sqrt(this.aiSpeeds[next]**2+2*brakingDeceleration(this.aiSpeeds[next])*.65*planner.distances[i]));}
+      for(let i=0;i<count;i++){
+        const next=(i+1)%count,speed=this.aiSpeeds[i];
+        const acceleration=6;
+        this.aiSpeeds[next]=Math.min(this.aiSpeeds[next],Math.sqrt(speed*speed+2*acceleration*planner.distances[i]));
+      }
+    }
     this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
     const profiles=[
-      {name:'NOVA',color:0x31bca6,pace:1.1,aggression:.92,reaction:.055,lineBias:-.35},
-      {name:'VECTOR',color:0x2564d3,pace:1.06,aggression:.45,reaction:.085,lineBias:.55},
-      {name:'SOLAR',color:0xeab442,pace:1.08,aggression:.72,reaction:.07,lineBias:-.7},
-      {name:'POLAR',color:0xc6cdd1,pace:1.04,aggression:.25,reaction:.1,lineBias:.3},
-      {name:'ORBIT',color:0x9768d1,pace:1.095,aggression:.83,reaction:.06,lineBias:.8}
+      {name:'NOVA',color:0x31bca6,pace:1.24,aggression:.92,reaction:.035,lineBias:-.35},
+      {name:'VECTOR',color:0x2564d3,pace:1.18,aggression:.45,reaction:.045,lineBias:.55},
+      {name:'SOLAR',color:0xeab442,pace:1.21,aggression:.72,reaction:.04,lineBias:-.7},
+      {name:'POLAR',color:0xc6cdd1,pace:1.16,aggression:.25,reaction:.055,lineBias:.3},
+      {name:'ORBIT',color:0x9768d1,pace:1.23,aggression:.83,reaction:.035,lineBias:.8}
     ];
     profiles.forEach((p,i)=>this.opponents.push({...p,car:new Vehicle(track,scene,p.color),distance:0,speed:0,phase:i*2.17,lane:0,decision:0,stuck:0,adaptivePace:1,control:{throttle:0,brake:0,steer:0}}));this.reset();
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
@@ -27,6 +40,10 @@ export class Race {
   reset(){this.state='ready';this.countdown=4;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=6;
     this.opponents.forEach((o,i)=>{const progress=(10+Math.floor(i/2)*9)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.adaptivePace=1;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready')this.state='countdown';}
+  private racingSpeed(progress:number){
+    const f=((progress%1+1)%1)*this.aiSpeeds.length,i=Math.floor(f);
+    return THREE.MathUtils.lerp(this.aiSpeeds[i],this.aiSpeeds[(i+1)%this.aiSpeeds.length],f-i);
+  }
   private adaptPace(o:Rival,player:Vehicle,dt:number){
     // Use total race distance, not wrapped circuit progress: a lapped player
     // is still behind even just after crossing the start/finish line.
@@ -36,7 +53,7 @@ export class Race {
     // Give the grid time to launch. Keep close battles neutral; approach the
     // new pace over several seconds instead of suddenly braking or speeding up.
     const warmup=THREE.MathUtils.smoothstep(this.elapsed,5,15);
-    const target=1+warmup*strength*(gap>0?-.22:.2);
+    const target=1+warmup*strength*(gap>0?-.24:.2);
     o.adaptivePace=THREE.MathUtils.damp(o.adaptivePace,target,.22,dt);
   }
   private decide(o:Rival,player:Vehicle){
@@ -50,10 +67,14 @@ export class Race {
     let desiredLane=this.elapsed<2?currentBias:o.lineBias;
     // AI uses the precomputed braking envelope with its own short reaction
     // distance, rather than the extra early-braking margin intended for a human.
-    const pace=Math.min(1.22,o.pace*o.adaptivePace);
+    const pace=Math.min(1.26,o.pace*o.adaptivePace);
     const reference=car.progress+car.speed*.12/this.track.length;
-    const plannedTarget=Math.min(94,this.planner.speed(reference)*pace);
-    const nextTarget=Math.min(94,this.planner.speed(reference+8/this.track.length)*pace);
+    // At the tire limit, spend the remaining grip on turning rather than
+    // making the more aggressive exit acceleration compete with cornering.
+    const gripReserve=THREE.MathUtils.smoothstep(pace,1.2,1.26);
+    const speedAt=(t:number)=>THREE.MathUtils.lerp(this.racingSpeed(t),this.planner.speed(t),gripReserve);
+    const plannedTarget=Math.min(94,speedAt(reference)*pace);
+    const nextTarget=Math.min(94,speedAt(reference+8/this.track.length)*pace);
     const plannedAcceleration=(nextTarget*nextTarget-plannedTarget*plannedTarget)/16;
     let target=plannedTarget;
     const ahead=traffic.filter(other=>gapTo(other)>0&&gapTo(other)<70&&Math.abs(biasAt(other)-currentBias)<3)
@@ -87,7 +108,7 @@ export class Race {
     const to=point.sub(car.position),desired=Math.atan2(to.x,to.z);
     const error=Math.atan2(Math.sin(desired-car.heading),Math.cos(desired-car.heading));
     const angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));
-    const steer=THREE.MathUtils.clamp((angle-car.yawRate*.018)/steeringLock(car.speed),-1,1);
+    const steer=THREE.MathUtils.clamp((angle-car.yawRate*.01)/steeringLock(car.speed),-1,1);
     if(this.planner.cornerLimit(car.progress)<60&&Math.abs(currentBias-o.lane)>1.5)target=Math.min(target,this.planner.speed(reference));
     if(car.offRoad)target=Math.min(target,14);
     if(Math.abs(error)>.5)target=Math.min(target,Math.max(9,22-Math.abs(error)*8));
