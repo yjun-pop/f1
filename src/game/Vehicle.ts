@@ -4,13 +4,18 @@ import {Track} from './Track';
 import {Controls,integrateBody,steeringLock} from './Dynamics';
 import {createCar,CarVisual} from './CarModel';
 export class Vehicle {
+  readonly gripScale:number;readonly powerScale:number;
   readonly position=new THREE.Vector3();readonly group:THREE.Group;
   private model:CarVisual;
   speed=0;lateralSpeed=0;yawRate=0;heading=0;steer=0;progress=0;lap=1;offRoad=false;
   acceleration=0;lateralAcceleration=0;gripUsage=0;
   distance=0;throttle=0;brake=0;boost=100;boosting=false;
   private lastProgress=0;
-  constructor(private track:Track,scene:THREE.Scene,color=0x8c969f){this.model=createCar(color);this.group=this.model.group;scene.add(this.group);this.reset();}
+  constructor(private track:Track,scene:THREE.Scene,color=0x8c969f,performance={grip:1,power:1}){
+    this.gripScale=THREE.MathUtils.clamp(performance.grip,1,1.5);
+    this.powerScale=THREE.MathUtils.clamp(performance.power,1,1.5);
+    this.model=createCar(color);this.group=this.model.group;scene.add(this.group);this.reset();
+  }
   reset(){this.resetAt(0,0);this.boost=100;}
   resetAt(progress:number,lane=0){
     this.progress=((progress%1)+1)%1;this.lastProgress=this.progress;this.distance=progress;this.lap=1+Math.max(0,Math.floor(progress));
@@ -36,7 +41,7 @@ export class Vehicle {
     this.group.position.copy(this.position);this.group.rotation.y=this.heading;
     this.model.chassis.rotation.x=THREE.MathUtils.damp(this.model.chassis.rotation.x,-this.acceleration*.0014,9,dt);
     this.model.chassis.rotation.z=THREE.MathUtils.damp(this.model.chassis.rotation.z,this.lateralAcceleration*.0015,9,dt);
-    for(const wheel of this.model.frontWheels)wheel.rotation.y=this.steer*steeringLock(this.speed);
+    for(const wheel of this.model.frontWheels)wheel.rotation.y=this.steer*steeringLock(this.speed,this.gripScale);
     for(const tire of this.model.tires)tire.rotateY(this.speed*dt/.61);
   }
   get kmh(){return Math.round(this.speed*3.6);}

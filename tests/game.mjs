@@ -222,17 +222,22 @@ console.log('PASS: adaptive rivals ease off, chase, preserve smooth physical dri
 // Measure a full solo lap: speed multipliers alone must not hide a poor driver.
 const skilledRace=new Race(track,new THREE.Scene(),planner),benchmarkPlayer=new Vehicle(track,new THREE.Scene());
 skilledRace.opponents.splice(1);skilledRace.start();skilledRace.update(4.1,benchmarkPlayer);
-const skilledRival=skilledRace.opponents[0];let skilledLap=0,skilledOffroad=0;
-for(let step=0;step<120*102;step++){
+const skilledRival=skilledRace.opponents[0];const calibratedLaps=[];let skilledOffroad=0,lastCrossing=0;
+for(let step=0;step<120*270;step++){
   benchmarkPlayer.distance=skilledRival.car.distance-40/track.length;
   benchmarkPlayer.progress=(benchmarkPlayer.distance%1+1)%1;
   benchmarkPlayer.position.copy(track.point(benchmarkPlayer.progress));benchmarkPlayer.speed=skilledRival.car.speed;
   skilledRace.update(1/120,benchmarkPlayer);skilledOffroad+=skilledRival.car.offRoad?1:0;
-  if(skilledRival.car.distance>=1){skilledLap=(step+1)/120;break;}
+  if(skilledRival.car.distance>=calibratedLaps.length+1){
+    const time=(step+1)/120;calibratedLaps.push(time-lastCrossing);lastCrossing=time;
+    if(calibratedLaps.length===3)break;
+  }
 }
-assert.ok(skilledLap>0,'The lead AI must beat 102s (previous release: 107.0s) at neutral adaptation');
-assert.equal(skilledOffroad,0,'The improved solo lap must remain on asphalt');
-console.log(`PASS: stronger neutral AI completes a physical lap in ${skilledLap.toFixed(1)}s without leaving the track`);
+assert.equal(calibratedLaps.length,3,'The calibrated AI must complete three actual physical laps');
+assert.ok(calibratedLaps[0]<90,'Standing-start target: under 90 seconds');
+assert.ok(calibratedLaps.slice(1).every(time=>time>=85&&time<=87),'Flying-lap target: 86 seconds +/- 1 second');
+assert.equal(skilledOffroad,0,'The calibrated laps must remain on asphalt');
+console.log('PASS: 86-second AI calibration over three clean physical laps',calibratedLaps.map(t=>t.toFixed(2)));
 
 // On a straight, drive around a slower physical vehicle instead of queuing
 // indefinitely or clamping an impossible passing lane into the blocked lane.
@@ -312,3 +317,35 @@ failMirrorRender=true;
 assert.throws(()=>mirror.render(v),/simulated render failure/);
 assert.ok(v.group.visible&&fakeRenderer.autoClear&&renderState.target===null&&!renderState.scissorTest,'Render failures must still restore the main camera state');
 console.log('PASS: live rear-view mirror orientation, reflection, resolution cap and rendering state restoration');
+
+
+// Calibration assists apply to rivals only. Defaults must remain exactly the
+// same for the player, while the assisted car still integrates physical motion.
+const playerStock=new Vehicle(track,new THREE.Scene());
+assert.equal(playerStock.gripScale,1);assert.equal(playerStock.powerScale,1);
+assert.ok(skilledRival.car.gripScale>1&&skilledRival.car.gripScale<=1.5);
+assert.ok(skilledRival.car.powerScale>1&&skilledRival.car.powerScale<=1.5);
+const implicitStock=body(),explicitStock={...body(),gripScale:1,powerScale:1};
+const assistedBody={...body(),gripScale:1.4,powerScale:1.35};
+for(let step=0;step<120;step++){
+  const control={steer:0,throttle:1,brake:0};
+  integrateBody(implicitStock,control,1/120);integrateBody(explicitStock,control,1/120);integrateBody(assistedBody,control,1/120);
+}
+assert.equal(implicitStock.speed,explicitStock.speed);
+assert.ok(implicitStock.position.equals(explicitStock.position),'Player physics must retain the stock trajectory');
+assert.ok(assistedBody.speed-35>(implicitStock.speed-35)*1.2,'Rival power calibration must produce real extra acceleration');
+assert.ok(assistedBody.position.distanceTo(new THREE.Vector3())>implicitStock.position.distanceTo(new THREE.Vector3()));
+for(let step=0;step<120*30;step++)integrateBody(assistedBody,{steer:0,throttle:1,brake:0,boost:true},1/120);
+assert.ok(assistedBody.speed<=94,'Rivals must still respect the shared hard speed limit');
+console.log('PASS: bounded rival performance calibration, unchanged player physics and shared hard speed limit');
+
+// A return to the racing line must check the swept corridor, not just its
+// destination, so it cannot cut across a car already alongside.
+const sideRace=new Race(track,new THREE.Scene(),planner),sidePlayer=new Vehicle(track,new THREE.Scene());
+sideRace.opponents.splice(1);const sideRival=sideRace.opponents[0],sideProgress=400/track.length;
+const offset=planner.point(sideProgress).sub(track.point(sideProgress)).dot(track.normal(sideProgress));
+sideRival.car.resetAt(sideProgress,offset+6);sideRival.car.speed=30;sideRival.lane=6;
+sidePlayer.resetAt(sideProgress,offset+2.5);sidePlayer.speed=30;
+sideRace.elapsed=10;sideRace.decide(sideRival,sidePlayer);
+assert.ok(Math.abs(sideRival.lane-6)<.001,'AI must hold its corridor when a merge would cross an alongside vehicle');
+console.log('PASS: AI checks the full merge corridor before returning to the racing line');
