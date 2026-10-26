@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import {Input} from './Input';
 import {Track} from './Track';
-import {Controls,integrateBody,steeringLock} from './Dynamics';
+import {Controls,integrateBody} from './Dynamics';
 import {createCar,CarVisual} from './CarModel';
 export class Vehicle {
   raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;
   readonly gripScale:number;readonly powerScale:number;
   readonly position=new THREE.Vector3();readonly group:THREE.Group;
   private model:CarVisual;
-  speed=0;lateralSpeed=0;yawRate=0;heading=0;steer=0;progress=0;lap=1;offRoad=false;
+  speed=0;lateralSpeed=0;yawRate=0;heading=0;steer=0;steerAngle=0;progress=0;lap=1;offRoad=false;
   acceleration=0;lateralAcceleration=0;gripUsage=0;
   distance=0;throttle=0;brake=0;boost=100;boosting=false;
   private lastProgress=0;
@@ -22,12 +22,15 @@ export class Vehicle {
     this.progress=((progress%1)+1)%1;this.lastProgress=this.progress;this.distance=progress;this.lap=1+Math.max(0,Math.floor(progress));
     this.position.copy(this.track.point(progress)).addScaledVector(this.track.normal(progress),lane);
     const t=this.track.tangent(progress);this.heading=Math.atan2(t.x,t.z);
-    this.speed=0;this.lateralSpeed=0;this.yawRate=0;this.steer=0;this.throttle=0;this.brake=0;this.offRoad=false;this.acceleration=0;this.lateralAcceleration=0;this.gripUsage=0;this.sync();
+    this.speed=0;this.lateralSpeed=0;this.yawRate=0;this.steer=0;this.steerAngle=0;this.throttle=0;this.brake=0;this.boosting=false;this.offRoad=false;this.acceleration=0;this.lateralAcceleration=0;this.gripUsage=0;this.sync();
   }
   recover(){const distance=this.distance,lap=this.lap;this.resetAt(this.progress);this.distance=distance;this.lap=lap;}
-  update(dt:number,input:Input){this.drive(dt,{throttle:input.down('KeyW','ArrowUp')?1:0,brake:input.down('KeyS','ArrowDown')?1:0,steer:(input.down('KeyA','ArrowLeft')?1:0)-(input.down('KeyD','ArrowRight')?1:0),boost:input.down('ShiftLeft','ShiftRight')});}
+  update(dt:number,input:Input){
+    const brake=input.down('KeyS','ArrowDown')?1:0;
+    this.drive(dt,{throttle:!brake&&input.down('KeyW','ArrowUp')?1:0,brake,steer:(input.down('KeyA','ArrowLeft')?1:0)-(input.down('KeyD','ArrowRight')?1:0),boost:!brake&&input.down('ShiftLeft','ShiftRight'),keyboard:true});
+  }
   drive(dt:number,control:Controls){
-    this.throttle=control.throttle;this.brake=control.brake;this.boosting=!!control.boost&&this.boost>1&&control.throttle>0&&!this.offRoad;
+    this.throttle=control.throttle;this.brake=control.brake;this.boosting=!!control.boost&&this.boost>1&&control.throttle>0&&control.brake===0&&!this.offRoad;
     this.boost=THREE.MathUtils.clamp(this.boost+(this.boosting?-24:8)*dt,0,100);
     let remaining=dt;while(remaining>1e-8){const step=Math.min(1/120,remaining);integrateBody(this,{...control,boost:this.boosting},step);remaining-=step;}
     this.progress=this.track.nearestProgress(this.position,this.progress);
@@ -42,7 +45,7 @@ export class Vehicle {
     this.group.position.copy(this.position);this.group.rotation.y=this.heading;
     this.model.chassis.rotation.x=THREE.MathUtils.damp(this.model.chassis.rotation.x,-this.acceleration*.0014,9,dt);
     this.model.chassis.rotation.z=THREE.MathUtils.damp(this.model.chassis.rotation.z,this.lateralAcceleration*.0015,9,dt);
-    for(const wheel of this.model.frontWheels)wheel.rotation.y=this.steer*steeringLock(this.speed,this.gripScale);
+    for(const wheel of this.model.frontWheels)wheel.rotation.y=this.steerAngle;
     for(const tire of this.model.tires)tire.rotateY(this.speed*dt/.61);
   }
   get kmh(){return Math.round(this.speed*3.6);}

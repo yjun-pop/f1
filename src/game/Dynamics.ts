@@ -7,12 +7,18 @@ export function cornerSpeed(curvature:number,maxSpeed=94){return Math.min(maxSpe
 export function steeringLock(speed:number,gripScale=1){const v=Math.abs(speed);
   // Keyboard input must not apply low-speed full lock at racing speeds.
   return Math.min(.43/(1+v*.025),Math.atan(HANDLING.wheelbase*lateralGrip(v)*gripScale*1.06/Math.max(36,v*v)));}
-export interface Controls {throttle:number;brake:number;steer:number;boost?:boolean}
-export interface DynamicBody {raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;gripScale?:number;powerScale?:number;position:THREE.Vector3;speed:number;lateralSpeed:number;yawRate:number;heading:number;steer:number;offRoad:boolean;acceleration:number;lateralAcceleration:number;gripUsage:number}
+export interface Controls {throttle:number;brake:number;steer:number;boost?:boolean;keyboard?:boolean}
+export interface DynamicBody {steerAngle?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;gripScale?:number;powerScale?:number;position:THREE.Vector3;speed:number;lateralSpeed:number;yawRate:number;heading:number;steer:number;offRoad:boolean;acceleration:number;lateralAcceleration:number;gripUsage:number}
 export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
   if(dt<=0)return;
-  body.steer=THREE.MathUtils.damp(body.steer,THREE.MathUtils.clamp(controls.steer,-1,1),10,dt);
   const speed=Math.max(0,body.speed),gripScale=body.gripScale??1,powerScale=body.powerScale??1;
+  const requested=THREE.MathUtils.clamp(controls.steer,-1,1);
+  if(controls.keyboard){
+    // A digital key ramps into steering, returns promptly when released, and
+    // crosses center faster for a deliberate countersteer.
+    const rate=requested===0?10:requested*body.steer<0?9:THREE.MathUtils.lerp(3.2,2.6,THREE.MathUtils.smoothstep(speed,12,65));
+    body.steer+=THREE.MathUtils.clamp(requested-body.steer,-rate*dt,rate*dt);
+  }else body.steer=THREE.MathUtils.damp(body.steer,requested,10,dt);
   const grip=lateralGrip(speed,body.offRoad)*gripScale;
   const governed=body.raceSpeedCap!==undefined;
   const speedCap=governed?THREE.MathUtils.clamp(controls.boost?body.raceSpeedCap!:body.raceCruiseCap??87,72,110):(controls.boost?94:87);
@@ -20,8 +26,19 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
   const throttle=THREE.MathUtils.clamp(controls.throttle,0,1)*(governed&&speed>=speedCap?0:1),brake=THREE.MathUtils.clamp(controls.brake,0,1);
   const engine=(controls.boost?23:17)*powerScale*pursuit*(1-speed/140);
   const drag=.00105*speed*speed+(body.offRoad?4.2:.35);
-  const longitudinal=THREE.MathUtils.clamp(throttle*engine-brake*brakingDeceleration(speed,body.offRoad,gripScale)-drag,-grip*.91,grip*.91);
-  const steerAngle=body.steer*steeringLock(speed,gripScale);
+  const steeringLimit=controls.keyboard?Math.min(steeringLock(speed,gripScale),Math.atan(HANDLING.wheelbase*grip*THREE.MathUtils.lerp(.84,.88,THREE.MathUtils.smoothstep(speed,10,45))/Math.max(36,speed*speed))):steeringLock(speed,gripScale);
+  const slipAngle=Math.atan2(body.lateralSpeed,Math.max(6,speed));
+  const scrub=controls.keyboard&&requested*slipAngle>0&&speed>8?THREE.MathUtils.smoothstep(Math.abs(slipAngle),2*Math.PI/180,7*Math.PI/180)*(body.offRoad?.1:.2):0;
+  const steerAngle=body.steer*steeringLimit*(1-scrub);body.steerAngle=steerAngle;
+  let brakeForce=brake*brakingDeceleration(speed,body.offRoad,gripScale);
+  if(controls.keyboard&&brake>0&&Math.abs(steerAngle)>.015){
+    // Cornering ABS leaves lateral grip for the requested steering instead
+    // of saturating the rear axle while braking and turning together.
+    const lateralDemand=Math.min(grip*.9,speed*speed*Math.abs(Math.tan(steerAngle))/HANDLING.wheelbase);
+    const available=Math.sqrt(Math.max(0,grip*grip-lateralDemand*lateralDemand))*.9;
+    brakeForce=Math.min(brakeForce,Math.max(0,available-drag));
+  }
+  const longitudinal=THREE.MathUtils.clamp(throttle*engine-brakeForce-drag,-grip*.91,grip*.91);
   // Lateral tire forces use front/rear slip angles, load transfer and a friction circle.
   const remaining=Math.sqrt(Math.max(.06,1-(longitudinal/grip)**2));
   const frontLoad=THREE.MathUtils.clamp(.5-longitudinal*.004,.38,.64);
@@ -36,7 +53,16 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
     body.yawRate=THREE.MathUtils.damp(body.yawRate,speed*Math.tan(steerAngle)/HANDLING.wheelbase,12,dt);
     body.lateralSpeed=THREE.MathUtils.damp(body.lateralSpeed,0,12,dt);
   }else{
-    body.yawRate+=(half*(frontForce-rearForce)/HANDLING.inertiaPerMass-body.yawRate*.75)*dt;
+    body.yawRate+=(half*(frontForce-rearForce)/(HANDLING.inertiaPerMass*(controls.keyboard?.7:1))-body.yawRate*.75)*dt;
+    if(controls.keyboard&&speed>8){
+      const slip=Math.atan2(body.lateralSpeed,speed);
+      const assistance=THREE.MathUtils.smoothstep(Math.abs(slip),2*Math.PI/180,8*Math.PI/180)*(body.offRoad?.15:1);
+      const targetYaw=speed*Math.tan(steerAngle)/HANDLING.wheelbase;
+      // A bounded stability torque aligns the body with its actual motion.
+      // Tire forces still carry lateral momentum; no heading or velocity snap.
+      const correction=THREE.MathUtils.clamp(slip*16-(body.yawRate-targetYaw)*1.2,-1.5,1.5);
+      body.yawRate+=correction*assistance*dt;
+    }
     body.lateralSpeed+=(lateral-body.yawRate*speed)*dt;
   }
   // Preserve momentum above a falling AI cap; drag and brakes ease it down.
