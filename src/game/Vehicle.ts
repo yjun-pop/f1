@@ -48,7 +48,7 @@ export class Vehicle {
     this.model.chassis.rotation.x=THREE.MathUtils.damp(this.model.chassis.rotation.x,-this.acceleration*.0014,9,dt);
     this.model.chassis.rotation.z=THREE.MathUtils.damp(this.model.chassis.rotation.z,this.lateralAcceleration*.0015,9,dt);
     for(const wheel of this.model.frontWheels)wheel.rotation.y=this.steerAngle;
-    for(const tire of this.model.tires)tire.rotateY(this.speed*dt/.61);
+    for(const tire of this.model.tires)tire.rotateX(this.speed*dt/.455);
   }
   present(bounce=0){this.model.chassis.position.y=bounce;}
   get kmh(){return Math.round(this.speed*3.6);}

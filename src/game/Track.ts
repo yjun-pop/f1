@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import {surfaceMaps} from './SurfaceTextures';
 import {MONZA_POINTS,MONZA_LENGTH,MONZA_SECTIONS,MONZA_ORIGIN} from './MonzaLayout';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {CircuitDetails} from './CircuitDetails';
+import type {GraphicsTier} from './Graphics';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name='MONZA';readonly country='ITALY';readonly cornerCount=11;
@@ -9,6 +12,7 @@ export class Track {
   readonly sections:{number:number;name:string;progress:number}[]=[];
   readonly bounds=new THREE.Box3();
   private samples:THREE.Vector3[]=[];private sampleCount=0;private kerbSegments=new Uint8Array(0);
+  readonly details:CircuitDetails;
   constructor(scene:THREE.Scene){
     let raw=MONZA_POINTS.map(([x,z])=>new THREE.Vector3(x,0,z));
     // Long sparse source segments must remain straight. Densification prevents
@@ -34,8 +38,9 @@ export class Track {
       let closest=0,best=Infinity;for(let i=0;i<this.sampleCount;i++){const d=this.samples[i].distanceToSquared(p);if(d<best){best=d;closest=i;}}
       this.sections.push({number:section.number,name:section.name,progress:closest/this.sampleCount});
     }
-    this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();scene.add(this.group);
+    this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
   }
+  updatePresentation(position:THREE.Vector3,tier:GraphicsTier){this.details.update(position,tier);}
   point(t:number){return this.curve.getPointAt(((t%1)+1)%1);}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
@@ -107,8 +112,16 @@ export class Track {
       for(let i=0;i<barrierCount;i++){const t=i/barrierCount,p=this.point(t).addScaledVector(this.normal(t),side*16.2),v=this.tangent(t);dummy.position.set(p.x,.6,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();barriers.setMatrixAt(b++,dummy.matrix);}
     }kerbs.receiveShadow=true;barriers.receiveShadow=true;kerbs.count=k;this.group.add(kerbs,barriers);
     const steel=new THREE.MeshStandardMaterial({color:0x263b36}),standMaterial=new THREE.MeshStandardMaterial({color:0x47545b});
-    for(const t of [.007,.028,.15,.215,.35,.45,.59,.74,.9]){const p=this.point(t).addScaledVector(this.normal(t),-37),stand=new THREE.Group();
-      for(let row=0;row<6;row++){const mesh=new THREE.Mesh(new THREE.BoxGeometry(55,.8,2.4),standMaterial);mesh.position.set(0,row*.9+.8,row*2.1);stand.add(mesh);}const roof=new THREE.Mesh(new THREE.BoxGeometry(58,.3,17),new THREE.MeshStandardMaterial({color:0xcbd6d5}));roof.position.set(0,9,5);stand.add(roof);stand.position.copy(p);stand.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z);this.group.add(stand);}
+    const seatMaterial=new THREE.MeshStandardMaterial({roughness:.85}),seatGeometry=new THREE.BoxGeometry(.55,.16,.55),roofMaterial=new THREE.MeshStandardMaterial({color:0xcbd6d5,roughness:.65});
+    for(const t of [.007,.028,.15,.215,.35,.45,.59,.74,.9]){const p=this.point(t).addScaledVector(this.normal(t),-37),stand=new THREE.Group();stand.name='grandstand';
+      const steps:THREE.BufferGeometry[]=[];
+      for(let row=0;row<6;row++){const geometry=new THREE.BoxGeometry(55,.8,2.4);geometry.translate(0,row*.9+.8,row*2.1);steps.push(geometry);}
+      const stepGeometry=mergeGeometries(steps);for(const geometry of steps)geometry.dispose();const terraces=new THREE.Mesh(stepGeometry,standMaterial);terraces.receiveShadow=true;stand.add(terraces);
+      const roof=new THREE.Mesh(new THREE.BoxGeometry(58,.3,17),roofMaterial);roof.position.set(0,9,5);roof.castShadow=true;roof.receiveShadow=true;stand.add(roof);
+      const seats=new THREE.InstancedMesh(seatGeometry,seatMaterial,6*60),supports=new THREE.InstancedMesh(new THREE.BoxGeometry(.18,8.5,.18),steel,8);let s=0;
+      for(let row=0;row<6;row++)for(let col=0;col<60;col++){dummy.position.set(-26+col*.88,row*.9+1.29,row*2.1);dummy.rotation.set(0,0,0);dummy.updateMatrix();seats.setMatrixAt(s,dummy.matrix);seats.setColorAt(s++,new THREE.Color([0x8a3136,0xbdc6bf,0x3b675d][Math.floor(col/20)]));}
+      for(let j=0;j<8;j++){dummy.position.set(-26+(j%4)*17.3,4.4,j<4?-.6:12);dummy.updateMatrix();supports.setMatrixAt(j,dummy.matrix);}stand.add(seats,supports);
+      stand.position.copy(p);stand.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z)+Math.PI/2;this.group.add(stand);}
     const pit=new THREE.Group();pit.position.copy(this.point(.035)).addScaledVector(this.normal(.035),31);pit.rotation.y=Math.atan2(this.tangent(.035).x,this.tangent(.035).z);
     const building=new THREE.Mesh(new THREE.BoxGeometry(17,7,240),new THREE.MeshStandardMaterial({color:0xa1b0b0,roughness:.75}));building.position.y=3.5;pit.add(building);const windows=new THREE.Mesh(new THREE.BoxGeometry(17.2,1.5,225),new THREE.MeshStandardMaterial({color:0x233d4b,metalness:.5,roughness:.3}));windows.position.y=5.4;pit.add(windows);this.group.add(pit);
     const start=this.point(24/this.length),forward=this.tangent(24/this.length),gantry=new THREE.Group();

@@ -1113,3 +1113,92 @@ feelCamera.update(feelCar,1/60,launchFrame);assert.equal(paintedGear,'1','A stop
 const brakingFrame={...launchFrame,engine:{...launchFrame.engine,gear:2}};
 feelCamera.update(feelCar,.001,brakingFrame);assert.equal(paintedGear,'2','A gear change must bypass the 80ms dashboard refresh throttle');
 console.log('PASS: calibrated gearing, rapid downshifts, real dashboard painting and visible default-strength shift feedback',shiftScreenChecks);
+
+// Graphics selection must respect explicit choices and ignore isolated stalls,
+// background-tab time and pause, while adapting sustained slow frame rates.
+const {GraphicsQuality,GRAPHICS_PROFILES,graphicsMode,recommendedTier}=await import(moduleURL('Graphics'));
+assert.equal(graphicsMode('broken'),'auto');assert.equal(graphicsMode('high'),'high');
+assert.equal(recommendedTier({maxTextureSize:2048,width:1600,memory:8,cores:8}),'low');
+assert.equal(recommendedTier({maxTextureSize:8192,width:1600,memory:8,cores:8}),'high');
+assert.equal(recommendedTier({maxTextureSize:8192,width:1600}),'medium');
+const automaticGraphics=new GraphicsQuality('auto','high');
+for(let i=0;i<60*12;i++)automaticGraphics.observe(1/60,true);
+assert.equal(automaticGraphics.tier,'high','Smooth play must keep the selected quality');
+automaticGraphics.observe(1,true);
+for(let i=0;i<30;i++)automaticGraphics.observe(1/30,true);
+assert.equal(automaticGraphics.tier,'high','A short stall must not trigger a quality change');
+for(let i=0;i<30*8;i++)automaticGraphics.observe(1/30,true);
+assert.equal(automaticGraphics.tier,'medium','Sustained slow frames must reduce quality one step');
+for(let i=0;i<30*9;i++)automaticGraphics.observe(1/30,true);
+assert.equal(automaticGraphics.tier,'low');
+automaticGraphics.select('high');for(let i=0;i<20*20;i++)automaticGraphics.observe(1/20,true);
+assert.equal(automaticGraphics.tier,'high','Manual quality must never be overridden');
+automaticGraphics.select('auto');for(let i=0;i<20*20;i++)automaticGraphics.observe(1/20,false);
+assert.equal(automaticGraphics.tier,'high','Pausing must not reduce quality');
+for(const tier of ['low','medium','high']){
+  const p=GRAPHICS_PROFILES[tier];assert.ok(p.shadowSize>=512&&p.shadowSize<=2048&&p.mirrorWidth<=640&&p.pixelRatio<=1.75);
+}
+// Keep the real mirror image composited each frame, with a smaller/slower scene
+// capture on low quality. Changing tiers must preserve aspect and refresh now.
+failMirrorRender=false;mirror.setQuality('low');mirrorDraws.length=0;
+for(let i=0;i<60;i++)mirror.render(v,1/60);
+const lowCaptures=mirrorDraws.filter(draw=>draw.scene===scene);
+assert.equal(lowCaptures.length,20);assert.equal(mirrorDraws.filter(draw=>draw.scene===mirror.overlay).length,60);
+assert.ok(mirror.target.width<=320&&mirror.target.height<=90);
+assert.ok(Math.abs(mirror.target.width/mirror.target.height-mirror.camera.aspect)<.06,'Reduced mirror targets must preserve their camera aspect');
+mirror.setQuality('low');mirrorDraws.length=0;for(let i=0;i<144;i++)mirror.render(v,1/144);
+assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,20,'Fractional frame periods must preserve the mirror capture rate on fast displays');
+mirror.setQuality('high');mirrorDraws.length=0;mirror.render(v,0);
+assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,1,'Quality changes must invalidate the cached mirror image');
+assert.equal(renderState.target,null);assert.equal(fakeRenderer.shadowMap.autoUpdate,true);
+// Detailed geometry must remain finite, the tyre surface must clear the road,
+// and merged spokes/sidewall markings must rotate around X with the tyre.
+const {createCar}=await import(moduleURL('CarModel'));const detailedCar=createCar(0xc12e35);
+let carMeshes=0,carTriangles=0;
+detailedCar.group.traverse(child=>{if(child instanceof THREE.Mesh){carMeshes++;const geometry=child.geometry;carTriangles+=(geometry.index?.count??geometry.getAttribute('position').count)/3;assert.ok(geometry.getAttribute('position').array.every(Number.isFinite));}});
+assert.ok(carMeshes<=32,'Model detail must not restore the old per-part draw-call overhead');
+const pivots=detailedCar.group.children.filter(child=>child.name==='wheel-pivot');assert.equal(pivots.length,4);
+for(const pivot of pivots){
+  const bounds=new THREE.Box3().setFromObject(pivot);assert.ok(bounds.min.y>.035&&bounds.min.y<.065,'Tyres must meet the asphalt without sinking');
+  assert.ok(pivot.children.length<=5&&pivot.children.every(child=>detailedCar.tires.includes(child)));
+}
+v.reset();v.speed=30;const spinMesh=v.model.tires[0],oldSpin=spinMesh.quaternion.clone();v.sync(.1);
+const expectedSpin=oldSpin.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),30*.1/.455));
+assert.ok(spinMesh.quaternion.angleTo(expectedSpin)<1e-6,'Merged wheel parts must complete full rotations about their axle');
+// Stand width must run parallel to the circuit, not extend across the road.
+const stands=track.group.children.filter(child=>child.name==='grandstand');assert.equal(stands.length,9);
+for(const stand of stands){
+  const localWidth=new THREE.Vector3(1,0,0).applyEuler(stand.rotation);
+  // Use the closest source position globally since stands are beyond the local
+  // nearest-progress search window and can sit beside a return leg.
+  const candidates=[.007,.028,.15,.215,.35,.45,.59,.74,.9];
+  const t=candidates.reduce((best,t)=>stand.position.distanceToSquared(track.point(t).addScaledVector(track.normal(t),-37))<stand.position.distanceToSquared(track.point(best).addScaledVector(track.normal(best),-37))?t:best,candidates[0]);
+  assert.ok(Math.abs(localWidth.dot(track.tangent(t)))>.999);
+  assert.ok(stand.children.some(child=>child instanceof THREE.InstancedMesh&&child.count===360));
+}
+const near=track.point(0);track.updatePresentation(near,'low');const lowDetailCount=track.details.group.children.filter(child=>child.visible).length;
+track.updatePresentation(near,'high');const highDetailCount=track.details.group.children.filter(child=>child.visible).length;
+assert.ok(lowDetailCount>0&&highDetailCount>=lowDetailCount&&highDetailCount<track.details.group.children.length/2,'Only nearby detail chunks should be submitted');
+const farFence=track.details.group.children.find(child=>!child.visible&&child.name==='catch-fence');
+const farPosition=new THREE.Box3().setFromObject(farFence).getCenter(new THREE.Vector3());track.updatePresentation(farPosition,'low');assert.equal(farFence.visible,true,'Nearby detail must reappear after moving or recovering');
+const {createSkyTexture,WorldLighting}=await import(moduleURL('WorldLighting'));
+for(const tier of ['low','medium','high']){
+  const sky=createSkyTexture(GRAPHICS_PROFILES[tier].reflectionWidth);
+  assert.equal(sky.image.width,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(sky.image.height,sky.image.width/2);
+  assert.ok(sky.image.data.every(value=>Number.isFinite(THREE.DataUtils.fromHalfFloat(value))));sky.dispose();
+}
+// Run THREE's real PMREM pass orchestration with a renderer stub to verify
+// resource lifetime and state restoration; this does not claim GPU image QA.
+const reflectionState={target:null,passes:0};
+const reflectionRenderer={autoClear:true,xr:{enabled:true},compile:()=>{},getRenderTarget:()=>reflectionState.target,getActiveCubeFace:()=>0,getActiveMipmapLevel:()=>0,setRenderTarget:target=>{reflectionState.target=target;},render:()=>{reflectionState.passes++;}};
+const reflectionScene=new THREE.Scene(),lighting=new WorldLighting(reflectionScene,reflectionRenderer,'low');
+const oldSky=reflectionScene.background,oldEnvironment=lighting.environment,oldShadow=new THREE.WebGLRenderTarget(512,512);
+let freedSky=false,freedEnvironment=false,freedShadow=false;
+oldSky.addEventListener('dispose',()=>{freedSky=true;});oldEnvironment.addEventListener('dispose',()=>{freedEnvironment=true;});oldShadow.addEventListener('dispose',()=>{freedShadow=true;});lighting.sun.shadow.map=oldShadow;
+lighting.setQuality('high');assert.ok(freedSky&&freedEnvironment&&freedShadow,'Changing quality must release the previous sky, reflection and shadow targets');
+assert.equal(lighting.sun.shadow.mapSize.x,2048);assert.equal(lighting.sun.shadow.map,null);
+assert.ok(lighting.environment.width>oldEnvironment.width&&reflectionScene.environment===lighting.environment.texture);
+assert.equal(reflectionState.target,null);assert.equal(reflectionRenderer.xr.enabled,true);assert.equal(reflectionRenderer.autoClear,true);
+const bakePasses=reflectionState.passes;lighting.setQuality('high');assert.equal(reflectionState.passes,bakePasses,'An unchanged quality must not rebuild reflections');
+let freedLast=false;lighting.environment.addEventListener('dispose',()=>{freedLast=true;});lighting.dispose();assert.ok(freedLast&&reflectionScene.environment===null&&reflectionScene.background===null);
+console.log('PASS: manual/automatic graphics, stall/pause safeguards, mirror capture budgets, wheel geometry/spin, road-parallel stands, distance culling and HDR reflection profiles',{carMeshes,carTriangles,lowDetailCount,highDetailCount});

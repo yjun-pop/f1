@@ -25,3 +25,5 @@
 @media(max-height:600px){.mapbox,.cockpit-view .mapbox{top:85px;transform:scale(.65);transform-origin:top right}}
 
 .rival-summary{font:11px/1.9 sans-serif;color:#bbcedd;margin:14px 0}.rival-summary summary{cursor:pointer;color:#cebaff}.rival-summary summary:focus-visible{outline:2px solid #91ffe1}.rival-summary div{font-variant-numeric:tabular-nums}
+
+.pause-panel select{width:100%;margin:12px 0 8px;padding:12px;color:#edf4ff;background:#172438;border:1px solid #ffffff35;font:12px 'Noto Sans KR',sans-serif;color-scheme:dark}.pause-panel select:focus-visible{outline:2px solid #91ffe1;outline-offset:3px}.pause-panel #graphics-hint{font-size:10px;line-height:1.7;margin:0 0 18px}
