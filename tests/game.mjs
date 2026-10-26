@@ -477,7 +477,11 @@ tactical.speedCap=108;tactical.rank=2;tacticalRace.position=1;tactical.attack=1;
 tacticalPlayer.position.set(1e6,0,1e6);tacticalRace.decide(tactical,tacticalPlayer);
 assert.equal(tactical.control.boost,true,'The designated attacker must use a partial ERS battery when a pass is available');
 tactical.control.boost=false;tactical.attack=0;tacticalRace.decide(tactical,tacticalPlayer);
-assert.equal(tactical.control.boost,false,'A non-attacker must keep its normal ERS reserve');
+assert.equal(tactical.control.boost,true,'Other challengers must also spend ERS to pressure a leading player');
+tactical.control.boost=false;tactical.car.boost=21;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.control.boost,false,'A secondary challenger must retain its lower but bounded ERS reserve');
+tactical.car.boost=25;tactical.rank=3;tacticalRace.position=2;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.control.boost,false,'Outside the player-leader contest the normal ERS reserve must remain');
 tacticalRace.reset();assert.ok(tacticalRace.opponents.every(o=>o.passLane===undefined&&o.passUntil===0&&o.defendUntil===0&&o.defendCooldown===0),'Restart must clear tactical memory');
 console.log('PASS: stable passing side, blocked-lane escape, closing-speed braking, single defensive move, cooldown, alongside clearance and tactical ERS');
 
@@ -868,3 +872,47 @@ assert.ok(earlyStops.every(frames=>frames===0),'Rivals must not crawl or stop on
 assert.equal(closePlayer.gripScale,1);assert.equal(closePlayer.powerScale,1);assert.equal(closePlayer.raceSpeedCap,undefined);
 console.log('PASS: two-sided player-pace matching and full three-lap close field',{nearFraction:nearFrames/measuredFrames,gaps:closeRace.opponents.map(o=>Math.round((o.car.distance-closePlayer.distance)*track.length)),earlyStops});
 closeRace.reset();assert.ok(closeRace.opponents.every(o=>o.racePace===undefined));
+
+
+// A leading player must be challenged rather than assigned a safe following
+// procession. The first two goals must invite a pass, and pressure must remain
+// active even after rivals are already within 10–20m of the leader.
+const pressureDirector=new PackDirector();
+for(const rank of [2,3])assert.ok(pressureDirector.targets(-15,rank,1,1.42,1).desiredGap>0);
+const closeChaser=pressureDirector.targets(-15,2,1,1.42,1),ordinaryFollower=pressureDirector.targets(-15,3,2,1.42,1);
+assert.ok(closeChaser.pace>ordinaryFollower.pace&&closeChaser.cap>ordinaryFollower.cap,'Closing the gap must not switch off leader pressure');
+for(const rank of [2,3,4,5,6]){
+  const target=pressureDirector.targets(-60,rank,1,1.42,0);
+  assert.ok(target.cap>=100&&target.power>=1.1,'All five trailing cars must actively pursue a leading player');
+  assert.ok(target.pace<=1.47&&target.cap<=104&&target.power<=1.15,'Pursuit must retain the existing physical safety bounds');
+}
+
+for(const driverPace of [1,1.1]){
+  const leaderRace=new Race(track,new THREE.Scene(),planner),leaderPlayer=new Vehicle(track,new THREE.Scene());
+  leaderPlayer.resetAt(200/track.length);leaderRace.state='racing';
+  let firstChallenge=Infinity,wasLeading=true,pressureFrames=0,leadingFrames=0;
+  for(let step=0;step<120*180;step++){
+    const lookahead=THREE.MathUtils.clamp(7+leaderPlayer.speed*.3,9,26),to=planner.point(leaderPlayer.progress+lookahead/track.length).sub(leaderPlayer.position);
+    const desired=Math.atan2(to.x,to.z),error=Math.atan2(Math.sin(desired-leaderPlayer.heading),Math.cos(desired-leaderPlayer.heading));
+    const angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));
+    const steer=THREE.MathUtils.clamp((angle-leaderPlayer.yawRate*.018)/steeringLock(leaderPlayer.speed),-1,1);
+    let advised=Math.min(94,planner.advice(leaderPlayer.progress,leaderPlayer.speed)*driverPace);
+    for(const o of leaderRace.opponents){
+      let gap=o.car.progress-leaderPlayer.progress;if(gap<-.5)gap+=1;if(gap>.5)gap-=1;gap*=track.length;
+      const side=o.car.position.clone().sub(leaderPlayer.position).dot(track.normal(leaderPlayer.progress));
+      if(gap>0&&gap<40&&Math.abs(side)<2.8)advised=Math.min(advised,Math.max(0,o.car.speed+(gap-8-leaderPlayer.speed*.12)*.5));
+    }
+    const difference=advised-leaderPlayer.speed;
+    leaderPlayer.drive(1/120,{keyboard:true,steer,throttle:THREE.MathUtils.clamp(difference/3,0,1),brake:THREE.MathUtils.clamp(-difference/4,0,1),boost:advised>78&&leaderPlayer.speed>35&&Math.abs(error)<.09});
+    leaderRace.update(1/120,leaderPlayer);
+    const gap=Math.min(...leaderRace.opponents.map(o=>(leaderPlayer.distance-o.car.distance)*track.length));
+    if(step>120*20&&leaderRace.position===1){leadingFrames++;if(gap<25)pressureFrames++;}
+    if(wasLeading&&leaderRace.position>1)firstChallenge=Math.min(firstChallenge,step/120);
+    wasLeading=leaderRace.position===1;
+  }
+  assert.ok(firstChallenge<70,'A player with a 137–185m head start must face a physical overtake attempt within 70 seconds');
+  assert.ok(pressureFrames/Math.max(1,leadingFrames)>.6,'A leading stock player must generally have a challenger within 25m');
+  assert.ok(leaderRace.opponents.every(o=>Math.abs(o.car.distance-leaderPlayer.distance)*track.length<120),'The entire pursuing field must finish close');
+  assert.equal(leaderPlayer.gripScale,1);assert.equal(leaderPlayer.powerScale,1);assert.equal(leaderPlayer.raceSpeedCap,undefined);
+  console.log('PASS: leading player faces sustained physical pressure and an AI pass',{driverPace,firstChallenge,pressureFraction:pressureFrames/Math.max(1,leadingFrames),gaps:leaderRace.opponents.map(o=>Math.round((leaderPlayer.distance-o.car.distance)*track.length))});
+}

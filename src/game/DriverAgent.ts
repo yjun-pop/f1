@@ -178,7 +178,9 @@ export class DriverAgent {
     // Feed forward the acceleration required by the speed profile and road
     // drag. Error-only throttle used to coast below the target and brake late.
     // Front runners bank ERS; a trailing challenger can spend it on the pass.
-    const wantsBoost=target>78&&car.speed>35&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>(o.control.boost?5:o.attack>.7?18:35)&&o.rank>=this.playerPosition&&(!ahead||passing||gapTo(ahead)>35);
+    const attackingLeader=this.playerPosition===1&&o.rank>1;
+    const reserve=attackingLeader?(o.attack>.7?12:22):(o.attack>.7?18:35);
+    const wantsBoost=target>78&&car.speed>35&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>(o.control.boost?5:reserve)&&o.rank>=this.playerPosition&&(!ahead||passing||gapTo(ahead)>35);
     if(!wantsBoost)target=Math.min(target,o.speedCap*87/94);
     const feedforward=target<plannedTarget-.1?0:plannedAcceleration;
     const acceleration=feedforward+(target-car.speed)*2;
