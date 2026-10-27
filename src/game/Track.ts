@@ -148,15 +148,22 @@ export class Track {
       stand.position.copy(p);stand.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z)+Math.PI/2;this.group.add(stand);}
     const pit=new THREE.Group();pit.position.copy(this.point(.035)).addScaledVector(this.normal(.035),31);pit.rotation.y=Math.atan2(this.tangent(.035).x,this.tangent(.035).z);
     const building=new THREE.Mesh(new THREE.BoxGeometry(17,7,240),new THREE.MeshStandardMaterial({color:0xa1b0b0,roughness:.75}));building.position.y=3.5;pit.add(building);const windows=new THREE.Mesh(new THREE.BoxGeometry(17.2,1.5,225),new THREE.MeshStandardMaterial({color:0x233d4b,metalness:.5,roughness:.3}));windows.position.y=5.4;pit.add(windows);this.group.add(pit);
-    const start=this.point(24/this.length),forward=this.tangent(24/this.length),gantry=new THREE.Group();
+    const start=this.point(24/this.length),forward=this.tangent(24/this.length),gantry=new THREE.Group();gantry.name='start-gantry';
     for(const side of [-1,1]){const post=new THREE.Mesh(new THREE.BoxGeometry(.5,8,.5),steel);post.position.set(side*12,4,0);gantry.add(post);}const board=new THREE.Mesh(new THREE.BoxGeometry(25,2,.65),steel);board.position.y=7;gantry.add(board);
     const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=96;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#143d2e';ctx.fillRect(0,0,1024,96);ctx.fillStyle='#fff';ctx.font='bold italic 56px sans-serif';ctx.textAlign='center';ctx.fillText('MONZA  /  TEMPLE OF SPEED',512,66);
     const sign=new THREE.Mesh(new THREE.PlaneGeometry(23,1.65),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas)}));sign.position.set(0,7,-.34);sign.rotation.y=Math.PI;gantry.add(sign);gantry.position.copy(start);gantry.rotation.y=Math.atan2(forward.x,forward.z);this.group.add(gantry);
-    const rack=new THREE.Mesh(new THREE.BoxGeometry(4.7,1.65,.3),new THREE.MeshStandardMaterial({color:0x111519,roughness:.8}));rack.position.set(0,5.25,-.25);gantry.add(rack);
+    // Real lamps face back towards the grid, beneath the start-line gantry.
+    // Shared/merged housings keep the signal independent of HUD and postprocessing.
+    const signal=new THREE.Group();signal.name='start-lights';gantry.add(signal);
+    const rack=new THREE.Mesh(new THREE.BoxGeometry(5.35,1.85,.3),new THREE.MeshStandardMaterial({color:0x242b30,roughness:.8}));rack.position.set(0,5.1,-.25);signal.add(rack);
+    const housings:THREE.BufferGeometry[]=[],lens=new THREE.CircleGeometry(.32,24);
     for(let column=0;column<5;column++){
-      const material=new THREE.MeshStandardMaterial({color:0x190b0c,emissive:0xff1305,emissiveIntensity:.015,roughness:.45});this.startBulbs.push(material);
-      for(const y of [4.85,5.62]){const bulb=new THREE.Mesh(new THREE.CircleGeometry(.27,24),material);bulb.position.set((column-2)*.88,y,-.415);bulb.rotation.y=Math.PI;gantry.add(bulb);}
+      const housing=new THREE.BoxGeometry(.86,1.65,.16);housing.translate((column-2),5.1,-.46);housings.push(housing);
+      const material=new THREE.MeshStandardMaterial({color:0x190b0c,emissive:0xff1305,emissiveIntensity:.015,roughness:.45,toneMapped:false});this.startBulbs.push(material);
+      for(const y of [4.7,5.5]){const bulb=new THREE.Mesh(lens,material);bulb.name=`start-lamp-${column}`;bulb.position.set((column-2),y,-.55);bulb.rotation.y=Math.PI;signal.add(bulb);}
     }
+    const housingGeometry=mergeGeometries(housings);for(const housing of housings)housing.dispose();
+    signal.add(new THREE.Mesh(housingGeometry,new THREE.MeshStandardMaterial({color:0x07090b,roughness:.9})));
   }
   private buildLighting(){
     const count=Math.ceil(this.length/52),dummy=new THREE.Object3D(),steel=new THREE.MeshStandardMaterial({color:0x61716e,metalness:.6,roughness:.4});

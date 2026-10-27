@@ -73,7 +73,7 @@ export class Game {
       const texel=130/this.sun.shadow.mapSize.x,x=Math.round(this.vehicle.position.x/texel)*texel,z=Math.round(this.vehicle.position.z/texel)*texel;
       this.sun.target.position.set(x,0,z);this.sun.position.set(x,0,z).add(this.lighting.sunOffset);this.renderer.shadowMap.needsUpdate=true;
     }
-    this.cockpit.update(this.vehicle,dt,feedback);this.line.update(this.vehicle);this.hud.updateStart(this.race.startSignal,this.paused);
+    this.cockpit.update(this.vehicle,dt,feedback);this.line.update(this.vehicle);
     const hudStamp=`${this.race.state}/${this.paused}/${this.cockpit.mode}`;this.hudAge+=dt;
     if(this.hudAge>=.1||hudStamp!==this.hudStamp){this.hud.update(this.vehicle,this.race,this.paused,this.track,this.cockpit.mode);this.hudAge=0;this.hudStamp=hudStamp;}
     this.renderer.render(this.scene,this.cockpit.camera);this.mirror.render(this.vehicle,!this.paused&&this.race.state==='racing'?dt:0);requestAnimationFrame(this.frame);

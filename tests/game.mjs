@@ -1268,17 +1268,17 @@ signalRace.update(signalRace.countdown+.001,signalPlayer);assert.equal(signalRac
 for(let i=0;i<10;i++)signalRace.update(1/120,signalPlayer);
 assert.ok(signalRace.opponents.every(o=>o.car.speed>0),'Every driver must receive the same release from the start signal');
 track.setStartLights(3);assert.equal(track.startBulbs.filter(m=>m.emissiveIntensity>1).length,3);track.setStartLights(0);assert.ok(track.startBulbs.every(m=>m.emissiveIntensity<.1));
-// Exercise the HUD's real five-pod presentation without a browser/GPU.
+// The start signal lives on the physical gantry; HUD must not duplicate it.
 const {HUD}=await import(moduleURL('../ui/HUD'));
-const nodes=new Map(),pods=Array.from({length:5},()=>makeSignalNode());
+const nodes=new Map();
 function makeSignalNode(){const classes=new Set();return {value:'',textContent:'',hidden:false,classes,classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},addEventListener:()=>{},focus:()=>{},replaceChildren:()=>{},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})};}
-const hudRoot={innerHTML:'',classList:{toggle:()=>{}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,makeSignalNode());return nodes.get(selector);},querySelectorAll:selector=>selector.includes('.light-pod')?pods:[]};
+const hudRoot={innerHTML:'',classList:{toggle:()=>{}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,makeSignalNode());return nodes.get(selector);},querySelectorAll:()=>[]};
 const savedPath=globalThis.Path2D;globalThis.Path2D=class {moveTo(){}lineTo(){}};
 const noop=()=>{};const signalHUD=new HUD(hudRoot,track,{start:noop,restart:noop,camera:noop,resume:noop,recover:noop,height:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop});
 signalRace.reset();signalRace.start();signalRace.update(2.61,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);
-assert.equal(pods.filter(p=>p.classes.has('lit')).length,3);assert.equal(nodes.get('#countdown').hidden,false);
-signalHUD.update(signalPlayer,signalRace,true,track,1);assert.equal(nodes.get('#countdown').hidden,true);
-signalRace.update(signalRace.countdown+.001,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);assert.equal(pods.filter(p=>p.classes.has('lit')).length,0);assert.equal(nodes.get('#start-caption').textContent,'출발');
+assert.ok(!/countdown|start-rack|light-pod|start-caption|빨간불이 모두/.test(hudRoot.innerHTML),'No screen-space start lights or captions may remain');
+signalHUD.update(signalPlayer,signalRace,true,track,1);assert.equal(nodes.get('#pause-menu').hidden,false);
+signalRace.update(signalRace.countdown+.001,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);assert.equal(nodes.has('#countdown'),false);assert.equal(nodes.has('#start-caption'),false);
 globalThis.Path2D=savedPath;
 // Start cues have a dedicated volume/mute path, so countdown beeps do not
 // depend on an engine voice being audible. No queued wall-clock beeps survive pause.
@@ -1305,7 +1305,7 @@ for(const geometry of [roadMesh,grassMesh]){const colors=geometry.getAttribute('
 for(const name of ['curved-rubber','gravel-runoff']){const mesh=track.group.getObjectByName(name);assert.ok(mesh&&mesh.geometry.getAttribute('position').array.every(Number.isFinite));}
 const rubberFade=track.group.getObjectByName('curved-rubber').geometry.getAttribute('color');assert.equal(rubberFade.itemSize,4);assert.equal(rubberFade.getW(0),0);assert.equal(rubberFade.getW(80*2),0);assert.equal(rubberFade.getW(40*2),1,'Rubber deposits must fade in and out instead of ending as rectangular stamps');
 assert.equal(surfaceMaps('asphalt').map.image.width,512);assert.equal(surfaceMaps('gravel').map.image.width,512);sourceSky.dispose();
-console.log('PASS: five-light sequence, variable hold, frame-rate independence, held grid/timers, shared AI launch, real HUD pods, unique start cues, pause/mute, bundled HDR and varied road/woodland');
+console.log('PASS: five-light sequence, variable hold, frame-rate independence, held grid/timers, shared AI launch, gantry-only start lights, unique start cues, pause/mute, bundled HDR and varied road/woodland');
 // A late HDR load must adopt the currently selected quality, and a failed load
 // must leave the working generated sky in place rather than blank the scene.
 const originalHDRLoad=HDRLoader.prototype.loadAsync;
