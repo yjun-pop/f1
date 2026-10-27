@@ -32,11 +32,13 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
   const steerAngle=body.steer*steeringLimit*(1-scrub);body.steerAngle=steerAngle;
   let brakeForce=brake*brakingDeceleration(speed,body.offRoad,gripScale);
   if(controls.keyboard&&brake>0&&Math.abs(steerAngle)>.015){
-    // Cornering ABS leaves lateral grip for the requested steering instead
-    // of saturating the rear axle while braking and turning together.
+    // Cornering assistance reserves some lateral grip, while allowing a
+    // deliberate combined-input mistake to use more of the friction circle.
     const lateralDemand=Math.min(grip*.9,speed*speed*Math.abs(Math.tan(steerAngle))/HANDLING.wheelbase);
     const available=Math.sqrt(Math.max(0,grip*grip-lateralDemand*lateralDemand))*.9;
-    brakeForce=Math.min(brakeForce,Math.max(0,available-drag));
+    const reservedBraking=Math.min(brakeForce,Math.max(0,available-drag));
+    // Partial assistance: heavy trail braking still consumes cornering grip.
+    brakeForce=THREE.MathUtils.lerp(brakeForce,reservedBraking,.9);
   }
   const longitudinal=THREE.MathUtils.clamp(throttle*engine-brakeForce-drag,-grip*.91,grip*.91);
   // Lateral tire forces use front/rear slip angles, load transfer and a friction circle.
@@ -60,7 +62,7 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
       const targetYaw=speed*Math.tan(steerAngle)/HANDLING.wheelbase;
       // A bounded stability torque aligns the body with its actual motion.
       // Tire forces still carry lateral momentum; no heading or velocity snap.
-      const correction=THREE.MathUtils.clamp(slip*16-(body.yawRate-targetYaw)*1.2,-1.5,1.5);
+      const correction=THREE.MathUtils.clamp(slip*12.8-(body.yawRate-targetYaw)*.96,-1.2,1.2);
       body.yawRate+=correction*assistance*dt;
     }
     body.lateralSpeed+=(lateral-body.yawRate*speed)*dt;

@@ -153,7 +153,7 @@ const {resolveCollision}=await import(moduleURL('Vehicle'));
 const a=new Vehicle(track,scene),b=new Vehicle(track,scene);a.resetAt(0);b.resetAt(0);b.position.copy(a.position).addScaledVector(track.tangent(0),4);a.speed=40;b.speed=10;assert.ok(resolveCollision(a,b));assert.ok(a.speed<40&&b.speed>10,'Collision must exchange momentum');
 console.log('PASS: physics-based advice, surface grip, braking, persistent side-slip and collision momentum');
 // Reproduce full digital steering after braking, trail braking, and release.
-for(const [speed,brakingTime,turnTime,trail,maxSlip,minYaw] of [[60,1.7,1.5,false,6.2,.95],[40,0,1,true,6,1],[60,0,1,false,3,.45]]){
+for(const [speed,brakingTime,turnTime,trail,maxSlip,minYaw] of [[60,1.7,1.5,false,6.2,.95],[40,0,1,true,8,1],[60,0,1,false,3,.45]]){
   const car=body();car.speed=speed;let peakSlip=0,peakYaw=0;
   for(let i=0;i<brakingTime*120;i++)integrateBody(car,{throttle:0,brake:1,steer:0,keyboard:true},1/120);
   for(let i=0;i<(turnTime+2)*120;i++){
@@ -163,6 +163,7 @@ for(const [speed,brakingTime,turnTime,trail,maxSlip,minYaw] of [[60,1.7,1.5,fals
     peakYaw=Math.max(peakYaw,Math.abs(car.yawRate));
   }
   assert.ok(peakSlip<maxSlip,'Digital corner entry must limit excessive sliding');
+  if(trail)assert.ok(peakSlip>6,'Full simultaneous braking and steering must require managing tire slip');
   assert.ok(peakYaw>minYaw,'Stability must preserve useful turning authority');
   assert.ok(Math.abs(car.lateralSpeed)<.02&&Math.abs(car.yawRate)<.02,'Released steering must settle without continued drift');
 }
@@ -1046,8 +1047,8 @@ for(const key of ['pitch','roll','heave','sway','longitudinal','surfaceHeave','c
 assert.ok(noMotion.wind>0,'Motion preference must not silence wind audio');
 feel.strength=1;feelCar.resetAt(kerbProgress,9.6);feelCar.position.copy(edge);feelCar.speed=35;
 let kerbFrame,maxKerbBounce=0;for(let i=0;i<60;i++){feelCar.distance+=35/60/track.length;kerbFrame=feel.update(feelCar,track,1/60,true);maxKerbBounce=Math.max(maxKerbBounce,Math.abs(kerbFrame.surfaceHeave));}
-assert.ok(kerbFrame.kerb>.2&&maxKerbBounce>.012&&maxKerbBounce<=.042,'Actual kerbs need perceptible suspension travel, without excessive camera shake');
-feelCar.present(kerbFrame.surfaceHeave);assert.ok(Math.abs(feelCar.model.chassis.position.y)<=.042);
+assert.ok(kerbFrame.kerb>.2&&maxKerbBounce>.004&&maxKerbBounce<=.019,'Low painted kerbs need small perceptible suspension travel without a raised-block bounce');
+feelCar.present(kerbFrame.surfaceHeave);assert.ok(Math.abs(feelCar.model.chassis.position.y)<=.019);
 const frozen=feel.update(feelCar,track,1/60,false);
 for(const key of ['pitch','roll','heave','sway','longitudinal','surfaceHeave','cockpitHeave','cockpitPitch','kerb','wind','boostFov'])assert.equal(frozen[key],0);
 feel.reset();assert.equal(feel.update(feelCar,track,1/60,false).longitudinal,0);
@@ -1226,7 +1227,7 @@ for(let i=0;i<ribbonGeometry.index.count;i+=3){
 for(let i=0;i<kerbSurfacePositions.count;i++){
   const t=ribbonGeometry.getAttribute('progress').getX(i),p=track.roadPoint(t),n=track.roadNormal(t),lateral=Math.abs((kerbSurfacePositions.getX(i)-p.x)*n.x+(kerbSurfacePositions.getZ(i)-p.z)*n.z);
   assert.ok(lateral>=9.649&&lateral<=11.051,'Visible strips must stay on the shared road-edge footprint');
-  assert.ok(kerbSurfacePositions.getY(i)>=-.07801&&kerbSurfacePositions.getY(i)<=.11501,'Kerbs must blend low into the road and grass');
+  assert.ok(kerbSurfacePositions.getY(i)>=-.07801&&kerbSurfacePositions.getY(i)<=.05501,'Kerbs must blend low into the road and grass');
 }
 let cornerRuns=0;for(let i=0;i<track.kerbSegments.length;i++)if(track.kerbSegments[i]&&!track.kerbSegments[(i+track.kerbSegments.length-1)%track.kerbSegments.length])cornerRuns++;
 assert.ok(cornerRuns<=22,'A single corner must not break into many short disconnected kerbs');
@@ -1439,3 +1440,28 @@ const pillarPositions=fixedPillar.geometry.getAttribute('position');let pillarMi
 for(let i=0;i<pillarPositions.count;i++){pillarMin=Math.min(pillarMin,pillarPositions.getX(i));pillarMax=Math.max(pillarMax,pillarPositions.getX(i));}
 assert.ok(pillarMax-pillarMin<.05,'The central halo support must remain narrow at the fixed eye height');
 console.log('PASS: non-intersecting full-width closed barriers, road clearance, valid panels, bounded geometry, fixed 1.5m seat, slim halo and 4,320 instanced spectators',{wallTriangles});
+
+// Reference framing: the beam curves around the lower third of the cockpit,
+// leaving the road and start lights clear. The only central blade is below it.
+const referenceScene=new THREE.Scene(),referenceCamera=new CockpitCamera(referenceScene),referenceCar=new Vehicle(track,referenceScene);
+referenceCamera.update(referenceCar,1);referenceScene.updateMatrixWorld(true);
+const referenceBeam=referenceCamera.camera.getObjectByName('cockpit-halo'),referenceBlade=referenceCamera.camera.getObjectByName('halo-pillar');
+function projectedBounds(mesh){
+  const p=mesh.geometry.getAttribute('position'),bounds=new THREE.Box3();
+  for(let i=0;i<p.count;i++)bounds.expandByPoint(new THREE.Vector3().fromBufferAttribute(p,i).applyMatrix4(mesh.matrixWorld).project(referenceCamera.camera));
+  return bounds;
+}
+const beamScreen=projectedBounds(referenceBeam),bladeScreen=projectedBounds(referenceBlade);
+assert.ok(beamScreen.max.y<-.2&&beamScreen.max.y>-.4,'The flattened halo crown must frame the lower third of the image');
+assert.ok(beamScreen.min.y<-1,'The arch must descend to the cockpit sides');
+assert.ok(bladeScreen.max.y<beamScreen.max.y-.04&&bladeScreen.min.y>-.7,'The short support must stay underneath the arch, with no aerial above it');
+assert.ok(bladeScreen.max.x-bladeScreen.min.x<.02,'The structural blade must not obscure the driving line');
+const beamTarget=referenceBeam.localToWorld(new THREE.Vector3(0,-.09,-1.62)),beamRay=new THREE.Raycaster(referenceCamera.camera.position,beamTarget.sub(referenceCamera.camera.position).normalize());
+assert.ok(beamRay.intersectObject(referenceBeam).length>0,'Halo faces must render towards the driver');
+for(const object of [referenceBeam,referenceBlade]){
+  const g=object.geometry,p=g.getAttribute('position'),count=g.index?.count??p.count;
+  assert.ok(g.getAttribute('normal').array.every(Number.isFinite)&&g.getAttribute('uv').array.every(Number.isFinite));
+  for(let i=0;i<count;i+=3){const at=j=>new THREE.Vector3().fromBufferAttribute(p,g.index?g.index.getX(i+j):i+j),a=at(0),b=at(1),c=at(2);assert.ok(b.sub(a).cross(c.sub(a)).lengthSq()>1e-12,'Flattened beams and caps must not contain collapsed triangles');}
+}
+const {KERB_PROFILE}=await import(moduleURL('KerbGeometry'));assert.equal(KERB_PROFILE[0][1],.035);assert.ok(Math.max(...KERB_PROFILE.map(p=>p[1]))-.035<=.020001,'Painted kerbs must rise at most 2cm above asphalt');
+console.log('PASS: reference halo silhouette, clear upper view, no aerial, short lower support, valid facing/UVs and low painted kerbs');

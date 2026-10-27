@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {Vehicle} from './Vehicle';
 import type {DrivingFeedbackFrame} from './DrivingFeedback';
 import {EngineSoundState} from './EngineSound';
+import {createHaloGeometry,createHaloSupport} from './HaloGeometry';
 export class CockpitCamera {
   readonly camera=new THREE.PerspectiveCamera(76,1,.06,1800);
   mode=1;
@@ -12,10 +13,9 @@ export class CockpitCamera {
   constructor(scene:THREE.Scene){
     const carbon=new THREE.MeshStandardMaterial({color:0x11161b,roughness:.43,metalness:.35});
     const mesh=(w:number,h:number,d:number,x:number,y:number,z:number,mat:THREE.Material=carbon)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);return m;};
-    const tube=(points:number[][],radius:number)=>new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p as [number,number,number]))),32,radius,8,false),carbon);
     this.cockpit.add(mesh(1.65,.32,.7,0,-.77,-1.2));
-    const halo=tube([[-.94,-.5,-.5],[-.91,.36,-.9],[-.72,.46,-1.45],[0,.48,-1.75],[.72,.46,-1.45],[.91,.36,-.9],[.94,-.5,-.5]],.04);halo.name='cockpit-halo';this.cockpit.add(halo);
-    const pillar=tube([[0,.48,-1.75],[0,.1,-2.25],[0,-.32,-2.9]],.024);pillar.name='halo-pillar';this.cockpit.add(pillar);
+    const halo=new THREE.Mesh(createHaloGeometry([[-.95,-.70,-.60],[-.82,-.46,-.95],[-.58,-.20,-1.33],[0,-.09,-1.62],[.58,-.20,-1.33],[.82,-.46,-.95],[.95,-.70,-.60]],.085,.05),carbon);halo.name='cockpit-halo';this.cockpit.add(halo);
+    const pillar=new THREE.Mesh(createHaloSupport(new THREE.Vector3(0,-.14,-1.62),new THREE.Vector3(0,-.65,-2.3)),carbon);pillar.name='halo-pillar';this.cockpit.add(pillar);
     const red=new THREE.MeshStandardMaterial({color:0x8b969f,metalness:.35,roughness:.32});
     for(const side of [-1,1]){
       const rim=mesh(.22,.24,.94,side*.83,-.59,-1.1,red);rim.rotation.z=side*.18;this.cockpit.add(rim);

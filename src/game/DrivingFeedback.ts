@@ -36,9 +36,9 @@ export class DrivingFeedback {
     this.dive=smooth(this.dive,clamp(vehicle.acceleration,-40,25)*.0018*moving,10);
     this.sway=smooth(this.sway,-clamp(vehicle.lateralAcceleration,-55,55)*.0006*moving,8);
     this.kerb=smooth(this.kerb,(vehicle.speed>1?track.kerbContact(vehicle.position,vehicle.heading,vehicle.progress):0)*moving,28);
-    // Suspension filters the block impacts into a visible 4–13Hz body response.
+    // Low painted kerbs cause a small suspension ripple rather than a raised-block impact.
     const metres=vehicle.distance*track.length,phase=metres/8*Math.PI*2;
-    const bump=this.kerb*(Math.sin(phase)*.026+Math.sin(phase*.73)*.011);
+    const bump=this.kerb*(Math.sin(phase)*.010+Math.sin(phase*.73)*.004);
     const road=(Math.sin(metres/12*Math.PI*2)*.003+Math.sin(metres/7.7*Math.PI*2)*.0015)*Math.min(1,vehicle.speed/70);
     return {pitch:(this.pitch+kick*.3+bump*.45+road*.3)*strength,roll:this.roll*strength,
       heave:(this.dive+bump+road)*strength,sway:this.sway*strength,

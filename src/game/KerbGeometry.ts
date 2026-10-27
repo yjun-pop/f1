@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type {Track} from './Track';
 
-export const KERB_PROFILE=[[9.65,.04],[9.82,.055],[10.3,.115],[10.82,.072],[11.05,-.078]] as const;
+export const KERB_PROFILE=[[9.65,.035],[9.82,.043],[10.3,.055],[10.82,.044],[11.05,-.078]] as const;
 export const KERB_PAINT_LENGTH=.75;
 type KerbPath=Pick<Track,'roadPoint'|'roadNormal'|'length'>;
 interface Row {coordinate:number;p:THREE.Vector3;n:THREE.Vector3}
@@ -59,7 +59,7 @@ export function createKerbGeometry(track:KerbPath,mask:Uint8Array){
         for(let cross=0;cross<profile;cross++){
           const key=`${side}/${coordinate}/${cross}`;let index=vertices.get(key);
           if(index===undefined){
-            const [offset,height]=KERB_PROFILE[cross],base=THREE.MathUtils.lerp(.04,-.078,(offset-9.65)/1.4);
+            const [offset,height]=KERB_PROFILE[cross],base=THREE.MathUtils.lerp(.035,-.078,(offset-9.65)/1.4);
             index=positions.length/3;vertices.set(key,index);positions.push(p.x+n.x*side*offset,THREE.MathUtils.lerp(base,height,blend),p.z+n.z*side*offset);
             uvs.push(distance/(2*KERB_PAINT_LENGTH),(offset-9.65)/1.4);progress.push(coordinate/count);
           }row.push(index);

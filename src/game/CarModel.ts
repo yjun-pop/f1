@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {surfaceMaps} from './SurfaceTextures';
 import {createTireGeometry,createTireLetteringGeometry} from './TireGeometry';
+import {createHaloGeometry,createHaloSupport} from './HaloGeometry';
 export interface CarVisual {group:THREE.Group;frontWheels:THREE.Group[];tires:THREE.Mesh[];chassis:THREE.Group;contactShadow:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>}
 let sidewallMaterial:THREE.MeshStandardMaterial|undefined;
 let contactMap:THREE.DataTexture|undefined;
@@ -74,9 +75,9 @@ export function createCar(color:number):CarVisual {
   const camera=addBox(chassis,.48,.065,.11,0,1.33,-1.02,accent);camera.name='driver';
   const fin=addBox(chassis,.035,.29,.94,0,1.12,-1.75,paint);fin.name='driver';
   addBox(chassis,.32,.11,.16,0,.62,-2.57,inlet);
-  const haloPath=[[-.48,.85,-1],[-.54,1.51,-.5],[-.5,1.62,.2],[0,1.64,.63],[.5,1.62,.2],[.54,1.51,-.5],[.48,.85,-1]];
-  const halo=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(haloPath.map(p=>new THREE.Vector3(...p as [number,number,number]))),40,.036,8,false),carbon);halo.name='driver';chassis.add(halo);
-  const strut=new THREE.Mesh(new THREE.CylinderGeometry(.024,.035,Math.hypot(.96,.2),8),carbon);strut.position.set(0,1.16,.73);strut.rotation.x=Math.atan2(-.2,.96);strut.name='driver';chassis.add(strut);
+  const haloPath=[[-.48,.85,-1],[-.54,1.23,-.5],[-.5,1.34,.2],[0,1.4,.63],[.5,1.34,.2],[.54,1.23,-.5],[.48,.85,-1]];
+  const halo=new THREE.Mesh(createHaloGeometry(haloPath,.062,.038,40),carbon);halo.name='driver';chassis.add(halo);
+  const strut=new THREE.Mesh(createHaloSupport(new THREE.Vector3(0,1.36,.63),new THREE.Vector3(0,.72,.84)),carbon);strut.name='driver';chassis.add(strut);
   const visor=new THREE.Mesh(new THREE.SphereGeometry(.253,20,10,0,Math.PI*2,Math.PI*.36,Math.PI*.25),new THREE.MeshPhysicalMaterial({color:0x151e29,metalness:.9,roughness:.1}));visor.position.copy(helmet.position);visor.name='driver';chassis.add(visor);
   for(let i=-3;i<=3;i++)addBox(chassis,.025,.24,.55,i*.2,.27,-2.38,carbon);
   const rainLight=addBox(chassis,.14,.07,.04,0,.49,-2.69,new THREE.MeshStandardMaterial({color:0xa61109,emissive:0xff1808,emissiveIntensity:2}));rainLight.name='rain-light';
