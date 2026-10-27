@@ -25,12 +25,17 @@ export class CircuitDetails {
       const segments=12,positions:number[]=[],uvs:number[]=[],indices:number[]=[];
       const posts=new THREE.InstancedMesh(poleGeometry,steel,(segments+1)*2);let post=0;
       for(const side of [-1,1]){
-        const start=positions.length/3;
+        const start=positions.length/3,path=track.barrierPaths[side===1?1:0],from=chunk/chunks,to=(chunk+1)/chunks;
+        // Fence rows share every wall bend; sparse post spacing must not turn
+        // the wire mesh into a chord cutting through a tight barrier corner.
+        const rows=[from,...path.distances.slice(1,-1).map(d=>d/path.length).filter(t=>t>from+1e-8&&t<to-1e-8),to];
+        for(let j=0;j<rows.length;j++){
+          const t=rows[j],p=path.point(t,side*.35);positions.push(p.x,1.15,p.z,p.x,3.75,p.z);uvs.push(t*path.length*1.6,0,t*path.length*1.6,4);
+          if(j<rows.length-1){const i=start+j*2;indices.push(i,i+1,i+2,i+1,i+3,i+2);}
+        }
         for(let j=0;j<=segments;j++){
-          const t=(chunk+j/segments)/chunks,p=track.point(t).addScaledVector(track.normal(t),side*16.4);
-          positions.push(p.x,1.15,p.z,p.x,3.75,p.z);uvs.push(j*16,0,j*16,4);
-          if(j<segments){const i=start+j*2;indices.push(i,i+1,i+2,i+1,i+3,i+2);}
-          stamp.position.set(p.x,2.45,p.z);stamp.rotation.set(0,Math.atan2(track.tangent(t).x,track.tangent(t).z),0);stamp.updateMatrix();posts.setMatrixAt(post++,stamp.matrix);
+          const t=(chunk+j/segments)/chunks,p=path.point(t,side*.35);
+          const forward=path.point(t+.5/path.length).sub(path.point(t-.5/path.length));stamp.position.set(p.x,2.45,p.z);stamp.rotation.set(0,Math.atan2(forward.x,forward.z),0);stamp.updateMatrix();posts.setMatrixAt(post++,stamp.matrix);
         }
       }
       const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();

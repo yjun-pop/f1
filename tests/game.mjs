@@ -22,6 +22,7 @@ const {Race}=await import(moduleURL('Race'));
 const {LinePlanner}=await import(moduleURL('LinePlanner'));
 const {brakingDeceleration,integrateBody,HANDLING,steeringLock}=await import(moduleURL('Dynamics'));
 const scene=new THREE.Scene(),track=new Track(scene),v=new Vehicle(track,scene),camera=new CockpitCamera(scene);
+assert.equal(camera.eyeHeight,1.5,'The driver eye height must remain fixed at 1.5m');
 const input=(key)=>({down:(...keys)=>keys.includes(key)});
 for(const heading of [0,.8,Math.PI,-Math.PI/2]){
   for(const [key,side] of [['KeyA',-1],['ArrowLeft',-1],['KeyD',1],['ArrowRight',1]]){
@@ -1167,16 +1168,25 @@ v.reset();v.speed=30;const spinMesh=v.model.tires[0],oldSpin=spinMesh.quaternion
 const expectedSpin=oldSpin.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),30*.1/.455));
 assert.ok(spinMesh.quaternion.angleTo(expectedSpin)<1e-6,'Merged wheel parts must complete full rotations about their axle');
 // Stand width must run parallel to the circuit, not extend across the road.
-const stands=track.group.children.filter(child=>child.name==='grandstand');assert.equal(stands.length,9);
+const {GRANDSTAND_PROGRESS}=await import(moduleURL('Grandstands'));
+const stands=track.group.children.filter(child=>child.name==='grandstand');assert.equal(stands.length,12);
 for(const stand of stands){
   const localWidth=new THREE.Vector3(1,0,0).applyEuler(stand.rotation);
   // Use the closest source position globally since stands are beyond the local
   // nearest-progress search window and can sit beside a return leg.
-  const candidates=[.007,.028,.15,.215,.35,.45,.59,.74,.9];
+  const candidates=GRANDSTAND_PROGRESS;
   const t=candidates.reduce((best,t)=>stand.position.distanceToSquared(track.point(t).addScaledVector(track.normal(t),-37))<stand.position.distanceToSquared(track.point(best).addScaledVector(track.normal(best),-37))?t:best,candidates[0]);
   assert.ok(Math.abs(localWidth.dot(track.tangent(t)))>.999);
+  const crowd=stand.getObjectByName('spectator-bodies'),heads=stand.getObjectByName('spectator-heads');
+  assert.ok(crowd instanceof THREE.InstancedMesh&&heads instanceof THREE.InstancedMesh);assert.equal(crowd.count,360);assert.equal(heads.count,360);assert.equal(crowd.castShadow,false);
   assert.ok(stand.children.some(child=>child instanceof THREE.InstancedMesh&&child.count===360));
 }
+assert.equal(stands.filter(s=>s.userData.progress<.06).length,5,'The opening straight must gain three filled stands');
+for(let i=1;i<5;i++)assert.ok(stands[i].position.distanceTo(stands[i-1].position)>58,'New roofs must not overlap their neighbours');
+const crowdStand=stands[1],crowdBody=crowdStand.getObjectByName('spectator-bodies'),crowdHeads=crowdStand.getObjectByName('spectator-heads');
+track.updatePresentation(crowdStand.position,'medium');assert.equal(crowdBody.geometry,crowdBody.userData.nearGeometry);assert.equal(crowdHeads.visible,true);
+track.updatePresentation(crowdStand.position.clone().add(new THREE.Vector3(180,0,0)),'medium');assert.equal(crowdBody.geometry,crowdBody.userData.farGeometry);assert.equal(crowdHeads.visible,false);
+track.updatePresentation(crowdStand.position.clone().add(new THREE.Vector3(1000,0,0)),'medium');assert.equal(crowdBody.visible,false);
 const near=track.point(0);track.updatePresentation(near,'low');const lowDetailCount=track.details.group.children.filter(child=>child.visible).length;
 track.updatePresentation(near,'high');const highDetailCount=track.details.group.children.filter(child=>child.visible).length;
 assert.ok(lowDetailCount>0&&highDetailCount>=lowDetailCount&&highDetailCount<track.details.group.children.length/2,'Only nearby detail chunks should be submitted');
@@ -1274,8 +1284,9 @@ const nodes=new Map();
 function makeSignalNode(){const classes=new Set();return {value:'',textContent:'',hidden:false,classes,classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},addEventListener:()=>{},focus:()=>{},replaceChildren:()=>{},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})};}
 const hudRoot={innerHTML:'',classList:{toggle:()=>{}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,makeSignalNode());return nodes.get(selector);},querySelectorAll:()=>[]};
 const savedPath=globalThis.Path2D;globalThis.Path2D=class {moveTo(){}lineTo(){}};
-const noop=()=>{};const signalHUD=new HUD(hudRoot,track,{start:noop,restart:noop,camera:noop,resume:noop,recover:noop,height:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop});
+const noop=()=>{};const signalHUD=new HUD(hudRoot,track,{start:noop,restart:noop,camera:noop,resume:noop,recover:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop});
 signalRace.reset();signalRace.start();signalRace.update(2.61,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);
+assert.ok(!/seat-height|seat-value/.test(hudRoot.innerHTML),'Fixed seat height must not retain an adjustment control');
 assert.ok(!/countdown|start-rack|light-pod|start-caption|빨간불이 모두/.test(hudRoot.innerHTML),'No screen-space start lights or captions may remain');
 signalHUD.update(signalPlayer,signalRace,true,track,1);assert.equal(nodes.get('#pause-menu').hidden,false);
 signalRace.update(signalRace.countdown+.001,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);assert.equal(nodes.has('#countdown'),false);assert.equal(nodes.has('#start-caption'),false);
@@ -1356,7 +1367,7 @@ for(const name of ['asphalt-road','continuous-kerbs']){
 }
 let optimizedSurfaceTotal=0;
 for(const t of [0,.18,.38,.58,.78,.93]){
-  const p=track.point(t),f=track.tangent(t),view=new THREE.PerspectiveCamera(80,16/9,.06,GRAPHICS_PROFILES.medium.viewFar);view.position.copy(p).setY(1.8);view.lookAt(p.clone().addScaledVector(f,26).setY(-.35));view.updateMatrixWorld(true);
+  const p=track.point(t),f=track.tangent(t),view=new THREE.PerspectiveCamera(80,16/9,.06,GRAPHICS_PROFILES.medium.viewFar);view.position.copy(p).setY(1.5);view.lookAt(p.clone().addScaledVector(f,26).setY(-.35));view.updateMatrixWorld(true);
   const frustum=new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(view.projectionMatrix,view.matrixWorldInverse));
   for(const name of ['asphalt-road','continuous-kerbs'])for(const mesh of track.group.getObjectByName(name).children)if(frustum.intersectsObject(mesh))optimizedSurfaceTotal+=mesh.geometry.index.count/3;
 }
@@ -1379,10 +1390,12 @@ v.reset();v.position.add(new THREE.Vector3(8,0,12));v.sync();v.group.updateMatri
 v.setGraphics('high');v.group.traverse(object=>{if(object.castShadow)dynamicCasters++;});assert.ok(dynamicCasters>0);assert.equal(v.model.contactShadow.castShadow,false);
 // Actual 3D tree positions must shift on screen as the driver advances. A
 // photographed horizon at infinity would remain unchanged under this motion.
-const parallaxOrigin=track.point(0),parallaxForward=track.tangent(0),treeCandidates=[];const instance=new THREE.Matrix4();
-for(const mesh of scenery.children)if(!mesh.material.map)for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,instance);const p=new THREE.Vector3().setFromMatrixPosition(instance),relative=p.clone().sub(parallaxOrigin),ahead=relative.dot(parallaxForward),lateral=Math.abs(relative.dot(track.normal(0)));if(ahead>80&&ahead<150&&lateral>23&&lateral<45)treeCandidates.push(p);}
+// Added start-line stands occupy the former tree sample; check the clear part
+// of the same straight beyond the new buildings instead.
+const parallaxProgress=360/track.length,parallaxOrigin=track.point(parallaxProgress),parallaxForward=track.tangent(parallaxProgress),treeCandidates=[];const instance=new THREE.Matrix4();
+for(const mesh of scenery.children)if(!mesh.material.map)for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,instance);const p=new THREE.Vector3().setFromMatrixPosition(instance),relative=p.clone().sub(parallaxOrigin),ahead=relative.dot(parallaxForward),lateral=Math.abs(relative.dot(track.normal(parallaxProgress)));if(ahead>80&&ahead<150&&lateral>23&&lateral<45)treeCandidates.push(p);}
 assert.ok(treeCandidates.length>0,'A near tree layer must exist beside the opening straight');
-const projectedTrees=[0,20].map(metres=>{const p=parallaxOrigin.clone().addScaledVector(parallaxForward,metres),view=new THREE.PerspectiveCamera(80,16/9,.06,1100);view.position.copy(p).setY(1.8);view.lookAt(p.clone().addScaledVector(parallaxForward,26).setY(-.35));view.updateMatrixWorld(true);return treeCandidates[0].clone().project(view);});
+const projectedTrees=[0,20].map(metres=>{const p=parallaxOrigin.clone().addScaledVector(parallaxForward,metres),view=new THREE.PerspectiveCamera(80,16/9,.06,1100);view.position.copy(p).setY(1.5);view.lookAt(p.clone().addScaledVector(parallaxForward,26).setY(-.35));view.updateMatrixWorld(true);return treeCandidates[0].clone().project(view);});
 assert.ok(Math.abs(projectedTrees[0].x-projectedTrees[1].x)>.02,'Near scenery must provide real translation parallax');
 const nearestBefore=track.nearestProgress;track.nearestProgress=()=>{throw new Error('Unnecessary wheel search');};assert.doesNotThrow(()=>track.kerbContact(track.point(400/track.length),0,400/track.length));track.nearestProgress=nearestBefore;
 const {createSkyBackdrop}=await import(moduleURL('WorldLighting'));const skyOnly=createSkyBackdrop(undefined,shadowLight);assert.equal(skyOnly.image.width,512);assert.equal(skyOnly.flipY,true);skyOnly.dispose();
@@ -1390,3 +1403,39 @@ console.log('PASS: exact chunk preservation, shared buffers, local culling, stat
 
 const forestPit=track.group.children.find(object=>object.children.some(child=>child.geometry?.parameters?.width===17&&child.geometry?.parameters?.depth===240)),forestPitInverse=forestPit.matrixWorld.clone().invert();
 for(const mesh of scenery.children)if(!mesh.material.map)for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,instance);const local=new THREE.Vector3().setFromMatrixPosition(instance).applyMatrix4(forestPitInverse);assert.ok(Math.abs(local.x)>=16||Math.abs(local.z)>=130,'The near parallax layer must leave the pit building and its canopy clearance empty');}
+
+// Check the rendered wall edges, not only the centreline: a wide strip can
+// still fold over itself after a centreline loop has been removed.
+function assertUncrossedWall(points){
+  const count=points.length;
+  for(let i=0;i<count;i++){
+    const a=points[i],b=points[(i+1)%count];
+    for(let j=i+2;j<count;j++){
+      if(i===0&&j===count-1)continue;
+      const c=points[j],d=points[(j+1)%count];
+      if(Math.max(a.x,b.x)<Math.min(c.x,d.x)||Math.max(c.x,d.x)<Math.min(a.x,b.x)||Math.max(a.z,b.z)<Math.min(c.z,d.z)||Math.max(c.z,d.z)<Math.min(a.z,b.z))continue;
+      const dx=b.x-a.x,dz=b.z-a.z,ex=d.x-c.x,ez=d.z-c.z,den=dx*ez-dz*ex;if(Math.abs(den)<1e-9)continue;
+      const x=c.x-a.x,z=c.z-a.z,t=(x*ez-z*ex)/den,u=(x*dz-z*dx)/den;
+      assert.ok(!(t>1e-6&&t<1-1e-6&&u>1e-6&&u<1-1e-6),'No rendered barrier edge may intersect a non-neighbouring panel');
+    }
+  }
+}
+const wallGroup=track.group.getObjectByName('track-barriers');assert.equal(wallGroup.children.length,2);
+const roadClearanceSamples=Array.from({length:2000},(_,i)=>track.roadPoint(i/2000));let wallTriangles=0;
+for(let side=0;side<2;side++){
+  const wall=wallGroup.children[side],vertices=wall.children[0].geometry.getAttribute('position'),rows=vertices.count/8-1;
+  for(const edge of [0,5]){
+    const points=Array.from({length:rows},(_,i)=>new THREE.Vector3().fromBufferAttribute(vertices,i*8+edge));assertUncrossedWall(points);
+    assert.ok(points[0].distanceTo(new THREE.Vector3().fromBufferAttribute(vertices,rows*8+edge))<1e-6,'The closed wall must meet exactly at its lap seam');
+    for(let i=0;i<points.length;i+=5){const distance=Math.min(...roadClearanceSamples.map(p=>p.distanceToSquared(points[i])));assert.ok(distance>15.5**2,'A rounded barrier must stay outside the driving surface and kerb');}
+  }
+  for(const mesh of wall.children){const g=mesh.geometry,p=g.getAttribute('position'),normal=g.getAttribute('normal');assert.ok(p.array.every(Number.isFinite)&&normal.array.every(Number.isFinite));wallTriangles+=g.index.count/3;
+    for(let i=0;i<g.index.count;i+=3){const a=new THREE.Vector3().fromBufferAttribute(p,g.index.getX(i)),b=new THREE.Vector3().fromBufferAttribute(p,g.index.getX(i+1)),c=new THREE.Vector3().fromBufferAttribute(p,g.index.getX(i+2));assert.ok(b.sub(a).cross(c.sub(a)).lengthSq()>1e-10,'Wall panels must not contain collapsed triangles');}
+  }
+}
+assert.ok(wallTriangles<60000,'Continuous walls must keep a bounded geometry budget');
+const fixedHalo=camera.camera.getObjectByName('cockpit-halo'),fixedPillar=camera.camera.getObjectByName('halo-pillar');assert.ok(fixedHalo&&fixedPillar);
+const pillarPositions=fixedPillar.geometry.getAttribute('position');let pillarMin=Infinity,pillarMax=-Infinity;
+for(let i=0;i<pillarPositions.count;i++){pillarMin=Math.min(pillarMin,pillarPositions.getX(i));pillarMax=Math.max(pillarMax,pillarPositions.getX(i));}
+assert.ok(pillarMax-pillarMin<.05,'The central halo support must remain narrow at the fixed eye height');
+console.log('PASS: non-intersecting full-width closed barriers, road clearance, valid panels, bounded geometry, fixed 1.5m seat, slim halo and 4,320 instanced spectators',{wallTriangles});

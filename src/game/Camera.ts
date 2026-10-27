@@ -5,7 +5,7 @@ import {EngineSoundState} from './EngineSound';
 export class CockpitCamera {
   readonly camera=new THREE.PerspectiveCamera(76,1,.06,1800);
   mode=1;
-  eyeHeight=1.8;
+  readonly eyeHeight=1.5;
   private cockpit=new THREE.Group();private wheel=new THREE.Group();private initialized=false;
   private display=document.createElement('canvas');private displayTexture:THREE.CanvasTexture;
   private displayAge=0;private displayGear=0;private fallbackEngine=new EngineSoundState();private cockpitSpring=0;
@@ -14,8 +14,8 @@ export class CockpitCamera {
     const mesh=(w:number,h:number,d:number,x:number,y:number,z:number,mat:THREE.Material=carbon)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);return m;};
     const tube=(points:number[][],radius:number)=>new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p as [number,number,number]))),32,radius,8,false),carbon);
     this.cockpit.add(mesh(1.65,.32,.7,0,-.77,-1.2));
-    this.cockpit.add(tube([[-1.05,-.65,-1.1],[-.82,-.31,-1.4],[-.4,-.19,-1.55],[0,-.16,-1.6],[.4,-.19,-1.55],[.82,-.31,-1.4],[1.05,-.65,-1.1]],.048));
-    this.cockpit.add(tube([[0,-.16,-1.6],[0,-.20,-2.2],[0,-.28,-2.8]],.032));
+    const halo=tube([[-.94,-.5,-.5],[-.91,.36,-.9],[-.72,.46,-1.45],[0,.48,-1.75],[.72,.46,-1.45],[.91,.36,-.9],[.94,-.5,-.5]],.04);halo.name='cockpit-halo';this.cockpit.add(halo);
+    const pillar=tube([[0,.48,-1.75],[0,.1,-2.25],[0,-.32,-2.9]],.024);pillar.name='halo-pillar';this.cockpit.add(pillar);
     const red=new THREE.MeshStandardMaterial({color:0x8b969f,metalness:.35,roughness:.32});
     for(const side of [-1,1]){
       const rim=mesh(.22,.24,.94,side*.83,-.59,-1.1,red);rim.rotation.z=side*.18;this.cockpit.add(rim);

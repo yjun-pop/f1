@@ -1,7 +1,7 @@
 import * as THREE from 'three';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {surfaceMaps} from './SurfaceTextures';
 import {MONZA_POINTS,MONZA_LENGTH,MONZA_SECTIONS,MONZA_ORIGIN} from './MonzaLayout';
-import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {CircuitDetails} from './CircuitDetails';
 import type {GraphicsTier} from './Graphics';
 import {connectKerbSegments,createKerbContacts,createKerbGeometry,kerbPaintMap,type KerbContactSegment} from './KerbGeometry';
@@ -10,6 +10,8 @@ import {createRoadDressing} from './RoadDressing';
 import {VisualRoadCurve} from './VisualRoadCurve';
 import {createTrackChunks,freezeStaticWorld} from './TrackChunks';
 import {GRAPHICS_PROFILES} from './Graphics';
+import {BarrierPath,createBarriers} from './BarrierGeometry';
+import {createGrandstands,updateGrandstands} from './Grandstands';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name='MONZA';readonly country='ITALY';readonly cornerCount=11;
@@ -22,6 +24,7 @@ export class Track {
   readonly details:CircuitDetails;
   private startBulbs:THREE.MeshStandardMaterial[]=[];
   private visualRoad:VisualRoadCurve;
+  readonly barrierPaths:readonly BarrierPath[];private grandstands:THREE.Group[]=[];
   readonly surfaceGeometries=new Map<string,THREE.BufferGeometry>();
   private kerbNearby=new Uint8Array(0);
   constructor(scene:THREE.Scene){
@@ -42,6 +45,7 @@ export class Track {
     const scale=MONZA_LENGTH/this.curve.getLength();for(const p of points)p.multiplyScalar(scale);
     this.curve.updateArcLengths();this.length=this.curve.getLength();
     this.visualRoad=new VisualRoadCurve(this.length,t=>this.point(t));
+    this.barrierPaths=[new BarrierPath(this,-1),new BarrierPath(this,1)];
     this.sampleCount=Math.ceil(this.length/2);
     this.samples=Array.from({length:this.sampleCount},(_,i)=>this.point(i/this.sampleCount));
     this.bounds.setFromPoints(this.samples);
@@ -54,7 +58,7 @@ export class Track {
     freezeStaticWorld(this.group);
   }
   updatePresentation(position:THREE.Vector3,tier:GraphicsTier){
-    this.details.update(position,tier);
+    this.details.update(position,tier);updateGrandstands(this.grandstands,position,tier);
     const forest=this.group.getObjectByName('woodland'),profile=GRAPHICS_PROFILES[tier];
     if(forest)for(const child of forest.children){
       const mesh=child as THREE.InstancedMesh,bounds=mesh.userData.worldBounds as THREE.Sphere;
@@ -124,28 +128,16 @@ export class Track {
     this.group.add(createWoodland(this,p=>{for(let j=0;j<this.samples.length;j+=10)if(this.samples[j].distanceToSquared(p)<24*24)return false;return true;}));
   }
   private buildCircuit(){
-    const dummy=new THREE.Object3D(),count=Math.ceil(this.length/3.1),barrierCount=Math.ceil(this.length/4.2);
+    const count=Math.ceil(this.length/3.1);
     this.kerbSegments=new Uint8Array(count);
     for(let i=0;i<count;i++){const t=i/count;if(this.tangent(t-5/this.length).angleTo(this.tangent(t+5/this.length))>=.018)this.kerbSegments[i]=1;}
     connectKerbSegments(this.kerbSegments,this.length);this.kerbContacts=createKerbContacts(this,this.kerbSegments);
     this.kerbNearby=Uint8Array.from(this.kerbSegments,(_,i)=>{for(let j=-8;j<=8;j++)if(this.kerbSegments[(i+j+count)%count])return 1;return 0;});
     const kerbGeometry=createKerbGeometry(this,this.kerbSegments);this.surfaceGeometries.set('continuous-kerbs',kerbGeometry);
     const kerbs=createTrackChunks(kerbGeometry,new THREE.MeshStandardMaterial({map:kerbPaintMap(),roughness:.88,metalness:0}),this.length,'continuous-kerbs');
-    const barriers=new THREE.InstancedMesh(new THREE.BoxGeometry(.5,1.2,4.4),new THREE.MeshStandardMaterial({color:0x315248,roughness:.7}),barrierCount*2);let b=0;
-    for(const side of [-1,1]){
-      for(let i=0;i<barrierCount;i++){const t=i/barrierCount,p=this.point(t).addScaledVector(this.normal(t),side*16.2),v=this.tangent(t);dummy.position.set(p.x,.6,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();barriers.setMatrixAt(b++,dummy.matrix);}
-    }barriers.receiveShadow=true;this.group.add(kerbs,barriers);
-    const steel=new THREE.MeshStandardMaterial({color:0x263b36}),standMaterial=new THREE.MeshStandardMaterial({color:0x47545b});
-    const seatMaterial=new THREE.MeshStandardMaterial({roughness:.85}),seatGeometry=new THREE.BoxGeometry(.55,.16,.55),roofMaterial=new THREE.MeshStandardMaterial({color:0xcbd6d5,roughness:.65});
-    for(const t of [.007,.028,.15,.215,.35,.45,.59,.74,.9]){const p=this.point(t).addScaledVector(this.normal(t),-37),stand=new THREE.Group();stand.name='grandstand';
-      const steps:THREE.BufferGeometry[]=[];
-      for(let row=0;row<6;row++){const geometry=new THREE.BoxGeometry(55,.8,2.4);geometry.translate(0,row*.9+.8,row*2.1);steps.push(geometry);}
-      const stepGeometry=mergeGeometries(steps);for(const geometry of steps)geometry.dispose();const terraces=new THREE.Mesh(stepGeometry,standMaterial);terraces.receiveShadow=true;stand.add(terraces);
-      const roof=new THREE.Mesh(new THREE.BoxGeometry(58,.3,17),roofMaterial);roof.position.set(0,9,5);roof.castShadow=true;roof.receiveShadow=true;stand.add(roof);
-      const seats=new THREE.InstancedMesh(seatGeometry,seatMaterial,6*60),supports=new THREE.InstancedMesh(new THREE.BoxGeometry(.18,8.5,.18),steel,8);let s=0;
-      for(let row=0;row<6;row++)for(let col=0;col<60;col++){dummy.position.set(-26+col*.88,row*.9+1.29,row*2.1);dummy.rotation.set(0,0,0);dummy.updateMatrix();seats.setMatrixAt(s,dummy.matrix);seats.setColorAt(s++,new THREE.Color([0x8a3136,0xbdc6bf,0x3b675d][Math.floor(col/20)]));}
-      for(let j=0;j<8;j++){dummy.position.set(-26+(j%4)*17.3,4.4,j<4?-.6:12);dummy.updateMatrix();supports.setMatrixAt(j,dummy.matrix);}stand.add(seats,supports);
-      stand.position.copy(p);stand.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z)+Math.PI/2;this.group.add(stand);}
+    this.group.add(kerbs,createBarriers(this.barrierPaths));
+    this.grandstands=createGrandstands(this);this.group.add(...this.grandstands);
+    const steel=new THREE.MeshStandardMaterial({color:0x263b36});
     const pit=new THREE.Group();pit.position.copy(this.point(.035)).addScaledVector(this.normal(.035),31);pit.rotation.y=Math.atan2(this.tangent(.035).x,this.tangent(.035).z);
     const building=new THREE.Mesh(new THREE.BoxGeometry(17,7,240),new THREE.MeshStandardMaterial({color:0xa1b0b0,roughness:.75}));building.position.y=3.5;pit.add(building);const windows=new THREE.Mesh(new THREE.BoxGeometry(17.2,1.5,225),new THREE.MeshStandardMaterial({color:0x233d4b,metalness:.5,roughness:.3}));windows.position.y=5.4;pit.add(windows);this.group.add(pit);
     const start=this.point(24/this.length),forward=this.tangent(24/this.length),gantry=new THREE.Group();gantry.name='start-gantry';
