@@ -1120,7 +1120,7 @@ console.log('PASS: calibrated gearing, rapid downshifts, real dashboard painting
 const {GraphicsQuality,GRAPHICS_PROFILES,graphicsMode,recommendedTier}=await import(moduleURL('Graphics'));
 assert.equal(graphicsMode('broken'),'auto');assert.equal(graphicsMode('high'),'high');
 assert.equal(recommendedTier({maxTextureSize:2048,width:1600,memory:8,cores:8}),'low');
-assert.equal(recommendedTier({maxTextureSize:8192,width:1600,memory:8,cores:8}),'high');
+assert.equal(recommendedTier({maxTextureSize:8192,width:1600,memory:8,cores:8}),'medium');
 assert.equal(recommendedTier({maxTextureSize:8192,width:1600}),'medium');
 const automaticGraphics=new GraphicsQuality('auto','high');
 for(let i=0;i<60*12;i++)automaticGraphics.observe(1/60,true);
@@ -1128,7 +1128,7 @@ assert.equal(automaticGraphics.tier,'high','Smooth play must keep the selected q
 automaticGraphics.observe(1,true);
 for(let i=0;i<30;i++)automaticGraphics.observe(1/30,true);
 assert.equal(automaticGraphics.tier,'high','A short stall must not trigger a quality change');
-for(let i=0;i<30*8;i++)automaticGraphics.observe(1/30,true);
+for(let i=0;i<20;i++)automaticGraphics.observe(1/30,true);
 assert.equal(automaticGraphics.tier,'medium','Sustained slow frames must reduce quality one step');
 for(let i=0;i<30*9;i++)automaticGraphics.observe(1/30,true);
 assert.equal(automaticGraphics.tier,'low');
@@ -1144,11 +1144,11 @@ for(const tier of ['low','medium','high']){
 failMirrorRender=false;mirror.setQuality('low');mirrorDraws.length=0;
 for(let i=0;i<60;i++)mirror.render(v,1/60);
 const lowCaptures=mirrorDraws.filter(draw=>draw.scene===scene);
-assert.equal(lowCaptures.length,20);assert.equal(mirrorDraws.filter(draw=>draw.scene===mirror.overlay).length,60);
+assert.equal(lowCaptures.length,15);assert.equal(mirrorDraws.filter(draw=>draw.scene===mirror.overlay).length,60);
 assert.ok(mirror.target.width<=320&&mirror.target.height<=90);
 assert.ok(Math.abs(mirror.target.width/mirror.target.height-mirror.camera.aspect)<.06,'Reduced mirror targets must preserve their camera aspect');
 mirror.setQuality('low');mirrorDraws.length=0;for(let i=0;i<144;i++)mirror.render(v,1/144);
-assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,20,'Fractional frame periods must preserve the mirror capture rate on fast displays');
+assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,15,'Fractional frame periods must preserve the mirror capture rate on fast displays');
 mirror.setQuality('high');mirrorDraws.length=0;mirror.render(v,0);
 assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,1,'Quality changes must invalidate the cached mirror image');
 assert.equal(renderState.target,null);assert.equal(fakeRenderer.shadowMap.autoUpdate,true);
@@ -1157,7 +1157,7 @@ assert.equal(renderState.target,null);assert.equal(fakeRenderer.shadowMap.autoUp
 const {createCar}=await import(moduleURL('CarModel'));const detailedCar=createCar(0xc12e35);
 let carMeshes=0,carTriangles=0;
 detailedCar.group.traverse(child=>{if(child instanceof THREE.Mesh){carMeshes++;const geometry=child.geometry;carTriangles+=(geometry.index?.count??geometry.getAttribute('position').count)/3;assert.ok(geometry.getAttribute('position').array.every(Number.isFinite));}});
-assert.ok(carMeshes<=32,'Model detail must not restore the old per-part draw-call overhead');
+assert.ok(carMeshes<=33,'Model detail must not restore the old per-part draw-call overhead');
 const pivots=detailedCar.group.children.filter(child=>child.name==='wheel-pivot');assert.equal(pivots.length,4);
 for(const pivot of pivots){
   const bounds=new THREE.Box3().setFromObject(pivot);assert.ok(bounds.min.y>.035&&bounds.min.y<.065,'Tyres must meet the asphalt without sinking');
@@ -1196,8 +1196,8 @@ const reflectionScene=new THREE.Scene(),lighting=new WorldLighting(reflectionSce
 const oldSky=reflectionScene.background,oldEnvironment=lighting.environment,oldShadow=new THREE.WebGLRenderTarget(512,512);
 let freedSky=false,freedEnvironment=false,freedShadow=false;
 oldSky.addEventListener('dispose',()=>{freedSky=true;});oldEnvironment.addEventListener('dispose',()=>{freedEnvironment=true;});oldShadow.addEventListener('dispose',()=>{freedShadow=true;});lighting.sun.shadow.map=oldShadow;
-lighting.setQuality('high');assert.ok(freedSky&&freedEnvironment&&freedShadow,'Changing quality must release the previous sky, reflection and shadow targets');
-assert.equal(lighting.sun.shadow.mapSize.x,2048);assert.equal(lighting.sun.shadow.map,null);
+lighting.setQuality('high');assert.ok(!freedSky&&freedEnvironment&&freedShadow,'Changing quality must preserve the sharp sky while releasing previous reflection and shadow targets');
+assert.equal(lighting.sun.shadow.mapSize.x,GRAPHICS_PROFILES.high.shadowSize);assert.equal(lighting.sun.shadow.map,null);
 assert.ok(lighting.environment.width>oldEnvironment.width&&reflectionScene.environment===lighting.environment.texture);
 assert.equal(reflectionState.target,null);assert.equal(reflectionRenderer.xr.enabled,true);assert.equal(reflectionRenderer.autoClear,true);
 const bakePasses=reflectionState.passes;lighting.setQuality('high');assert.equal(reflectionState.passes,bakePasses,'An unchanged quality must not rebuild reflections');
@@ -1206,8 +1206,8 @@ console.log('PASS: manual/automatic graphics, stall/pause safeguards, mirror cap
 
 // Painted kerbs must share a smooth road-following surface, including the tight
 // inside of Rettifilo: no rotated boxes, reversed faces or broken corner runs.
-const kerbRibbon=track.group.getObjectByName('continuous-kerbs');assert.ok(kerbRibbon instanceof THREE.Mesh&&!(kerbRibbon instanceof THREE.InstancedMesh));
-const ribbonGeometry=kerbRibbon.geometry,kerbSurfacePositions=ribbonGeometry.getAttribute('position'),kerbSurfaceUV=ribbonGeometry.getAttribute('uv');
+const kerbRibbon=track.group.getObjectByName('continuous-kerbs');assert.ok(kerbRibbon instanceof THREE.Group&&kerbRibbon.children.every(child=>child instanceof THREE.Mesh));
+const ribbonGeometry=track.surfaceGeometries.get('continuous-kerbs'),kerbSurfacePositions=ribbonGeometry.getAttribute('position'),kerbSurfaceUV=ribbonGeometry.getAttribute('uv');
 assert.ok(kerbSurfacePositions.count<ribbonGeometry.index.count*.3,'Adjacent painted sections must share their actual vertices');
 for(let i=0;i<ribbonGeometry.index.count;i+=3){
   const a=new THREE.Vector3().fromBufferAttribute(kerbSurfacePositions,ribbonGeometry.index.getX(i)),b=new THREE.Vector3().fromBufferAttribute(kerbSurfacePositions,ribbonGeometry.index.getX(i+1)),c=new THREE.Vector3().fromBufferAttribute(kerbSurfacePositions,ribbonGeometry.index.getX(i+2));
@@ -1299,9 +1299,9 @@ const parsedSky=new HDRLoader().parse(hdrBytes.buffer.slice(hdrBytes.byteOffset,
 const {resizeSkyTexture}=await import(moduleURL('WorldLighting'));
 for(const tier of ['low','medium','high']){const photo=resizeSkyTexture(sourceSky,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(photo.image.width,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(photo.flipY,true);assert.ok(photo.image.data.every(value=>Number.isFinite(THREE.DataUtils.fromHalfFloat(value))));photo.dispose();}
 const scenery=track.group.getObjectByName('woodland');assert.ok(scenery.children.length>=20&&scenery.children.every(child=>child instanceof THREE.InstancedMesh));
-assert.ok(scenery.children.filter(child=>child.material.map).every(child=>child.castShadow&&child.material.alphaTest>0),'Leaf cutouts must participate in directional shadows');
-const roadMesh=track.group.getObjectByName('asphalt-road'),grassMesh=track.group.getObjectByName('grass-terrain');
-for(const mesh of [roadMesh,grassMesh]){const colors=mesh.geometry.getAttribute('color');assert.ok(colors&&colors.array.some(v=>Math.abs(v-colors.getX(0))>.03),'World-scale variation must break up repeated texture tiles');}
+assert.ok(scenery.children.filter(child=>child.material.map).every(child=>child.material.alphaTest>0),'Leaf cutouts must survive forest detail changes');
+const roadMesh=track.surfaceGeometries.get('asphalt-road'),grassMesh=track.group.getObjectByName('grass-terrain').geometry;
+for(const geometry of [roadMesh,grassMesh]){const colors=geometry.getAttribute('color');assert.ok(colors&&colors.array.some(v=>Math.abs(v-colors.getX(0))>.03),'World-scale variation must break up repeated texture tiles');}
 for(const name of ['curved-rubber','gravel-runoff']){const mesh=track.group.getObjectByName(name);assert.ok(mesh&&mesh.geometry.getAttribute('position').array.every(Number.isFinite));}
 const rubberFade=track.group.getObjectByName('curved-rubber').geometry.getAttribute('color');assert.equal(rubberFade.itemSize,4);assert.equal(rubberFade.getW(0),0);assert.equal(rubberFade.getW(80*2),0);assert.equal(rubberFade.getW(40*2),1,'Rubber deposits must fade in and out instead of ending as rectangular stamps');
 assert.equal(surfaceMaps('asphalt').map.image.width,512);assert.equal(surfaceMaps('gravel').map.image.width,512);sourceSky.dispose();
@@ -1312,7 +1312,7 @@ const originalHDRLoad=HDRLoader.prototype.loadAsync;
 try{
   let resolvePhoto;HDRLoader.prototype.loadAsync=()=>new Promise(resolve=>{resolvePhoto=resolve;});
   const lateScene=new THREE.Scene(),lateLighting=new WorldLighting(lateScene,reflectionRenderer,'high'),pendingPhoto=lateLighting.loadSky('test://bundled-hdr');
-  lateLighting.setQuality('low');const latePhoto=sourceSky.clone();resolvePhoto(latePhoto);assert.equal(await pendingPhoto,true);assert.equal(lateScene.background.image.width,256);assert.ok(lateLighting.sunOffset.y>0&&Math.abs(lateLighting.sunOffset.length()-130)<1e-6);
+  lateLighting.setQuality('low');const latePhoto=sourceSky.clone();resolvePhoto(latePhoto);assert.equal(await pendingPhoto,true);assert.equal(lateScene.background.image.width,512);assert.equal(lateLighting.sky.image.width,256);assert.ok(lateLighting.sunOffset.y>0&&Math.abs(lateLighting.sunOffset.length()-130)<1e-6);
   const workingSky=lateScene.background;HDRLoader.prototype.loadAsync=async()=>{throw new Error('missing photo');};assert.equal(await lateLighting.loadSky('test://missing-hdr'),false);assert.equal(lateScene.background,workingSky);
   let releasedPhoto=false;latePhoto.addEventListener('dispose',()=>{releasedPhoto=true;});lateLighting.dispose();assert.equal(releasedPhoto,true);
 }finally{HDRLoader.prototype.loadAsync=originalHDRLoad;}
@@ -1340,3 +1340,50 @@ assert.ok(largestDeviation<1.8&&largestGuideOffset<9.5,'The visual smoothing mus
 for(let i=0;i<Math.ceil(track.length);i+=19){const t=i/Math.ceil(track.length),epsilon=.001/track.length;assert.ok(track.roadNormal(t-epsilon).dot(track.roadNormal(t+epsilon))>.999999,'Spline knots and the closed seam must not produce heading discontinuities');}
 assert.ok(ribbonGeometry.index.count/3<160000,'Adaptive curves must retain a bounded geometry budget');
 console.log('PASS: smooth visual spline, adaptive small-radius kerbs, short arc-length paint, sub-millimetre chord error and preserved racing-line clearance',{largestChordError,smallestStep,largestDeviation,largestGuideOffset});
+
+// Partitioning must remove off-screen work without changing a single source
+// triangle or duplicating the large shared attribute buffers.
+for(const name of ['asphalt-road','continuous-kerbs']){
+  const source=track.surfaceGeometries.get(name),chunks=track.group.getObjectByName(name).children;
+  assert.ok(chunks.length>10&&chunks.length<=Math.ceil(track.length/100));
+  assert.equal(chunks.reduce((sum,mesh)=>sum+mesh.geometry.index.count,0),source.index.count);
+  for(const mesh of chunks){
+    assert.equal(mesh.geometry.attributes.position,source.attributes.position,'Chunks must share vertex buffers');
+    assert.ok(mesh.geometry.boundingSphere.radius<300,'Local bounds must not span the whole circuit');
+    const positions=mesh.geometry.attributes.position,indices=mesh.geometry.index;
+    for(let i=0;i<indices.count;i++){const p=new THREE.Vector3().fromBufferAttribute(positions,indices.getX(i));assert.ok(mesh.geometry.boundingBox.containsPoint(p),'No triangle may escape its culling bounds');}
+  }
+}
+let optimizedSurfaceTotal=0;
+for(const t of [0,.18,.38,.58,.78,.93]){
+  const p=track.point(t),f=track.tangent(t),view=new THREE.PerspectiveCamera(80,16/9,.06,GRAPHICS_PROFILES.medium.viewFar);view.position.copy(p).setY(1.8);view.lookAt(p.clone().addScaledVector(f,26).setY(-.35));view.updateMatrixWorld(true);
+  const frustum=new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(view.projectionMatrix,view.matrixWorldInverse));
+  for(const name of ['asphalt-road','continuous-kerbs'])for(const mesh of track.group.getObjectByName(name).children)if(frustum.intersectsObject(mesh))optimizedSurfaceTotal+=mesh.geometry.index.count/3;
+}
+const fullSurfaceTotal=[...track.surfaceGeometries.values()].reduce((sum,geometry)=>sum+geometry.index.count/3,0);
+assert.ok(optimizedSurfaceTotal/6<fullSurfaceTotal*.6,'Representative views must stop submitting most of the full-circuit road geometry');
+assert.ok(track.group.children.every(object=>!object.matrixAutoUpdate&&!object.matrixWorldAutoUpdate),'Static world transforms must stay frozen');
+assert.equal(v.group.matrixAutoUpdate,true,'Vehicle transforms must remain dynamic');
+const {renderPixelRatio}=await import(moduleURL('Graphics'));
+for(const tier of ['low','medium','high']){const ratio=renderPixelRatio(2,3840,2160,tier);assert.ok(3840*2160*ratio*ratio<=GRAPHICS_PROFILES[tier].pixelBudget+1);}
+const sustainedStalls=new GraphicsQuality('auto','high');sustainedStalls.observe(.3,true);sustainedStalls.observe(.3,true);assert.equal(sustainedStalls.tier,'high');sustainedStalls.observe(.3,true);assert.equal(sustainedStalls.tier,'medium','Three consecutive severe frames must trigger an immediate reduction');for(let i=0;i<29;i++)sustainedStalls.observe(.3,true);
+assert.equal(sustainedStalls.tier,'low');assert.ok(sustainedStalls.renderScale<1&&sustainedStalls.renderScale>=.65,'Very slow visible frames must not be mistaken for background-tab gaps');
+sustainedStalls.select('medium');for(let i=0;i<100;i++)sustainedStalls.observe(.3,true);assert.equal(sustainedStalls.tier,'medium');assert.equal(sustainedStalls.renderScale,1);
+const {ShadowBudget}=await import(moduleURL('ShadowBudget'));const staticShadows=new ShadowBudget(),shadowLight=new THREE.Vector3(-85,50,-77);let shadowRefreshes=0;
+for(let i=0;i<120;i++)shadowRefreshes+=staticShadows.shouldRefresh(new THREE.Vector3(i*94/60,0,0),shadowLight,false)?1:0;
+assert.ok(shadowRefreshes<=22,'Static scenery shadows should be reused while the stable world volume still covers the car');
+assert.equal(staticShadows.shouldRefresh(new THREE.Vector3(1000,0,0),shadowLight,false),true,'Recovery/teleport must refresh shadows immediately');
+assert.equal(staticShadows.shouldRefresh(new THREE.Vector3(1000,0,0),shadowLight.clone().setY(70),false),true,'A new sun direction must invalidate cached shadows');
+v.setGraphics('medium');let dynamicCasters=0;v.group.traverse(object=>{if(object.castShadow)dynamicCasters++;});assert.equal(dynamicCasters,0);assert.ok(v.model.contactShadow.visible&&v.model.contactShadow.material.opacity>.25);
+v.reset();v.position.add(new THREE.Vector3(8,0,12));v.sync();v.group.updateMatrixWorld(true);assert.ok(v.model.contactShadow.getWorldPosition(new THREE.Vector3()).distanceTo(v.position)<.2,'Lightweight car shadows must remain attached to the moving vehicle');
+v.setGraphics('high');v.group.traverse(object=>{if(object.castShadow)dynamicCasters++;});assert.ok(dynamicCasters>0);assert.equal(v.model.contactShadow.castShadow,false);
+// Actual 3D tree positions must shift on screen as the driver advances. A
+// photographed horizon at infinity would remain unchanged under this motion.
+const parallaxOrigin=track.point(0),parallaxForward=track.tangent(0),treeCandidates=[];const instance=new THREE.Matrix4();
+for(const mesh of scenery.children)if(!mesh.material.map)for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,instance);const p=new THREE.Vector3().setFromMatrixPosition(instance),relative=p.clone().sub(parallaxOrigin),ahead=relative.dot(parallaxForward),lateral=Math.abs(relative.dot(track.normal(0)));if(ahead>80&&ahead<150&&lateral>23&&lateral<45)treeCandidates.push(p);}
+assert.ok(treeCandidates.length>0,'A near tree layer must exist beside the opening straight');
+const projectedTrees=[0,20].map(metres=>{const p=parallaxOrigin.clone().addScaledVector(parallaxForward,metres),view=new THREE.PerspectiveCamera(80,16/9,.06,1100);view.position.copy(p).setY(1.8);view.lookAt(p.clone().addScaledVector(parallaxForward,26).setY(-.35));view.updateMatrixWorld(true);return treeCandidates[0].clone().project(view);});
+assert.ok(Math.abs(projectedTrees[0].x-projectedTrees[1].x)>.02,'Near scenery must provide real translation parallax');
+const nearestBefore=track.nearestProgress;track.nearestProgress=()=>{throw new Error('Unnecessary wheel search');};assert.doesNotThrow(()=>track.kerbContact(track.point(400/track.length),0,400/track.length));track.nearestProgress=nearestBefore;
+const {createSkyBackdrop}=await import(moduleURL('WorldLighting'));const skyOnly=createSkyBackdrop(undefined,shadowLight);assert.equal(skyOnly.image.width,512);assert.equal(skyOnly.flipY,true);skyOnly.dispose();
+console.log('PASS: exact chunk preservation, shared buffers, local culling, static transforms, pixel limits, sustained-stall recovery, cached shadows, attached car contact shadows and real tree parallax',{meanSurfaceTriangles:Math.round(optimizedSurfaceTotal/6),fullSurfaceTotal,shadowRefreshes});

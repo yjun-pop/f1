@@ -28,7 +28,7 @@ export class RearViewMirror {
     const scale=Math.min(1,this.quality.mirrorWidth/width,this.quality.mirrorHeight/height);
     this.target.setSize(Math.max(1,Math.ceil(width*scale)),Math.max(1,Math.ceil(height*scale)));this.age=Infinity;
   }
-  setQuality(tier:GraphicsTier){this.quality=GRAPHICS_PROFILES[tier];this.resize();}
+  setQuality(tier:GraphicsTier){this.quality=GRAPHICS_PROFILES[tier];this.camera.far=this.quality.mirrorFar;this.resize();}
   update(vehicle:Vehicle){
     const forward=new THREE.Vector3(Math.sin(vehicle.heading),0,Math.cos(vehicle.heading));
     this.camera.position.copy(vehicle.position).addScaledVector(forward,-3.8);this.camera.position.y+=1.7;

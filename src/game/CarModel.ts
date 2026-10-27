@@ -2,8 +2,14 @@ import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {surfaceMaps} from './SurfaceTextures';
 import {createTireGeometry,createTireLetteringGeometry} from './TireGeometry';
-export interface CarVisual {group:THREE.Group;frontWheels:THREE.Group[];tires:THREE.Mesh[];chassis:THREE.Group}
+export interface CarVisual {group:THREE.Group;frontWheels:THREE.Group[];tires:THREE.Mesh[];chassis:THREE.Group;contactShadow:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>}
 let sidewallMaterial:THREE.MeshStandardMaterial|undefined;
+let contactMap:THREE.DataTexture|undefined;
+function contactShadowMap(){
+  if(contactMap)return contactMap;const w=32,h=64,data=new Uint8Array(w*h*4);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4,dx=(x+.5)/w*2-1,dz=(y+.5)/h*2-1;data[i]=data[i+1]=data[i+2]=0;data[i+3]=Math.exp(-3*(dx**4+dz**4))*Math.max(0,1-dx*dx)*Math.max(0,1-dz*dz)*255;}
+  contactMap=new THREE.DataTexture(data,w,h);contactMap.minFilter=contactMap.magFilter=THREE.LinearFilter;contactMap.needsUpdate=true;return contactMap;
+}
 function tireLettering(){
   if(sidewallMaterial)return sidewallMaterial;
   const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
@@ -113,5 +119,6 @@ export function createCar(color:number):CarVisual {
     const body=new THREE.Mesh(geometry,batch.material);body.name=batch.hiddenInCockpit?'driver':'bodywork';body.castShadow=true;body.receiveShadow=true;chassis.add(body);
   }
   group.traverse(child=>{if(child instanceof THREE.Mesh){child.castShadow=!(child.material as THREE.Material).alphaTest;child.receiveShadow=true;}});
-  return {group,chassis,frontWheels,tires};
+  const contactShadow=new THREE.Mesh(new THREE.PlaneGeometry(2.8,5.8),new THREE.MeshBasicMaterial({map:contactShadowMap(),transparent:true,opacity:.32,depthWrite:false,toneMapped:false}));contactShadow.name='contact-shadow';contactShadow.rotation.x=-Math.PI/2;contactShadow.position.set(0,.042,-.1);contactShadow.renderOrder=-1;group.add(contactShadow);
+  return {group,chassis,frontWheels,tires,contactShadow};
 }

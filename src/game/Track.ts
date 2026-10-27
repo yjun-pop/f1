@@ -8,6 +8,8 @@ import {connectKerbSegments,createKerbContacts,createKerbGeometry,kerbPaintMap,t
 import {createWoodland,landscapeShade} from './NaturalScenery';
 import {createRoadDressing} from './RoadDressing';
 import {VisualRoadCurve} from './VisualRoadCurve';
+import {createTrackChunks,freezeStaticWorld} from './TrackChunks';
+import {GRAPHICS_PROFILES} from './Graphics';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name='MONZA';readonly country='ITALY';readonly cornerCount=11;
@@ -20,6 +22,8 @@ export class Track {
   readonly details:CircuitDetails;
   private startBulbs:THREE.MeshStandardMaterial[]=[];
   private visualRoad:VisualRoadCurve;
+  readonly surfaceGeometries=new Map<string,THREE.BufferGeometry>();
+  private kerbNearby=new Uint8Array(0);
   constructor(scene:THREE.Scene){
     let raw=MONZA_POINTS.map(([x,z])=>new THREE.Vector3(x,0,z));
     // Long sparse source segments must remain straight. Densification prevents
@@ -47,8 +51,17 @@ export class Track {
       this.sections.push({number:section.number,name:section.name,progress:closest/this.sampleCount});
     }
     this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
+    freezeStaticWorld(this.group);
   }
-  updatePresentation(position:THREE.Vector3,tier:GraphicsTier){this.details.update(position,tier);}
+  updatePresentation(position:THREE.Vector3,tier:GraphicsTier){
+    this.details.update(position,tier);
+    const forest=this.group.getObjectByName('woodland'),profile=GRAPHICS_PROFILES[tier];
+    if(forest)for(const child of forest.children){
+      const mesh=child as THREE.InstancedMesh,bounds=mesh.userData.worldBounds as THREE.Sphere;
+      if(!bounds)continue;const distance=bounds.center.distanceTo(position)-bounds.radius;mesh.visible=distance<profile.forestRange;
+      if(mesh.userData.nearGeometry){mesh.geometry=distance<profile.forestDetail?mesh.userData.nearGeometry:mesh.userData.farGeometry;mesh.castShadow=tier==='high'||distance<85;}
+    }
+  }
   setStartLights(count:number){this.startBulbs.forEach((material,i)=>{const lit=i<count;material.color.setHex(lit?0xcc160a:0x190b0c);material.emissiveIntensity=lit?3:.015;});}
   point(t:number){return this.curve.getPointAt(((t%1)+1)%1);}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
@@ -56,6 +69,8 @@ export class Track {
   roadPoint(t:number){return this.visualRoad.point(t);}
   roadNormal(t:number){return this.visualRoad.normal(t);}
   kerbContact(position:THREE.Vector3,heading:number,progress:number){
+    const cell=Math.round(((progress%1+1)%1)*this.kerbSegments.length)%this.kerbSegments.length;
+    if(!this.kerbNearby[cell]||position.distanceToSquared(this.point(progress))<5.5*5.5)return 0;
     let contact=0;
     for(const axle of [-1.8,1.8])for(const side of [-1,1]){
       const wheel=position.clone().add(new THREE.Vector3(Math.sin(heading)*axle+Math.cos(heading)*side,0,Math.cos(heading)*axle-Math.sin(heading)*side));
@@ -90,8 +105,8 @@ export class Track {
       if(i<count)for(let cross=0;cross<4;cross++){const k=i*5+cross;indices.push(k,k+1,k+5,k+1,k+6,k+5);}
     }
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geometry.setIndex(indices);geometry.computeVertexNormals();
-    const road=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({...surfaceMaps('asphalt'),color:0xb9bfc4,vertexColors:true,side:THREE.DoubleSide,roughness:.94,metalness:0,bumpScale:.012}));road.name='asphalt-road';
-    road.receiveShadow=true;this.group.add(road);
+    const material=new THREE.MeshStandardMaterial({...surfaceMaps('asphalt'),color:0xb9bfc4,vertexColors:true,side:THREE.DoubleSide,roughness:.94,metalness:0,bumpScale:.012});
+    this.surfaceGeometries.set('asphalt-road',geometry);this.group.add(createTrackChunks(geometry,material,this.length,'asphalt-road'));
     this.group.add(createRoadDressing(this));
     for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>this.roadPoint(i/count).addScaledVector(this.roadNormal(i/count),side*9.6).setY(.07));this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
     const start=new THREE.Group();start.position.copy(this.point(0));const t=this.tangent(0);start.rotation.y=Math.atan2(t.x,t.z);
@@ -113,11 +128,13 @@ export class Track {
     this.kerbSegments=new Uint8Array(count);
     for(let i=0;i<count;i++){const t=i/count;if(this.tangent(t-5/this.length).angleTo(this.tangent(t+5/this.length))>=.018)this.kerbSegments[i]=1;}
     connectKerbSegments(this.kerbSegments,this.length);this.kerbContacts=createKerbContacts(this,this.kerbSegments);
-    const kerbs=new THREE.Mesh(createKerbGeometry(this,this.kerbSegments),new THREE.MeshStandardMaterial({map:kerbPaintMap(),roughness:.88,metalness:0}));kerbs.name='continuous-kerbs';
+    this.kerbNearby=Uint8Array.from(this.kerbSegments,(_,i)=>{for(let j=-8;j<=8;j++)if(this.kerbSegments[(i+j+count)%count])return 1;return 0;});
+    const kerbGeometry=createKerbGeometry(this,this.kerbSegments);this.surfaceGeometries.set('continuous-kerbs',kerbGeometry);
+    const kerbs=createTrackChunks(kerbGeometry,new THREE.MeshStandardMaterial({map:kerbPaintMap(),roughness:.88,metalness:0}),this.length,'continuous-kerbs');
     const barriers=new THREE.InstancedMesh(new THREE.BoxGeometry(.5,1.2,4.4),new THREE.MeshStandardMaterial({color:0x315248,roughness:.7}),barrierCount*2);let b=0;
     for(const side of [-1,1]){
       for(let i=0;i<barrierCount;i++){const t=i/barrierCount,p=this.point(t).addScaledVector(this.normal(t),side*16.2),v=this.tangent(t);dummy.position.set(p.x,.6,p.z);dummy.rotation.set(0,Math.atan2(v.x,v.z),0);dummy.updateMatrix();barriers.setMatrixAt(b++,dummy.matrix);}
-    }kerbs.receiveShadow=true;barriers.receiveShadow=true;this.group.add(kerbs,barriers);
+    }barriers.receiveShadow=true;this.group.add(kerbs,barriers);
     const steel=new THREE.MeshStandardMaterial({color:0x263b36}),standMaterial=new THREE.MeshStandardMaterial({color:0x47545b});
     const seatMaterial=new THREE.MeshStandardMaterial({roughness:.85}),seatGeometry=new THREE.BoxGeometry(.55,.16,.55),roofMaterial=new THREE.MeshStandardMaterial({color:0xcbd6d5,roughness:.65});
     for(const t of [.007,.028,.15,.215,.35,.45,.59,.74,.9]){const p=this.point(t).addScaledVector(this.normal(t),-37),stand=new THREE.Group();stand.name='grandstand';

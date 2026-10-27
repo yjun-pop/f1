@@ -10,7 +10,8 @@ import {Race} from './Race';
 import {HUD} from '../ui/HUD';
 import {RearViewMirror} from './RearViewMirror';
 import {WorldLighting} from './WorldLighting';
-import {GraphicsQuality,graphicsMode,recommendedTier,type GraphicsMode} from './Graphics';
+import {GraphicsQuality,graphicsMode,recommendedTier,renderPixelRatio,type GraphicsMode} from './Graphics';
+import {ShadowBudget} from './ShadowBudget';
 export class Game {
   private renderer:THREE.WebGLRenderer;
   private scene=new THREE.Scene();private input=new Input();private track:Track;private vehicle:Vehicle;private cockpit:CockpitCamera;private line:RacingLine;private hud:HUD;private race:Race;
@@ -19,11 +20,13 @@ export class Game {
   private sun:THREE.DirectionalLight;
   private graphics:GraphicsQuality;private lighting:WorldLighting;
   private paused=false;private previous=performance.now();private accumulator=0;
+  private shadows=new ShadowBudget();private sceneAge=Infinity;private scenePosition=new THREE.Vector3(Infinity,0,0);private hudAge=Infinity;private hudStamp='';
   constructor(container:HTMLElement,hudRoot:HTMLElement){
     this.renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.7));this.renderer.setSize(window.innerWidth,window.innerHeight);this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=.95;this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;container.appendChild(this.renderer.domElement);
     let savedGraphics:unknown;try{savedGraphics=localStorage.getItem('apex-graphics-quality');}catch{}
     this.graphics=new GraphicsQuality(graphicsMode(savedGraphics),recommendedTier({memory:(navigator as Navigator&{deviceMemory?:number}).deviceMemory,cores:navigator.hardwareConcurrency,maxTextureSize:this.renderer.capabilities.maxTextureSize,width:window.innerWidth}));
     this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier);this.sun=this.lighting.sun;
+    this.renderer.shadowMap.autoUpdate=false;
     void this.lighting.loadSky(new URL('../assets/park-sky.hdr',import.meta.url).href);
     this.track=new Track(this.scene);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner);
     try{
@@ -41,8 +44,10 @@ export class Game {
   }
   private selectGraphics(mode:GraphicsMode){this.graphics.select(mode);try{localStorage.setItem('apex-graphics-quality',mode);}catch{}this.applyGraphics();}
   private applyGraphics(){
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,this.graphics.profile.pixelRatio));this.renderer.setSize(window.innerWidth,window.innerHeight);
+    this.renderer.setPixelRatio(renderPixelRatio(window.devicePixelRatio,window.innerWidth,window.innerHeight,this.graphics.tier,this.graphics.renderScale));this.renderer.setSize(window.innerWidth,window.innerHeight);
     this.lighting.setQuality(this.graphics.tier);this.mirror.setQuality(this.graphics.tier);this.hud.setGraphics(this.graphics.mode,this.graphics.tier);
+    this.cockpit.camera.far=this.graphics.profile.viewFar;this.cockpit.camera.updateProjectionMatrix();
+    this.vehicle.setGraphics(this.graphics.tier);for(const rival of this.race.opponents)rival.car.setGraphics(this.graphics.tier);this.shadows.invalidate();
     this.track.updatePresentation(this.vehicle.position,this.graphics.tier);
   }
   private pause(){if(this.race.state==='racing'||this.race.state==='countdown'){this.paused=true;this.audio.silence();this.accumulator=0;this.input.clear();}}
@@ -61,10 +66,16 @@ export class Game {
     this.audio.updateStart(this.race.startSignal,!this.paused);this.track.setStartLights(this.race.startSignal.lights);
     this.vehicle.present(feedback.surfaceHeave);
     if(this.graphics.observe(elapsed,!this.paused&&this.race.state==='racing'))this.applyGraphics();
-    this.track.updatePresentation(this.vehicle.position,this.graphics.tier);
+    this.sceneAge+=dt;
+    if(this.sceneAge>=.1||this.scenePosition.distanceToSquared(this.vehicle.position)>400){this.track.updatePresentation(this.vehicle.position,this.graphics.tier);this.scenePosition.copy(this.vehicle.position);this.sceneAge=0;}
     // Keep a small, texel-stable shadow volume around the player, not the full circuit.
-    const texel=130/this.sun.shadow.mapSize.x,x=Math.round(this.vehicle.position.x/texel)*texel,z=Math.round(this.vehicle.position.z/texel)*texel;
-    this.sun.target.position.set(x,0,z);this.sun.position.set(x,0,z).add(this.lighting.sunOffset);
-    this.cockpit.update(this.vehicle,dt,feedback);this.line.update(this.vehicle);this.hud.update(this.vehicle,this.race,this.paused,this.track,this.cockpit.mode);this.renderer.render(this.scene,this.cockpit.camera);this.mirror.render(this.vehicle,dt);requestAnimationFrame(this.frame);
+    if(this.shadows.shouldRefresh(this.vehicle.position,this.lighting.sunOffset,this.graphics.tier==='high'&&!this.paused&&this.race.state==='racing')){
+      const texel=130/this.sun.shadow.mapSize.x,x=Math.round(this.vehicle.position.x/texel)*texel,z=Math.round(this.vehicle.position.z/texel)*texel;
+      this.sun.target.position.set(x,0,z);this.sun.position.set(x,0,z).add(this.lighting.sunOffset);this.renderer.shadowMap.needsUpdate=true;
+    }
+    this.cockpit.update(this.vehicle,dt,feedback);this.line.update(this.vehicle);this.hud.updateStart(this.race.startSignal,this.paused);
+    const hudStamp=`${this.race.state}/${this.paused}/${this.cockpit.mode}`;this.hudAge+=dt;
+    if(this.hudAge>=.1||hudStamp!==this.hudStamp){this.hud.update(this.vehicle,this.race,this.paused,this.track,this.cockpit.mode);this.hudAge=0;this.hudStamp=hudStamp;}
+    this.renderer.render(this.scene,this.cockpit.camera);this.mirror.render(this.vehicle,!this.paused&&this.race.state==='racing'?dt:0);requestAnimationFrame(this.frame);
   };
 }

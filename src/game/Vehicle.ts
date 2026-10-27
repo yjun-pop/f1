@@ -4,6 +4,7 @@ import {Track} from './Track';
 import {Controls,integrateBody} from './Dynamics';
 import {createCar,CarVisual} from './CarModel';
 import {TIRE_RADIUS} from './TireGeometry';
+import type {GraphicsTier} from './Graphics';
 export class Vehicle {
   raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;
   private readonly baseGrip:number;raceGripAssist?:number;
@@ -52,6 +53,10 @@ export class Vehicle {
     for(const tire of this.model.tires)tire.rotateX(this.speed*dt/TIRE_RADIUS);
   }
   present(bounce=0){this.model.chassis.position.y=bounce;}
+  setGraphics(tier:GraphicsTier){
+    this.group.traverse(child=>{if(child instanceof THREE.Mesh)child.castShadow=tier==='high'&&child.name!=='contact-shadow'&&!(child.material as THREE.Material).alphaTest;});
+    this.model.contactShadow.material.opacity=tier==='high'?.12:.32;
+  }
   get kmh(){return Math.round(this.speed*3.6);}
 }
 /** Capsule-shaped bodies: equal-mass normal impulse plus tangential friction. */

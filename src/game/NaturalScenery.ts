@@ -20,11 +20,12 @@ export function createWoodland(track:Track,isClear:(p:THREE.Vector3)=>boolean){
     const geometry=new THREE.IcosahedronGeometry(s,1);geometry.scale(1,1.15,1);geometry.translate(x,y,z);crownParts.push(geometry);
   }
   const crown=mergeGeometries(crownParts);for(const geometry of crownParts)geometry.dispose();
+  const farParts=[new THREE.IcosahedronGeometry(4.6,0),new THREE.IcosahedronGeometry(3.2,0),new THREE.IcosahedronGeometry(3,0)];farParts[1].translate(-2,0,1);farParts[2].translate(2,-.5,-1.5);const farCrown=mergeGeometries(farParts);for(const geometry of farParts)geometry.dispose();
   const trunk=new THREE.CylinderGeometry(.23,.48,7.8,7),stamp=new THREE.Object3D(),chunks=Math.ceil(track.length/180);
   for(let chunk=0;chunk<chunks;chunk++){
     const plans:{p:THREE.Vector3;s:number;angle:number;color:THREE.Color}[]=[];
     for(let j=0;j<26;j++){
-      const id=chunk*26+j,t=(chunk+j/26)/chunks,side=j%2?1:-1,p=track.point(t).addScaledVector(track.normal(t),side*(34+random()*87));
+      const id=chunk*26+j,t=(chunk+j/26)/chunks,side=j%2?1:-1,band=j%3,offset=band===0?24+random()*20:band===1?44+random()*40:80+random()*45,p=track.point(t).addScaledVector(track.normal(t),side*offset);
       if(!isClear(p))continue;
       plans.push({p,s:.8+random()*.65,angle:id*2.39996,color:new THREE.Color().setHSL(.24+random()*.07,.26+random()*.12,.64+random()*.13)});
     }
@@ -34,6 +35,8 @@ export function createWoodland(track:Track,isClear:(p:THREE.Vector3)=>boolean){
       stamp.rotation.set(0,plan.angle,0);stamp.scale.set(plan.s,plan.s*(.9+(i%3)*.12),plan.s);stamp.position.set(plan.p.x,8.1*plan.s,plan.p.z);stamp.updateMatrix();canopy.setMatrixAt(i,stamp.matrix);canopy.setColorAt(i,plan.color);
       stamp.scale.set(plan.s,plan.s,plan.s);stamp.position.y=3.9*plan.s;stamp.updateMatrix();trunks.setMatrixAt(i,stamp.matrix);
     });
+    canopy.computeBoundingSphere();trunks.computeBoundingSphere();
+    canopy.userData.worldBounds=canopy.boundingSphere!.clone();trunks.userData.worldBounds=trunks.boundingSphere!.clone();canopy.userData.nearGeometry=crown;canopy.userData.farGeometry=farCrown;
     canopy.castShadow=trunks.castShadow=true;canopy.receiveShadow=trunks.receiveShadow=true;group.add(canopy,trunks);
   }
   return group;
