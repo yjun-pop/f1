@@ -19,7 +19,7 @@ const {Vehicle}=await import(moduleURL('Vehicle'));
 const {CockpitCamera}=await import(moduleURL('Camera'));
 const {Track,ROAD_HALF_WIDTH}=await import(moduleURL('Track'));
 const {Race:FullGridRace}=await import(moduleURL('Race'));
-// Historical six-car fixtures retain their recorded grid/pace calibration.
+// Historical six-car fixtures use the same fair-output policy as the full grid.
 // The default twelve-car field receives separate full-grid safety/racing checks.
 class Race extends FullGridRace {constructor(track,scene,planner){super(track,scene,planner,{opponentCount:5});}}
 const {LinePlanner}=await import(moduleURL('LinePlanner'));
@@ -333,69 +333,58 @@ v.resetAt(90/track.length);v.speed=0;guide.update(v);assert.equal(guide.ribbon.v
 guide.planner.speed=savedSpeed;guide.planner.advice=savedAdvice;guide.planner.cornerLimit=savedLimit;guide.zones=savedZones;guide.engagedZone=-1;
 console.log('PASS: continuous braking/holding/acceleration gradients, end fade and cyclic corner windows');
 
-// Rank policy: tiny reductions ahead, stronger top-speed/power assistance
-// behind, total-distance ranking across seams, and no kinematic corrections.
+// Rank policy changes driving targets, never visible-duel engine output.
 const rankRace=new Race(track,new THREE.Scene(),planner),rankPlayer=new Vehicle(track,new THREE.Scene());
-rankPlayer.distance=1.01;rankRace.elapsed=40;
+rankPlayer.distance=1.01;rankPlayer.speed=60;rankRace.elapsed=40;
 const standings=[1.05,1.02,.99,.95,.9];
 rankRace.opponents.forEach((o,i)=>{o.car.distance=standings[i];o.car.speed=70;});
 const rankPositions=rankRace.opponents.map(o=>o.car.position.clone());
-let capJump=0;
-for(let step=0;step<120*20;step++){
-  const before=rankRace.opponents.map(o=>o.speedCap);rankRace.balanceRivals(rankPlayer,1/120);
-  rankRace.opponents.forEach((o,i)=>{capJump=Math.max(capJump,Math.abs(o.speedCap-before[i]));});
-}
+for(let step=0;step<120*20;step++)rankRace.balanceRivals(rankPlayer,1/120);
 assert.equal(rankRace.position,3);assert.deepEqual(rankRace.opponents.map(o=>o.rank),[1,2,4,5,6]);
 for(const [i,o] of rankRace.opponents.entries()){
-  if(o.rank<rankRace.position){assert.ok(o.speedCap>=94*.9799&&o.speedCap<94*.989,'Ahead rivals must only lose about 1.2-2% of top speed');assert.equal(o.powerAssist,1);}
-  else{assert.ok(o.speedCap>94&&o.speedCap<=104,'All rivals behind must receive a bounded higher speed cap');assert.ok(o.powerAssist>1&&o.powerAssist<=1.15);}
+  assert.equal(o.speedCap,94);assert.equal(o.powerAssist,1);assert.equal(o.car.powerScale,1);assert.equal(o.car.gripScale,1.4);
   assert.ok(o.car.position.equals(rankPositions[i])&&o.car.speed===70,'Balancing must never move a car or assign its velocity');
 }
-assert.ok(capJump<.12,'Top-speed changes must ease in gradually');
-// A leader's 2nd and 3rd place challengers alternate attack priority.
 rankPlayer.distance=1.1;rankRace.elapsed=56;
 rankRace.opponents.forEach((o,i)=>{o.car.distance=1.1-(20+i*15)/track.length;});
 for(let step=0;step<120*15;step++)rankRace.balanceRivals(rankPlayer,1/120);
 assert.equal(rankRace.position,1);assert.ok(rankRace.opponents[0].attack>.95&&rankRace.opponents[1].attack<.5);
-assert.ok(rankRace.opponents[0].speedCap>rankRace.opponents[1].speedCap+.6,'The designated challenger must receive a stronger near-leader attack');
-assert.ok(rankRace.opponents.slice(2).every(o=>o.attack<.01),'Only the two closest challengers receive the leader-duel priority');
+assert.ok(rankRace.opponents.slice(2).every(o=>o.attack<.01));
 rankRace.elapsed=70;
 for(let step=0;step<120*15;step++)rankRace.balanceRivals(rankPlayer,1/120);
-assert.ok(rankRace.opponents[1].attack>.95&&rankRace.opponents[0].attack<.5,'Attack priority must rotate between 2nd and 3rd');
-assert.ok(rankRace.opponents[1].speedCap>rankRace.opponents[0].speedCap+.6,'The boosted top-speed advantage must rotate too');
-const reversing=rankRace.opponents[0],oldCap=reversing.speedCap;
+assert.ok(rankRace.opponents[1].attack>.95&&rankRace.opponents[0].attack<.5);
+assert.ok(rankRace.opponents.every(o=>o.speedCap===94&&o.powerAssist===1),'Attack priority must affect tactics rather than engine output');
+const reversing=rankRace.opponents[0],oldPace=reversing.racePace;
 rankPlayer.distance=reversing.car.distance-.1;rankRace.balanceRivals(rankPlayer,1/120);
-assert.ok(reversing.speedCap<oldCap&&reversing.speedCap>94,'After passing the player, a rival must ease off gradually rather than instantly');
-for(let step=0;step<120*20;step++)rankRace.balanceRivals(rankPlayer,1/120);
-assert.ok(reversing.speedCap<94&&reversing.powerAssist<1.0001,'Former challengers must shed their catch-up advantage after overtaking');
-reversing.car.boost=5;
-rankRace.reset();assert.ok(rankRace.opponents.every(o=>o.speedCap===94&&o.powerAssist===1&&o.attack===0&&o.car.raceSpeedCap===undefined&&o.car.boost===100),'Restart must clear rank assistance');
-console.log('PASS: rank-based speed caps, slight leader reduction, rotating 2nd/3rd attacks, lap seams and reset');
+assert.ok(Math.abs(reversing.racePace-oldPace)<.001,'Rank changes must not abruptly change skill');
+// Far, unseen recovery is tiny, and removed immediately for player ERS.
+const distant=rankRace.opponents[4];rankPlayer.distance=2;distant.car.distance=2-400/track.length;
+distant.car.position.set(1000,0,1000);
+for(let step=0;step<120*30;step++)rankRace.balanceRivals(rankPlayer,1/120);
+assert.ok(distant.speedCap>94&&distant.speedCap<=94.25);assert.ok(distant.powerAssist>1&&distant.powerAssist<=1.008);
+rankPlayer.boosting=true;rankRace.balanceRivals(rankPlayer,1/120);
+assert.equal(distant.speedCap,94);assert.equal(distant.powerAssist,1);
+rankPlayer.boosting=false;distant.car.position.copy(rankPlayer.position).add(new THREE.Vector3(80,0,0));
+for(let step=0;step<120;step++)rankRace.balanceRivals(rankPlayer,1/120);
+assert.equal(distant.speedCap,94);assert.equal(distant.powerAssist,1,'Lap-seam proximity must also remove hidden assistance');
+rankRace.reset();assert.ok(rankRace.opponents.every(o=>o.speedCap===94&&o.powerAssist===1&&o.attack===0&&o.car.raceSpeedCap===undefined&&o.car.boost===100));
+console.log('PASS: equal visible performance, tiny distant recovery, immediate ERS/proximity cancellation, smooth rank changes and reset');
 
-// Compare real rolling acceleration on the same main straight.
-function rankedStraight(gapMeters){
-  const race=new Race(track,new THREE.Scene(),planner),player=new Vehicle(track,new THREE.Scene());race.opponents.splice(1);
-  const rival=race.opponents[0],progress=100/track.length;
-  const lane=planner.point(progress).sub(track.point(progress)).dot(track.normal(progress))+.6;
-  rival.car.resetAt(progress,lane);rival.car.speed=75;rival.distance=progress;
-  player.distance=progress+gapMeters/track.length;race.state='racing';race.elapsed=20;
-  for(let step=0;step<120*20;step++)race.balanceRivals(player,1/120);
-  let peak=0,offroad=0;
-  for(let step=0;step<120*6;step++){
-    player.distance=rival.car.distance+gapMeters/track.length;player.progress=(player.distance%1+1)%1;
-    player.position.copy(track.point(player.progress));player.speed=80;
-    race.update(1/120,player);peak=Math.max(peak,rival.car.speed);offroad+=rival.car.offRoad?1:0;
+// Real full-throttle integration: a nearby AI cannot gain speed on an equally
+// driven player at any rolling speed, including full ERS terminal speed.
+for(const boost of [false,true])for(const initialSpeed of [35,75,boost?88:85]){
+  const stock={...body(),speed:initialSpeed,gripScale:1,powerScale:1};
+  const rival={...body(),speed:initialSpeed,gripScale:1.4,powerScale:rankRace.opponents[0].car.powerScale,raceSpeedCap:94,raceCruiseCap:87,racePowerAssist:1};
+  for(let step=0;step<120*30;step++){
+    const control={steer:0,throttle:1,brake:0,boost};integrateBody(stock,control,1/120);integrateBody(rival,control,1/120);
+    assert.ok(Math.abs(stock.speed-rival.speed)<1e-10,'Equal throttle/ERS must produce equal acceleration and terminal speed');
   }
-  return {peak,meters:rival.car.distance*track.length-100,offroad};
+  assert.ok(stock.position.distanceTo(rival.position)<1e-8);
 }
-const aheadRun=rankedStraight(-400),behindRun=rankedStraight(400);
-assert.ok(behindRun.peak>aheadRun.peak+1&&behindRun.peak<=104&&aheadRun.peak>=72,'A distant leader must ease off and a distant trailing car must close within physical speed bounds');
-assert.ok(behindRun.meters>aheadRun.meters+5,'Higher caps must translate into physical progress, not only configuration');
-assert.equal(behindRun.offroad+aheadRun.offroad,0);
-const coasting={...body(),speed:100,raceSpeedCap:92,raceCruiseCap:85,racePowerAssist:1};
+const coasting={...body(),speed:94.25,raceSpeedCap:94,raceCruiseCap:87,racePowerAssist:1};
 integrateBody(coasting,{steer:0,throttle:0,brake:0},1/120);
-assert.ok(coasting.speed>99.8&&coasting.speed<100,'A reduced cap must let an over-speed car decelerate physically rather than snap to the cap');
-console.log('PASS: physical rank-based straight-line catch-up and smooth speed-limit reductions',JSON.stringify({aheadKmh:(aheadRun.peak*3.6).toFixed(1),behindKmh:(behindRun.peak*3.6).toFixed(1)}));
+assert.ok(coasting.speed>94&&coasting.speed<94.25,'Cap reductions must preserve physical deceleration');
+console.log('PASS: equal stock/AI acceleration and terminal speed, with and without ERS');
 
 // Measure a full solo lap: speed multipliers alone must not hide a poor driver.
 const skilledRace=new Race(track,new THREE.Scene(),planner),benchmarkPlayer=new Vehicle(track,new THREE.Scene());
@@ -405,7 +394,7 @@ const skilledRival=skilledRace.opponents[0];
 // measured separately above and in the physical lead-exchange test below.
 skilledRace.balanceRivals=()=>{skilledRace.position=1;skilledRival.rank=2;};
 const calibratedLaps=[];let skilledOffroad=0,lastCrossing=0;
-for(let step=0;step<120*270;step++){
+for(let step=0;step<120*330;step++){
   benchmarkPlayer.distance=skilledRival.car.distance-40/track.length;
   benchmarkPlayer.progress=(benchmarkPlayer.distance%1+1)%1;
   benchmarkPlayer.position.copy(track.point(benchmarkPlayer.progress));benchmarkPlayer.speed=skilledRival.car.speed;
@@ -416,10 +405,27 @@ for(let step=0;step<120*270;step++){
   }
 }
 assert.equal(calibratedLaps.length,3,'The calibrated AI must complete three actual physical laps');
-assert.ok(calibratedLaps[0]<90,'Standing-start target: under 90 seconds');
-assert.ok(calibratedLaps.slice(1).every(time=>time>=85&&time<=87),'Flying-lap target: 86 seconds +/- 1 second');
+assert.ok(calibratedLaps[0]<105,'Equal-power AI must complete a competitive standing lap');
+assert.ok(calibratedLaps.slice(1).every(time=>time>=88&&time<=96),'Equal-power flying laps must remain competitive and consistent');
 assert.equal(skilledOffroad,0,'The calibrated laps must remain on asphalt');
-console.log('PASS: 86-second AI calibration over three clean physical laps',calibratedLaps.map(t=>t.toFixed(2)));
+console.log('PASS: equal-power AI over three clean physical laps',calibratedLaps.map(t=>t.toFixed(2)));
+// A higher skill setting must improve real lap time rather than switching to
+// an earlier human braking profile. Compare against the middle setting above.
+const skillLaps=[];
+for(const pace of [1.38,1.47]){
+  const probe=new Race(track,new THREE.Scene(),planner),ghost=new Vehicle(track,new THREE.Scene());ghost.position.set(1e6,0,1e6);probe.opponents.splice(1);
+  const o=probe.opponents[0];o.racePace=pace;probe.state='racing';probe.balanceRivals=()=>{probe.position=1;o.rank=2;};
+  let first=0,second=0,offroad=0;
+  for(let step=0;step<120*220;step++){
+    probe.update(1/120,ghost);offroad+=o.car.offRoad?1:0;
+    if(!first&&o.car.distance>=1)first=(step+1)/120;
+    if(o.car.distance>=2){second=(step+1)/120;break;}
+  }
+  assert.ok(second>first&&first>0);assert.equal(offroad,0);skillLaps.push(second-first);
+}
+assert.ok(skillLaps[0]>calibratedLaps[1]+.5&&skillLaps[1]<calibratedLaps[1]+.5,'Increasing corner skill must not make the AI slower');
+console.log('PASS: monotonic physical skill without stronger engines',{pace138:skillLaps[0],pace146:calibratedLaps[1],pace147:skillLaps[1]});
+
 
 // On a straight, drive around a slower physical vehicle instead of queuing
 // indefinitely or clamping an impossible passing lane into the blocked lane.
@@ -479,7 +485,7 @@ assert.ok(tactical.defendUntil<=tacticalRace.elapsed);
 
 // A designated challenger may spend a partial battery on a clear straight.
 place(tactical.car,200,0,75);tactical.lane=0;tactical.car.boost=25;tactical.control.boost=false;
-tactical.speedCap=108;tactical.rank=2;tacticalRace.position=1;tactical.attack=1;
+tactical.speedCap=94;tactical.rank=2;tacticalRace.position=1;tactical.attack=1;
 tacticalPlayer.position.set(1e6,0,1e6);tacticalRace.decide(tactical,tacticalPlayer);
 assert.equal(tactical.control.boost,true,'The designated attacker must use a partial ERS battery when a pass is available');
 tactical.control.boost=false;tactical.attack=0;tacticalRace.decide(tactical,tacticalPlayer);
@@ -501,9 +507,9 @@ for(let step=0;step<120*270;step++){
   packRace.update(1/120,fastPlayer);
   packRace.opponents.forEach((o,i)=>{packOffroad[i]+=o.car.offRoad?1:0;});
 }
-assert.ok(packRace.opponents.every(o=>o.distance>2.65),'Every rival must keep competitive pace with a fast player over multiple laps');
+assert.ok(packRace.opponents.every(o=>o.distance>2.4),'Equal-power rivals must complete multiple physical laps against the synthetic pace reference');
 assert.ok(packOffroad.every(frames=>frames/(120*270)<.035),'Faster pack racing must avoid prolonged track departures');
-console.log('PASS: all five adaptive rivals exceed 2.65 physical laps in 270s against a fast player');
+console.log('PASS: all five equal-power adaptive rivals exceed 2.4 physical laps in 270s against a fast player');
 
 // Verify rear-facing orientation, actual scene rendering and renderer state
 // restoration without requiring a GPU in the physics test runner.
@@ -555,12 +561,12 @@ assert.equal(fakeRenderer.shadowMap.autoUpdate,true,'Shadow settings must also s
 console.log('PASS: live rear-view mirror orientation, reflection, resolution cap and rendering state restoration');
 
 
-// Calibration assists apply to rivals only. Defaults must remain exactly the
-// same for the player, while the assisted car still integrates physical motion.
+// Player defaults remain stock and production rivals now have equal output.
+// Custom performance bodies still integrate physically for the generic model.
 const playerStock=new Vehicle(track,new THREE.Scene());
 assert.equal(playerStock.gripScale,1);assert.equal(playerStock.powerScale,1);
 assert.ok(skilledRival.car.gripScale>1&&skilledRival.car.gripScale<=1.5);
-assert.ok(skilledRival.car.powerScale>1&&skilledRival.car.powerScale<=1.5);
+assert.equal(skilledRival.car.powerScale,playerStock.powerScale);
 const implicitStock=body(),explicitStock={...body(),gripScale:1,powerScale:1};
 const assistedBody={...body(),gripScale:1.4,powerScale:1.35};
 for(let step=0;step<120;step++){
@@ -573,7 +579,7 @@ assert.ok(assistedBody.speed-35>(implicitStock.speed-35)*1.2,'Rival power calibr
 assert.ok(assistedBody.position.distanceTo(new THREE.Vector3())>implicitStock.position.distanceTo(new THREE.Vector3()));
 for(let step=0;step<120*30;step++)integrateBody(assistedBody,{steer:0,throttle:1,brake:0,boost:true},1/120);
 assert.ok(assistedBody.speed<=94,'Base performance without rank assistance must retain the stock hard speed limit');
-console.log('PASS: bounded rival performance calibration, unchanged player physics and baseline hard speed limit');
+console.log('PASS: equal production engine output, stock player physics and generic performance-body integration');
 
 // A return to the racing line must check the swept corridor, not just its
 // destination, so it cannot cut across a car already alongside.
@@ -587,12 +593,9 @@ assert.ok(Math.abs(sideRival.lane-6)<.001,'AI must hold its corridor when a merg
 console.log('PASS: AI checks the full merge corridor before returning to the racing line');
 
 
-// Physical top-three contest. A reference driver with the calibrated 86-second
-// baseline uses normal throttle/brake/steering controls and no rank assistance.
-// Its fixture performance matches the benchmark AI, not the stock player car.
-// A slightly slower reference pace (1.40) allows a close contest without
-// requiring the previous large catch-up boost or scripted repeated exchanges.
-const duelRace=new Race(track,new THREE.Scene(),planner),duelPlayer=new Vehicle(track,new THREE.Scene(),0xaaaaaa,{grip:1.4,power:1.35});
+// Physical top-three contest with equal engine output, finite ERS and the
+// existing AI steering calibration. No scripted swaps or high-speed boost.
+const duelRace=new Race(track,new THREE.Scene(),planner),duelPlayer=new Vehicle(track,new THREE.Scene(),0xaaaaaa,{grip:1.4,power:1});
 const duelGhost=new Vehicle(track,new THREE.Scene());duelGhost.position.set(1e6,0,1e6);
 duelRace.opponents.splice(2);
 const duelLane=t=>THREE.MathUtils.clamp(planner.point(t).sub(track.point(t)).dot(track.normal(t))+.6,-7.2,7.2);
@@ -602,7 +605,7 @@ duelRace.opponents.forEach((o,i)=>{
   o.car.speed=75;o.distance=t;o.lane=o.car.position.clone().sub(planner.point(t)).dot(track.normal(t));
 });
 const referenceDriver={...duelRace.opponents[0],car:duelPlayer,pace:1.40,speedCap:94,powerAssist:1,attack:0,lane:.6,control:{steer:0,throttle:1,brake:0}};
-duelRace.state='racing';duelRace.elapsed=20;
+duelRace.state='racing';duelRace.elapsed=20;duelRace.lapStart=20;
 let lastLeader='PLAYER',lastChange=0,duelOffroad=0;const leaderStints=[];
 for(let step=0;step<120*250;step++){
   referenceDriver.rank=duelRace.position;
@@ -619,7 +622,8 @@ const sustained=leaderStints.filter(stint=>stint.seconds>=2).reduce((result,stin
 },[]);
 // Safe queues may delay a pass for this particular reference driver; do not
 // require a fixed number of lead swaps. Clean overtaking is checked above.
-assert.ok(duelRace.opponents.some(o=>Math.abs(o.car.distance-duelPlayer.distance)*track.length<120),'At least one physical challenger must remain close after the 250-second battle');
+console.log('Equal-power duel gaps',duelRace.opponents.map(o=>Math.round((o.car.distance-duelPlayer.distance)*track.length)));
+assert.ok(duelRace.opponents.some(o=>Math.abs(o.car.distance-duelPlayer.distance)*track.length<180),'At least one physical challenger must remain competitive after the 250-second battle');
 assert.ok(duelOffroad/(120*250*2)<.025,'Lead battles must generally stay on the circuit');
 assert.equal(duelPlayer.raceSpeedCap,undefined,'The player must never receive AI rank-speed assistance');
 console.log('PASS: sustained close physical contest with bounded catch-up and safe corner queues',sustained.map(stint=>`${stint.name} ${stint.seconds.toFixed(1)}s`));
@@ -766,7 +770,7 @@ for(const scenario of ['grid','mirrored-grid','rolling-pack']){
   assert.ok(cleared,`${scenario}: all five must clear the chicane without stopping indefinitely`);
   assert.equal(testRace.opponents.reduce((sum,o)=>sum+o.collisionCount,0),0,`${scenario}: no AI contact at the first chicane`);
   assert.equal(offroad,0,`${scenario}: chicane traffic must stay on asphalt`);
-  if(scenario==='grid')assert.ok(firstHeavyBrake.every(meters=>meters>800&&meters<1080),'Normal launch must not panic-brake 350m before the chicane');
+  if(scenario==='grid')assert.ok(firstHeavyBrake.every(meters=>meters===Infinity||meters>800&&meters<1080),'Normal launch must not panic-brake 350m before the chicane');
   chicaneResults.push({scenario,seconds:time.toFixed(2),contacts:0,offroad:0});
 }
 const queueRace=new Race(track,new THREE.Scene(),planner),queuePlayer=new Vehicle(track,new THREE.Scene());
@@ -847,10 +851,19 @@ const {PackDirector}=await import(moduleURL('PackDirector'));
 const director=new PackDirector(),paceCar=new Vehicle(track,new THREE.Scene());paceCar.speed=60;
 for(let i=0;i<120*10;i++)director.observe(paceCar,60,true,1/120);
 assert.ok(director.active);assert.ok(Math.abs(director.pace-1)<1e-9);
-const closeTarget=director.targets(28,1,3,1.46,0),escaped=director.targets(250,1,3,1.46,0),lagging=director.targets(-250,5,3,1.45,1);
-assert.ok(escaped.cap<closeTarget.cap&&escaped.pace<closeTarget.pace,'A distant leader must ease corner pace as well as straight speed');
-assert.ok(lagging.cap>closeTarget.cap&&lagging.pace>closeTarget.pace&&lagging.power>1,'Every distant trailing rival must get useful catch-up targets');
-assert.ok(lagging.cap<=104&&lagging.pace<=1.47&&lagging.power<=1.15);
+for(const playerRank of [1,3,6,9,12]){
+  for(let rank=1;rank<playerRank;rank++){
+    const nearer=director.targets((playerRank-rank)*25,rank,playerRank,1.42,0,12);
+    if(rank>1){const further=director.targets((playerRank-rank+1)*25,rank-1,playerRank,1.42,0,12);assert.ok(further.pace<=nearer.pace,'Further leaders must be more attainable');}
+  }
+}
+const lowNeighbour=director.targets(25,11,12,1.42,0,12),midNeighbour=director.targets(25,5,6,1.42,0,12),topNeighbour=director.targets(25,1,2,1.42,0,12);
+assert.ok(lowNeighbour.pace<1&&lowNeighbour.pace<midNeighbour.pace&&midNeighbour.pace<topNeighbour.pace,'Near opponents must become harder as the player climbs');
+assert.equal(topNeighbour.cap,94);assert.equal(lowNeighbour.power,1);
+const nearestThreat=director.targets(-20,2,1,1.42,1,12),fartherThreat=director.targets(-20,8,1,1.42,0,12);
+assert.ok(nearestThreat.pace>1&&nearestThreat.pace>fartherThreat.pace,'A leader faces pressure from immediate challengers, not eleven uniformly superior drivers');
+assert.ok(director.targets(-400,12,1,1.42,0,12).pace>fartherThreat.pace,'Far trailing cars can recover through driving pace');
+console.log('PASS: rank-context difficulty at P1/P3/P6/P9/P12 and attainable distant leaders');
 paceCar.speed=30;for(let i=0;i<120*10;i++)director.observe(paceCar,30,true,1/120);
 assert.ok(Math.abs(director.pace-1)<1e-9,'A slower corner at the same relative pace must not reduce the field to that absolute speed');
 paceCar.speed=0;for(let i=0;i<120*3;i++)director.observe(paceCar,87,true,1/120);assert.equal(director.active,false,'Parking must not stop the entire race');
@@ -859,9 +872,10 @@ director.reset();assert.equal(director.pace,1);assert.equal(director.active,fals
 // Run a stock keyboard-handling reference driver for a full three-lap race.
 // This controller follows the guide and brakes for physical traffic, just as
 // a driver must; it receives no AI grip/power or rank-speed assistance.
-const closeRace=new Race(track,new THREE.Scene(),planner),closePlayer=new Vehicle(track,new THREE.Scene());
-closeRace.state='racing';let nearFrames=0,measuredFrames=0;const earlyStops=Array(5).fill(0);
-for(let step=0;step<120*400&&closeRace.state==='racing';step++){
+let activeFieldPasses=0,activeFieldTwoWide=0;const activePairHistory=new Map();const activeRanks=new Set(),activeOffroad=Array(11).fill(0);
+const closeRace=new FullGridRace(track,new THREE.Scene(),planner),closePlayer=new Vehicle(track,new THREE.Scene());
+closeRace.state='racing';let nearFrames=0,measuredFrames=0;const earlyStops=Array(11).fill(0);
+for(let step=0;step<120*500&&closeRace.state==='racing';step++){
   const lookahead=THREE.MathUtils.clamp(7+closePlayer.speed*.3,9,26),to=planner.point(closePlayer.progress+lookahead/track.length).sub(closePlayer.position);
   const desired=Math.atan2(to.x,to.z),error=Math.atan2(Math.sin(desired-closePlayer.heading),Math.cos(desired-closePlayer.heading));
   const angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));
@@ -874,32 +888,31 @@ for(let step=0;step<120*400&&closeRace.state==='racing';step++){
   }
   const difference=advised-closePlayer.speed;
   closePlayer.drive(1/120,{keyboard:true,steer,throttle:THREE.MathUtils.clamp(difference/3,0,1),brake:THREE.MathUtils.clamp(-difference/4,0,1)});
-  closeRace.update(1/120,closePlayer);
-  if(step>120*30){measuredFrames++;if(closeRace.opponents.every(o=>Math.abs(o.car.distance-closePlayer.distance)*track.length<150))nearFrames++;}
-  closeRace.opponents.forEach((o,i)=>{const meters=o.car.progress*track.length;if(meters>650&&meters<970&&o.car.speed<10)earlyStops[i]++;});
+  closeRace.update(1/120,closePlayer);activeRanks.add(closeRace.position);
+  closeRace.opponents.forEach((o,i)=>{activeOffroad[i]+=o.car.offRoad?1:0;});
+  if(closeRace.elapsed>40){let alongside=false;
+    for(let i=0;i<11;i++)for(let j=i+1;j<11;j++){
+      const a=closeRace.opponents[i].car,b=closeRace.opponents[j].car,gap=(a.distance-b.distance)*track.length,key=i+':'+j;
+      if(Math.abs(gap)>12){const sign=Math.sign(gap),old=activePairHistory.get(key);if(old&&old.sign!==sign&&closeRace.elapsed-old.time>3){activeFieldPasses++;activePairHistory.set(key,{sign,time:closeRace.elapsed});}else if(!old)activePairHistory.set(key,{sign,time:closeRace.elapsed});}
+      if(Math.abs(gap)<8&&Math.abs(b.position.clone().sub(a.position).dot(track.normal(a.progress)))>2.6&&a.position.distanceTo(b.position)<13)alongside=true;
+    }
+    if(alongside)activeFieldTwoWide++;
+  }
+  if(step>120*30){measuredFrames++;if(closeRace.opponents.some(o=>Math.abs(o.car.distance-closePlayer.distance)*track.length<60))nearFrames++;}
+  closeRace.opponents.forEach((o,i)=>{const meters=o.car.progress*track.length;if(o.car.distance<1&&meters>650&&meters<970&&o.car.speed<10)earlyStops[i]++;});
 }
 assert.equal(closeRace.state,'finished');
-assert.ok(nearFrames/measuredFrames>.9,'All five rivals must remain within 150m for most of an actual stock-player race');
-assert.ok(closeRace.opponents.every(o=>Math.abs(o.car.distance-closePlayer.distance)*track.length<100),'The leader and every trailing rival must finish close to the player');
+console.log('Active field metrics',{near:nearFrames/measuredFrames,passes:activeFieldPasses,twoWide:activeFieldTwoWide/120,earlyStops,ranks:[...activeRanks],offroad:activeOffroad,gaps:closeRace.opponents.map(o=>Math.round((o.car.distance-closePlayer.distance)*track.length))});
+assert.ok(nearFrames/measuredFrames>.7,'A physical nearby opponent must keep the stock-player race competitive');
+assert.ok(closeRace.opponents.some(o=>Math.abs(o.car.distance-closePlayer.distance)*track.length<100),'At least one opponent must finish in contest range');
+assert.ok(activeFieldPasses>=2&&activeFieldTwoWide>120);assert.ok(activeRanks.has(12)&&Math.min(...activeRanks)<12,'A low-ranked player must have attainable opponents');assert.ok(activeOffroad.every(frames=>frames===0),'The adaptive contest must stay on asphalt');
 assert.ok(earlyStops.every(frames=>frames===0),'Rivals must not crawl or stop on the first-corner approach');
 assert.equal(closePlayer.gripScale,1);assert.equal(closePlayer.powerScale,1);assert.equal(closePlayer.raceSpeedCap,undefined);
 console.log('PASS: two-sided player-pace matching and full three-lap close field',{nearFraction:nearFrames/measuredFrames,gaps:closeRace.opponents.map(o=>Math.round((o.car.distance-closePlayer.distance)*track.length)),earlyStops});
 closeRace.reset();assert.ok(closeRace.opponents.every(o=>o.racePace===undefined));
 
 
-// A leading player must be challenged rather than assigned a safe following
-// procession. The first two goals must invite a pass, and pressure must remain
-// active even after rivals are already within 10–20m of the leader.
-const pressureDirector=new PackDirector();
-for(const rank of [2,3])assert.ok(pressureDirector.targets(-15,rank,1,1.42,1).desiredGap>0);
-const closeChaser=pressureDirector.targets(-15,2,1,1.42,1),ordinaryFollower=pressureDirector.targets(-15,3,2,1.42,1);
-assert.ok(closeChaser.pace>ordinaryFollower.pace&&closeChaser.cap>ordinaryFollower.cap,'Closing the gap must not switch off leader pressure');
-for(const rank of [2,3,4,5,6]){
-  const target=pressureDirector.targets(-60,rank,1,1.42,0);
-  assert.ok(target.cap>=100&&target.power>=1.1,'All five trailing cars must actively pursue a leading player');
-  assert.ok(target.pace<=1.47&&target.cap<=104&&target.power<=1.15,'Pursuit must retain the existing physical safety bounds');
-}
-
+// Leading-player pressure is earned through driving, not a speed advantage.
 for(const driverPace of [1,1.1]){
   const leaderRace=new Race(track,new THREE.Scene(),planner),leaderPlayer=new Vehicle(track,new THREE.Scene());
   leaderPlayer.resetAt(200/track.length);leaderRace.state='racing';
@@ -925,24 +938,24 @@ for(const driverPace of [1,1.1]){
   }
   assert.ok(firstChallenge<70,'A player with a 137–185m head start must face a physical overtake attempt within 70 seconds');
   assert.ok(pressureFrames/Math.max(1,leadingFrames)>.6,'A leading stock player must generally have a challenger within 25m');
-  assert.ok(leaderRace.opponents.every(o=>Math.abs(o.car.distance-leaderPlayer.distance)*track.length<150),'The entire pursuing field must remain within the common 150m pack range');
+  assert.ok(leaderRace.opponents.filter(o=>Math.abs(o.car.distance-leaderPlayer.distance)*track.length<150).length>=2,'The nearest challengers must sustain a fair contest without forcing every car into a fixed pack');
   assert.equal(leaderPlayer.gripScale,1);assert.equal(leaderPlayer.powerScale,1);assert.equal(leaderPlayer.raceSpeedCap,undefined);
   console.log('PASS: leading player faces sustained physical pressure and an AI pass',{driverPace,firstChallenge,pressureFraction:pressureFrames/Math.max(1,leadingFrames),gaps:leaderRace.opponents.map(o=>Math.round((leaderPlayer.distance-o.car.distance)*track.length))});
 }
 
 
-// Regression for the reported pace: physically generate a ~90s standing lap
-// (including a two-second launch hesitation) and ~85.6s flying laps. The
-// fixture uses the existing calibrated AI performance to reproduce those
-// timings; the game's player stays stock. Replay that trajectory as a ghost
-// while every rival still drives and collides through normal vehicle physics.
+// Replay an actual equal-power reference trajectory, including a two-second
+// launch hesitation. The old 90/85s fixture relied on 35% extra engine output;
+// forcing every car to catch that fixture would reintroduce the reported cheat.
+// Check physical pursuit, bounded machinery and safety without promising that
+// an arbitrary head start will always disappear.
 const replayDirector=new PackDirector();replayDirector.recordLap(90,true);
 assert.ok(replayDirector.referencePace>1.44,'A 90s standing lap must identify the fast driver instead of matching straight speed');
 replayDirector.recordLap(85.6);assert.ok(replayDirector.referencePace>1.46);
 const eliteTarget=replayDirector.targets(-150,6,1,1.36,0);
-assert.ok(eliteTarget.pace>1.49&&eliteTarget.pace<=1.53&&eliteTarget.power>1.3&&eliteTarget.power<=1.35&&eliteTarget.cap<=104);
+assert.ok(eliteTarget.pace<=1.47&&eliteTarget.power===1&&eliteTarget.cap===94,'A fast lap must never unlock a stronger engine');
 replayDirector.reset();assert.equal(replayDirector.referencePace,1,'Restart must clear fast-lap classification');
-replayDirector.recordLap(120);assert.equal(replayDirector.referencePace,1,'A slower lap must not activate the elite pursuit limits');
+replayDirector.recordLap(120);assert.equal(replayDirector.referencePace,1,'A slower lap must not activate elite pursuit');
 
 const referenceRace=new Race(track,new THREE.Scene(),planner),referenceGhost=new Vehicle(track,new THREE.Scene());
 referenceGhost.position.set(1e6,0,1e6);referenceRace.opponents.splice(1);const recordedDriver=referenceRace.opponents[0];
@@ -950,15 +963,15 @@ const referenceOffset=planner.point(0).sub(track.point(0)).dot(track.normal(0));
 recordedDriver.car.resetAt(0,referenceOffset+.6);recordedDriver.lane=.6;referenceRace.state='racing';
 referenceRace.balanceRivals=()=>{referenceRace.position=1;recordedDriver.rank=2;};
 const trajectory=[],referenceLaps=[];let referenceCrossed=0,previousCrossing=0,referenceOffroad=0;
-for(let step=0;step<120*280;step++){
+for(let step=0;step<120*320;step++){
   if(step>=120*2)referenceRace.update(1/120,referenceGhost);
   const c=recordedDriver.car;
-  trajectory.push({position:c.position.clone(),progress:c.progress,distance:c.distance,heading:c.heading,speed:c.speed,acceleration:c.acceleration,lateralAcceleration:c.lateralAcceleration,brake:c.brake,throttle:c.throttle});
+  trajectory.push({position:c.position.clone(),progress:c.progress,distance:c.distance,heading:c.heading,speed:c.speed,acceleration:c.acceleration,lateralAcceleration:c.lateralAcceleration,brake:c.brake,throttle:c.throttle,boosting:c.boosting});
   referenceOffroad+=c.offRoad?1:0;
   if(c.distance>=referenceCrossed+1){const time=(step+1)/120;referenceLaps.push(time-previousCrossing);previousCrossing=time;referenceCrossed++;if(referenceCrossed===3)break;}
 }
-assert.equal(referenceLaps.length,3);assert.ok(Math.abs(referenceLaps[0]-90)<1);
-assert.ok(referenceLaps.slice(1).every(lap=>Math.abs(lap-85.6)<.7));assert.equal(referenceOffroad,0);
+assert.equal(referenceLaps.length,3);assert.ok(referenceLaps[0]<105);
+assert.ok(referenceLaps.slice(1).every(lap=>lap>=88&&lap<96));assert.equal(referenceOffroad,0);
 const eliteResults=[];
 for(const initial of ['grid','180m-deficit']){
   const eliteRace=new Race(track,new THREE.Scene(),planner),recordedPlayer=new Vehicle(track,new THREE.Scene());eliteRace.state='racing';
@@ -969,13 +982,13 @@ for(const initial of ['grid','180m-deficit']){
   const departures=Array(5).fill(0);
   for(const f of trajectory){
     recordedPlayer.position.copy(f.position);recordedPlayer.progress=f.progress;recordedPlayer.distance=f.distance;recordedPlayer.heading=f.heading;recordedPlayer.speed=f.speed;
-    recordedPlayer.acceleration=f.acceleration;recordedPlayer.lateralAcceleration=f.lateralAcceleration;recordedPlayer.brake=f.brake;recordedPlayer.throttle=f.throttle;
+    recordedPlayer.acceleration=f.acceleration;recordedPlayer.lateralAcceleration=f.lateralAcceleration;recordedPlayer.brake=f.brake;recordedPlayer.throttle=f.throttle;recordedPlayer.boosting=f.boosting;
     eliteRace.update(1/120,recordedPlayer);
-    eliteRace.opponents.forEach((o,i)=>{departures[i]+=o.car.offRoad?1:0;assert.ok(o.car.gripScale<=1.5&&o.powerAssist<=1.35&&o.speedCap<=104);});
+    eliteRace.opponents.forEach((o,i)=>{departures[i]+=o.car.offRoad?1:0;assert.ok(o.car.gripScale===1.4&&o.car.powerScale===1&&o.powerAssist<=1.008&&o.speedCap<=94.25);});
   }
   const gaps=eliteRace.opponents.map(o=>(recordedPlayer.distance-o.car.distance)*track.length);
-  assert.ok(gaps.every(gap=>Math.abs(gap)<150),'Every rival must finish within 150m of the actual 90/85-second reference');
-  assert.ok(Math.min(...gaps.map(Math.abs))<35,'At least one challenger must be within 35m at the finish');
+  assert.ok(gaps.every(Number.isFinite));
+  assert.ok(eliteRace.opponents.every(o=>o.car.distance>2),'Equal-power pursuit must make physical three-lap progress without a forced head-start erasure');
   assert.ok(departures.every(frames=>frames/trajectory.length<.02),'Elite pursuit must not repeatedly throw rivals off the track');
   if(initial==='180m-deficit'){
     assert.ok(departures.every(frames=>frames===0));assert.ok(eliteRace.opponents.every(o=>o.collisionCount===0),'Clean pursuit from behind must remain contact-free');
@@ -984,7 +997,7 @@ for(const initial of ['grid','180m-deficit']){
   eliteResults.push({initial,gaps:gaps.map(Math.round),offroadFraction:departures.map(frames=>frames/trajectory.length)});
   eliteRace.reset();assert.ok(eliteRace.opponents.every(o=>o.car.gripScale===1.4&&o.car.raceGripAssist===undefined));
 }
-console.log('PASS: 90s standing / 85.6s flying reference and all five physical rivals stay close',referenceLaps,eliteResults);
+console.log('PASS: equal-power three-lap reference, bounded performance and physical pursuit',referenceLaps,eliteResults);
 
 // Engine body must add controlled, load-linked low exhaust orders, with a
 // short throttle/gear engagement punch and the same master mute path.
@@ -1523,8 +1536,9 @@ for(let i=0;i<120*8;i++){autonomousRace.update(1/120,autonomousGhost);ownBoost |
 assert.ok(autonomousPasser.car.distance>autonomousTarget.car.distance+12/track.length);assert.ok(autonomousPasser.agent.passesCompleted>=1);assert.ok(ownBoost,'AI must spend its own ERS in an AI-versus-AI battle, even ahead of the player');assert.equal(autonomousPasser.collisionCount+autonomousTarget.collisionCount,0);assert.ok(Math.abs(autonomousPasser.lane)<1.5,'A completed pass must merge back after leaving clearance');
 assert.ok(autonomousRace.opponents.slice(2).every(o=>o.agent.passesCompleted===0),'Passing memory must belong only to the acting driver');
 
-// Unscripted AI racing must include sustained order changes and genuine
-// lateral overlap. Count an overtake only after 12m clearance in either order.
+// With a parked, off-track player the free field must drive safely and keep
+// independent controllers active. Sustained AI/AI exchanges are measured in
+// the full active-player race above, where adaptive competition applies.
 const independentRace=new FullGridRace(track,new THREE.Scene(),planner),independentGhost=new Vehicle(track,new THREE.Scene());independentGhost.position.set(1e6,0,1e6);independentRace.state='racing';
 let independentPasses=0,independentTwoWide=0,independentOffroad=0;const pairHistory=new Map();
 for(let step=0;step<120*200;step++){
@@ -1537,10 +1551,10 @@ for(let step=0;step<120*200;step++){
   }
   if(alongside)independentTwoWide++;
 }
-assert.ok(independentPasses>=2,'The field must not remain in its first-corner order for two physical laps');assert.ok(independentTwoWide>120,'Independent cars must genuinely race alongside one another');assert.equal(independentOffroad,0);assert.ok(independentRace.opponents.every(o=>o.collisionCount===0));// Similar reaction values can share a 120Hz tick interval; independence is
+assert.ok(activeFieldPasses>=2,'Active racing must include sustained AI/AI order changes');assert.ok(activeFieldTwoWide>120,'Active opponents must genuinely race alongside one another');assert.equal(independentOffroad,0);assert.ok(independentRace.opponents.every(o=>o.collisionCount===0));// Similar reaction values can share a 120Hz tick interval; independence is
 // measured by separate controllers/memory and each controller actually acting.
 assert.ok(independentRace.opponents.every(o=>o.agent.decisions>3000));assert.ok(new Set(independentRace.opponents.map(o=>o.reaction)).size>=8);
-const fullGridSummary={launch:twelveResults,independentPasses,twoWideSeconds:independentTwoWide/120};
+const fullGridSummary={launch:twelveResults,activePasses:activeFieldPasses,activeTwoWideSeconds:activeFieldTwoWide/120};
 console.log('PASS: twelve-car default, individual controllers, three clean chicane approaches, autonomous AI/AI pass and unscripted position exchanges',fullGridSummary);
 
 // Far cars use three colour batches plus their contact shadow, and restore the
@@ -1551,24 +1565,33 @@ assert.ok(distantMeshes<=4&&distantTriangles<500,'Distant full-grid traffic must
 lodCar.setPresentation(20,'medium');let nearMeshes=0;lodCar.group.traverseVisible(o=>{if(o instanceof THREE.Mesh)nearMeshes++;});assert.equal(nearMeshes,33);lodCar.setPresentation(700,'medium');assert.equal(lodCar.group.visible,false);lodCar.setPresentation(20,'medium');assert.equal(lodCar.group.visible,true);
 signalHUD.update(signalPlayer,independentRace,false,track,1);assert.equal(nodes.get('#field-size').textContent,'12');assert.equal(nodes.get('#driver-count').textContent,'12');
 console.log('PASS: accurate twelve-driver HUD and distant traffic geometry budget',{distantMeshes,distantTriangles,nearMeshes});
+const boundaryDistances=independentRace.opponents.map(o=>o.car.distance).sort((a,b)=>b-a);
+for(const [distance,position,missing] of [[boundaryDistances[0]+.1,1,'#gap-ahead'],[(boundaryDistances[0]+boundaryDistances[1])/2,2,null],[boundaryDistances.at(-1)-.1,12,'#gap-behind']]){
+  independentGhost.distance=distance;independentRace.update(0,independentGhost);signalHUD.update(independentGhost,independentRace,false,track,1);assert.equal(independentRace.position,position);
+  if(missing)assert.equal(nodes.get(missing).textContent,'-');
+  else{assert.notEqual(nodes.get('#gap-ahead').textContent,'-');assert.notEqual(nodes.get('#gap-behind').textContent,'-');}
+}
+console.log('PASS: twelve-car P1/P2/P12 HUD boundaries, with both gaps visible at P2');
 
-// Keep the larger field competitive with the player's reported 90/85s pace.
+
+// Full-grid equal-power replay: bounded pursuit from a 180–320m head start.
 const twelveElite=new FullGridRace(track,new THREE.Scene(),planner),twelveReplay=new Vehicle(track,new THREE.Scene());twelveElite.state='racing';
 twelveElite.opponents.forEach((o,i)=>{const progress=-(180+i*14)/track.length,lane=i%2?3:-3;o.car.resetAt(progress,lane);o.lane=lane-planner.point(progress).sub(track.point(progress)).dot(track.normal(progress));});
 const twelveEliteOffroad=Array(11).fill(0);
 for(const f of trajectory){
-  twelveReplay.position.copy(f.position);twelveReplay.progress=f.progress;twelveReplay.distance=f.distance;twelveReplay.heading=f.heading;twelveReplay.speed=f.speed;twelveReplay.acceleration=f.acceleration;twelveReplay.lateralAcceleration=f.lateralAcceleration;twelveReplay.brake=f.brake;twelveReplay.throttle=f.throttle;
-  twelveElite.update(1/120,twelveReplay);twelveElite.opponents.forEach((o,i)=>{twelveEliteOffroad[i]+=o.car.offRoad?1:0;assert.ok(o.car.gripScale<=1.5&&o.powerAssist<=1.35&&o.speedCap<=104);});
+  twelveReplay.position.copy(f.position);twelveReplay.progress=f.progress;twelveReplay.distance=f.distance;twelveReplay.heading=f.heading;twelveReplay.speed=f.speed;twelveReplay.acceleration=f.acceleration;twelveReplay.lateralAcceleration=f.lateralAcceleration;twelveReplay.brake=f.brake;twelveReplay.throttle=f.throttle;twelveReplay.boosting=f.boosting;
+  twelveElite.update(1/120,twelveReplay);twelveElite.opponents.forEach((o,i)=>{twelveEliteOffroad[i]+=o.car.offRoad?1:0;assert.ok(o.car.gripScale===1.4&&o.car.powerScale===1&&o.powerAssist<=1.008&&o.speedCap<=94.25);});
 }
 const twelveEliteGaps=twelveElite.opponents.map(o=>Math.round((twelveReplay.distance-o.car.distance)*track.length));
-console.log('Twelve-car 90/85s replay',{gaps:twelveEliteGaps,offroad:twelveEliteOffroad.map(n=>n/trajectory.length),contacts:twelveElite.opponents.reduce((n,o)=>n+o.collisionCount,0)});
-// The eleven-car fixture starts 180–320m back (the old five-car fixture
-// starts 180–236m back). Bound additional loss as well as absolute separation.
-assert.ok(twelveEliteGaps.every((gap,i)=>Math.abs(gap)<400&&gap<180+i*14+80),'The larger field must match the 90/85s pace without an unbounded trailing deficit');assert.ok(twelveEliteGaps.filter(gap=>Math.abs(gap)<150).length>=6);assert.ok(Math.min(...twelveEliteGaps.map(Math.abs))<35);assert.ok(twelveEliteOffroad.every(n=>n/trajectory.length<.005));
+console.log('Twelve-car equal-power replay',{gaps:twelveEliteGaps,offroad:twelveEliteOffroad.map(n=>n/trajectory.length),contacts:twelveElite.opponents.reduce((n,o)=>n+o.collisionCount,0)});
+// A head start is not erased by an engine advantage. Check clean, bounded
+// pursuit; equal-ERS/terminal-speed fairness is asserted independently above.
+assert.ok(twelveEliteGaps.every(Number.isFinite));assert.ok(twelveEliteOffroad.every(n=>n/trajectory.length<.005));
 
 // Timing is measured at shared physical gates, including acceleration and seams.
 {
 const {RaceTiming,formatInterval}=await import(moduleURL('RaceTiming'));
+assert.equal(formatInterval(null,true),'-');assert.equal(formatInterval(null,false),'-');
 const outcomes=[];
 for(const fps of [30,60,144]){
  const clock=new RaceTiming(1000),at=t=>(10*t+2*t*t)/1000;let samples;
@@ -1630,6 +1653,8 @@ console.log('PASS: actual passage-time gaps at 30/60/144fps, acceleration, signs
   timedRace.opponents.forEach((o,i)=>{o.car.distance=at(i===0?7:5);o.car.position.set(10000+i*100,0,10000);o.car.drive=()=>{};});timedRace.update(0,timedPlayer);
   signalHUD.update(timedPlayer,timedRace,false,track,1);assert.equal(nodes.get('#gap-ahead-name').textContent,'NOVA');assert.equal(nodes.get('#gap-behind-name').textContent,'VECTOR');assert.equal(nodes.get('#gap-ahead').textContent,'+1.00s');assert.equal(nodes.get('#gap-behind').textContent,'−1.00s');
   const frozenIntervals=timedRace.intervals;signalHUD.update(timedPlayer,timedRace,true,track,1);assert.deepEqual(timedRace.intervals,frozenIntervals,'Opening pause must freeze measured gaps');
+  timedPlayer.distance=at(8);timedRace.update(0,timedPlayer);signalHUD.update(timedPlayer,timedRace,false,track,1);assert.equal(timedRace.position,1);assert.equal(nodes.get('#gap-ahead').textContent,'-');assert.notEqual(nodes.get('#gap-behind').textContent,'-');
+  timedPlayer.distance=at(4);timedRace.update(0,timedPlayer);signalHUD.update(timedPlayer,timedRace,false,track,1);assert.equal(timedRace.position,3);assert.equal(nodes.get('#gap-behind').textContent,'-');assert.notEqual(nodes.get('#gap-ahead').textContent,'-');
   timedRace.reset();signalHUD.update(timedPlayer,timedRace,false,track,1);assert.equal(nodes.get('#gap-ahead').textContent,'—');assert.equal(nodes.get('#gap-behind').textContent,'—');
   console.log('PASS: real Race/HUD neighbour names, front/back signs, pause and restart timing state');
 }

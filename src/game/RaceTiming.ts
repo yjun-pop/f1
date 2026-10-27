@@ -49,7 +49,7 @@ export class RaceTiming {
 
 export function formatInterval(interval:RaceInterval|null,ahead:boolean,active=true){
   if(!active)return '—';
-  if(!interval)return ahead?'선두':'최후미';
+  if(!interval)return '-';
   const sign=ahead?'+':'−';
   if(interval.laps)return `${sign}${interval.laps}랩`;
   return interval.seconds===null?'측정 중':`${sign}${interval.seconds.toFixed(2)}s`;

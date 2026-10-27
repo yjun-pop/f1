@@ -86,7 +86,7 @@ export class DriverAgent {
     // use their own timing instead of all drivers returning to one slot.
     const openingFormation=crowdedField&&this.elapsed<40&&meters<1300;
     const competitive=crowdedField&&!openingFormation;
-    const elitePursuit=competitive&&car.gripScale>1.45;
+    const elitePursuit=competitive&&(o.racePace??o.pace)/Math.sqrt(car.gripScale)>1.24;
     const battleThreshold=elitePursuit?84:72;
     const straight=[0,20,40,60].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>(competitive?battleThreshold:60));
     const passRoadClear=!competitive||[0,30,60,90,120].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>battleThreshold);
@@ -107,27 +107,23 @@ export class DriverAgent {
     // AI uses the precomputed braking envelope with its own short reaction
     // distance, rather than the extra early-braking margin intended for a human.
     // Distinct corner/exit preferences change with track position. This only
-    // eases the individual target inside the established physical pace cap.
-    const rhythm=competitive&&!elitePursuit?1-.012*(.5+.5*Math.sin(car.distance*Math.PI*6+o.phase)):1;
-    const pace=Math.min(1.53,(o.racePace??o.pace)*rhythm);
+    // varies the individual target inside the established physical pace cap.
+    const rhythm=competitive&&!elitePursuit?1+.04*Math.sin(car.distance*Math.PI*7.3+o.phase):1;
+    const pace=Math.min(1.47,(o.racePace??o.pace)*rhythm);
     const cornerRoom=pace/Math.sqrt(car.gripScale)<1.19;
     const cornerPlan=this.corner.update(o,traffic,competitive&&cornerRoom&&!elitePursuit&&!settling&&!chicaneTraffic&&!this.passingTarget,elitePursuit);
     const reference=car.progress+car.speed*(cornerPlan?.preview??.12)/this.track.length;
-    // At the tire limit, spend the remaining grip on turning rather than
-    // making the more aggressive exit acceleration compete with cornering.
-    const gripReserve=THREE.MathUtils.smoothstep(pace/Math.sqrt(car.gripScale),1.2,1.26);
-    const speedAt=(t:number)=>THREE.MathUtils.lerp(this.racingSpeed(t),this.planner.speed(t),gripReserve);
-    // Scaling a 94m/s braking envelope up to a 104m/s pursuit speed also
-    // scales its assumed deceleration. Recheck real braking distance at the
-    // actual approach speed before applying the aggressive pace multiplier.
+    // Keep the calibrated envelope monotonic in skill. Blending back to the
+    // slower human advice as pace increased made faster challengers brake
+    // earlier than their own less-skilled setting. The physical braking
+    // check below still bounds a high-pace approach.
+    const speedAt=(progress:number)=>this.racingSpeed(progress);
     const safeTarget=(progress:number)=>{
       let target=Math.min(o.speedCap,speedAt(progress)*pace);
-      if(pace>1.42&&o.speedCap>94){
-        const braking=brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.75;
-        for(let distance=12;distance<=300;distance+=12){
-          const corner=Math.min(o.speedCap,this.planner.cornerLimit(progress+distance/this.track.length)*pace);
-          target=Math.min(target,Math.sqrt(corner*corner+2*braking*Math.max(0,distance-car.speed*.18)));
-        }
+      const braking=brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.75;
+      for(let distance=12;distance<=300;distance+=12){
+        const corner=Math.min(o.speedCap,this.planner.cornerLimit(progress+distance/this.track.length)*pace);
+        target=Math.min(target,Math.sqrt(corner*corner+2*braking*Math.max(0,distance-car.speed*.18)));
       }
       return target;
     };
@@ -171,8 +167,8 @@ export class DriverAgent {
         // gap 360m early. Bound following speed by the actual braking distance;
         // a moving queue can roll through while a stopped obstacle still stops it.
         const approach=THREE.MathUtils.smoothstep(meters,narrow.entry-360,narrow.entry-160);
-        const elite=pace>1.49&&car.gripScale>1.45;
-        const headway=elite?(crowdedField?.35:.45):competitive?.55:.60;
+        const elite=competitive&&pace/Math.sqrt(car.gripScale)>1.24;
+        const headway=elite?(crowdedField?.35:.45):competitive?.4+caution*.08:.60;
         const safeGap=(elite?7:8)+car.speed*THREE.MathUtils.lerp(.12,headway,approach)+caution*(elite?1:1.5);
         const braking=brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.7;
         const safeSpeed=Math.sqrt(ahead.speed*ahead.speed+2*braking*Math.max(0,nearest-7));
@@ -245,10 +241,11 @@ export class DriverAgent {
     // drag. Error-only throttle used to coast below the target and brake late.
     // Front runners bank ERS; a trailing challenger can spend it on the pass.
     const attackingLeader=this.playerPosition===1&&o.rank>1;
-    const reserve=attackingLeader?(o.attack>.7?12:22):(o.attack>.7?18:35);
+    const reserve=attackingLeader?(o.attack>.7?12:22):THREE.MathUtils.lerp(48,24,o.aggression);
     const localBattle=competitive&&(passing||this.intent==='defend');
     const cleanExit=!!cornerPlan?.exiting&&Math.abs(error)<.06&&Math.abs(car.lateralAcceleration)<lateralGrip(car.speed)*car.gripScale*.65&&(!ahead||gapTo(ahead)>18);
-    const wantsBoost=target>(cleanExit?76:78)&&car.speed>35&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>(o.control.boost?5:localBattle||cleanExit?Math.max(12,32-o.aggression*18):reserve)&&(o.rank>=this.playerPosition||localBattle||cleanExit)&&(!ahead||passing||cleanExit||gapTo(ahead)>35);
+    const acceleratingExit=plannedAcceleration>1&&target>Math.max(45,car.speed+3)&&Math.abs(car.lateralAcceleration)<lateralGrip(car.speed)*car.gripScale*.55;
+    const wantsBoost=(target>78||acceleratingExit)&&car.speed>20&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>Math.max(5,(localBattle||cleanExit?Math.max(12,32-o.aggression*18):reserve)-(o.control.boost?8:0))&&(!ahead||passing||cleanExit||gapTo(ahead)>35);
     if(!wantsBoost)target=Math.min(target,o.speedCap*87/94);
     const feedforward=target<plannedTarget-.1?0:plannedAcceleration;
     const exitDrive=cleanExit&&!elitePursuit?Math.min(.8,Math.max(0,target-car.speed)*.12):0;

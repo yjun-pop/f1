@@ -30,9 +30,8 @@ export class Race {
   get intervals(){return this.player?this.timing.neighbours(this.timingSamples(this.player),'PLAYER',this.elapsed):{ahead:null,behind:null};}
   constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number}={}){
     this.timing=new RaceTiming(track.length);
-    // Calibrated for an approximately 86-second flying lap. Rivals use the
-    // same physical integration with explicit bounded grip/power assistance;
-    // the player's performance and human guidance remain stock.
+    // Rivals retain fixed steering/grip calibration, but share the player's
+    // engine output, ERS and speed limits. Difficulty adjusts driving targets.
     this.aiSpeeds=Float64Array.from(planner.cornerSpeeds);
     const count=planner.count;
     for(let pass=0;pass<12;pass++){
@@ -45,7 +44,7 @@ export class Race {
     }
     this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
     const profiles=DRIVER_PROFILES.slice(0,Math.max(1,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
-    profiles.forEach((p,i)=>{const driver:Omit<Rival,'agent'>={...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1.35}),distance:0,speed:0,collisionScore:0,collisionCount:0,avoidance:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}};const rival=Object.assign(driver,{agent:new DriverAgent(driver,track,planner,this.aiSpeeds)});this.opponents.push(rival);});this.reset();
+    profiles.forEach((p,i)=>{const driver:Omit<Rival,'agent'>={...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1}),distance:0,speed:0,collisionScore:0,collisionCount:0,avoidance:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}};const rival=Object.assign(driver,{agent:new DriverAgent(driver,track,planner,this.aiSpeeds)});this.opponents.push(rival);});this.reset();
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
   reset(){this.contacts.clear();this.pack.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
@@ -55,7 +54,6 @@ export class Race {
     const sample=((player.progress%1+1)%1)*this.aiSpeeds.length,index=Math.floor(sample);
     const referenceSpeed=THREE.MathUtils.lerp(this.aiSpeeds[index],this.aiSpeeds[(index+1)%this.aiSpeeds.length],sample-index);
     this.pack.observe(player,referenceSpeed,player.position.distanceToSquared(this.track.point(player.progress))<18*18,dt);
-    const fastGrip=this.pack.active?THREE.MathUtils.smoothstep(this.pack.referencePace,1.32,1.44):0;
     // Snapshot standings once, using total race distance across lap seams.
     const order:{distance:number;rival:Rival|null}[]=[{distance:player.distance,rival:null},...this.opponents.map(rival=>({distance:rival.car.distance,rival}))];
     order.sort((a,b)=>b.distance-a.distance);
@@ -63,29 +61,31 @@ export class Race {
     order.forEach((entry,i)=>{if(entry.rival)entry.rival.rank=i+1;});
     const contenders=this.position<=3?this.opponents.filter(o=>o.rank<=3&&o.rank>this.position).sort((a,b)=>a.rank-b.rank):[];
     const attacker=contenders[Math.floor(this.elapsed/14)%Math.max(1,contenders.length)];
-    const warmup=THREE.MathUtils.smoothstep(this.elapsed,12,35);
     for(const o of this.opponents){
       const gap=(o.car.distance-player.distance)*this.track.length;
-      const behind=o.rank>this.position,strength=THREE.MathUtils.smoothstep(Math.max(0,Math.abs(gap)-12),0,350);
-      const attack=behind&&contenders.includes(o)?(o===attacker?1:.45):0;
-      o.attack=THREE.MathUtils.damp(o.attack,attack,.65,dt);
-      // Free-racing baseline while the player is parked or unavailable.
-      // During active driving, the pack director adjusts both sides of the
-      // field, including corner pace. Motion remains entirely physical.
-      let targetCap=behind?94+warmup*(1+4*strength+5*o.attack):94*(1-warmup*(.012+.008*strength));
-      let targetPower=behind?1+warmup*(.01+.08*strength+.06*o.attack):1;
+      const attack=contenders.includes(o)?(o===attacker?1:.45):0;
+      o.attack=THREE.MathUtils.damp(o.attack,attack,.25,dt);
+      const freePace=o.pace;
+      let targetPace=freePace,targetCap=94,targetPower=1;
       if(this.pack.active){
-        const matching=THREE.MathUtils.smoothstep(this.elapsed,4,18);
-        const pack=this.pack.targets(gap,o.rank,this.position,o.pace,o.attack,this.fieldSize>6?18:0);
-        targetCap=THREE.MathUtils.lerp(targetCap,pack.cap,matching);
-        targetPower=THREE.MathUtils.lerp(targetPower,pack.power,matching);
-        o.racePace=THREE.MathUtils.damp(o.racePace??o.pace,THREE.MathUtils.lerp(o.pace,pack.pace,THREE.MathUtils.smoothstep(this.elapsed,16,28)),.5,dt);
-      }else if(o.racePace!==undefined)o.racePace=THREE.MathUtils.damp(o.racePace,o.pace,.5,dt);
-      o.speedCap=THREE.MathUtils.damp(o.speedCap,THREE.MathUtils.clamp(targetCap,76,104),.7,dt);
-      o.powerAssist=THREE.MathUtils.damp(o.powerAssist,Math.min(1.35,targetPower),.5,dt);
-      // Equal launch machinery, then gradually restore the established race pace.
-      o.car.raceLaunchScale=THREE.MathUtils.lerp(o.launch/o.car.powerScale,1,THREE.MathUtils.smoothstep(this.elapsed,5,22));
-      o.car.raceGripAssist=THREE.MathUtils.damp(o.car.raceGripAssist??1,1+fastGrip*(1.5/1.4-1),.5,dt);
+        const pack=this.pack.targets(gap,o.rank,this.position,o.pace,o.attack,this.fieldSize);
+        const formation=this.fieldSize>6&&o.car.distance*this.track.length<1250;
+        const matching=formation?0:THREE.MathUtils.smoothstep(this.elapsed,4,18);
+        targetPace=THREE.MathUtils.lerp(freePace,pack.pace,matching);
+        // No extra straight-line performance in a visible duel or while the
+        // player spends ERS. Also check world distance across lap seams.
+        const unseen=THREE.MathUtils.smoothstep(o.car.position.distanceTo(player.position),180,300);
+        const allowed=!player.boosting&&!(player.throttle>.9&&player.speed>85);
+        if(allowed){targetCap=94+(pack.cap-94)*unseen;targetPower=1+(pack.power-1)*unseen;}
+      }
+      // Skill adapts over several seconds, including after a position swap.
+      // Engine assistance has a hard local ceiling: entering visible range
+      // cannot carry a stale acceleration advantage into a pass.
+      o.racePace=THREE.MathUtils.damp(o.racePace??o.pace,targetPace,.12,dt);
+      o.speedCap=Math.min(targetCap,THREE.MathUtils.damp(o.speedCap,targetCap,.4,dt));
+      o.powerAssist=Math.min(targetPower,THREE.MathUtils.damp(o.powerAssist,targetPower,.4,dt));
+      o.car.raceLaunchScale=THREE.MathUtils.lerp(o.launch,1,THREE.MathUtils.smoothstep(this.elapsed,5,22));
+      o.car.raceGripAssist=1;
       o.car.raceSpeedCap=o.speedCap;o.car.raceCruiseCap=o.speedCap*87/94;o.car.racePowerAssist=o.powerAssist;
     }
   }

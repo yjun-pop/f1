@@ -21,7 +21,7 @@ export class PackDirector {
     // Filter a normalized pace, so a chicane's 30m/s is not interpreted as a
     // request for every car to travel at 30m/s on a different straight.
     if(this.active&&player.speed>15){
-      const measured=THREE.MathUtils.clamp(player.speed/Math.max(18,referenceSpeed),.75,1.47);
+      const measured=THREE.MathUtils.clamp(player.speed/Math.max(18,referenceSpeed),.65,1.47);
       this.pace=THREE.MathUtils.damp(this.pace,measured,.12,dt);
       // Straights saturate at the car's speed cap and hide a fast driver's
       // corner advantage. Keep a separate estimate from actual corner speeds.
@@ -30,33 +30,24 @@ export class PackDirector {
       }
     }
   }
-  targets(gap:number,rank:number,playerRank:number,basePace:number,attack:number,freedom=0){
-    // A leading player needs challengers, rather than five cars whose goals
-    // are deliberately 14–70m behind. Aim the first two at a clean pass.
-    const chasingLeader=playerRank===1&&gap<0;
-    const desiredGap=playerRank===1?12-(rank-2)*9:THREE.MathUtils.clamp((playerRank-rank)*14,-70,70);
-    const fast=THREE.MathUtils.smoothstep(this.referencePace,1.32,1.44);
-    const paceCap=1.47+.06*fast;
-    const delta=gap-desiredGap,error=Math.sign(delta)*Math.max(0,Math.abs(delta)-freedom);
-    const catchup=THREE.MathUtils.smoothstep(-error,10,85);
-    const anchor=this.referencePace+(basePace-1.42)*.15;
-    let pace=THREE.MathUtils.clamp(THREE.MathUtils.lerp(anchor,Math.max(anchor,basePace),catchup)-Math.max(0,error)*.002,.75,paceCap);
-    let cap=error>0?94-error*.055:94+Math.min(7,-error*.035)+attack*3;
-    let power=error<0?1+Math.min(.15,-error*.0015)+attack*.015:1;
-    if(chasingLeader){
-      const urgency=THREE.MathUtils.smoothstep(-gap,5,65);
-      // Sustain a pace advantage after reaching the leader, instead of
-      // switching back to matching pace while still outside passing range.
-      pace=Math.min(paceCap,Math.max(pace,anchor+.06+urgency*.10+attack*.04));
-      cap=Math.max(cap,97+urgency*4+attack*3);
-      power=Math.max(power,1.05+urgency*.10);
-    }
-    if(gap<0&&fast>0){
-      pace=Math.max(pace,Math.min(paceCap,this.referencePace+.06*fast));
-      const deficit=THREE.MathUtils.smoothstep(-gap,20,120);
-      power=Math.max(power,1.15+.20*fast*deficit);
-      cap=Math.max(cap,101+3*fast*deficit);
-    }
-    return {pace,cap:THREE.MathUtils.clamp(cap,76,104),power:Math.min(1.15+.20*fast,power),desiredGap};
+  targets(gap:number,rank:number,playerRank:number,basePace:number,attack:number,fieldSize=12){
+    // Rank changes the challenge, not the car's engine. Neighbours remain
+    // competitive; distant leaders leave room to progress through the field.
+    // At the back, the next opponent is attainable rather than another wall.
+    const tier=THREE.MathUtils.clamp((fieldSize-playerRank)/Math.max(1,fieldSize-1),0,1);
+    const separation=Math.max(0,Math.abs(rank-playerRank)-1),behind=rank>playerRank;
+    const neighbour=behind?THREE.MathUtils.lerp(-.012,.020,tier):THREE.MathUtils.lerp(-.008,.016,tier);
+    const rankPenalty=separation*(behind?.004*(1-THREE.MathUtils.smoothstep(-gap,120,350)):.006);
+    const pressure=behind?attack*.004*tier:0;
+    // Broad distance bands allow duels and natural gaps, without assigning
+    // each car a fixed slot relative to the player.
+    const regroup=behind?.008*THREE.MathUtils.smoothstep(-gap,120,350):-.035*THREE.MathUtils.smoothstep(gap,100,350);
+    const character=THREE.MathUtils.clamp((basePace-1.42)*.1,-.006,.006);
+    const skill=THREE.MathUtils.clamp(neighbour-rankPenalty+pressure+regroup,-.1,.032);
+    const pace=THREE.MathUtils.clamp(this.referencePace*(1+skill)+character,.65,1.47);
+    // Tiny assistance is reserved for distant trailing cars. Race also checks
+    // physical visibility and removes it while the player is using ERS.
+    const hidden=behind?THREE.MathUtils.smoothstep(-gap,180,350):0;
+    return {pace,cap:94+.25*hidden,power:1+.008*hidden};
   }
 }
