@@ -1020,7 +1020,7 @@ const {DrivingFeedback,windLevel}=await import(moduleURL('DrivingFeedback'));
 const feelCar=new Vehicle(track,new THREE.Scene()),feel=new DrivingFeedback();feel.strength=1;
 const kerbProgress=planner.apices[0].progress,kerbHeading=Math.atan2(track.tangent(kerbProgress).x,track.tangent(kerbProgress).z);
 assert.equal(track.kerbContact(track.point(kerbProgress),kerbHeading,kerbProgress),0,'Track centre must not shake as if it were a kerb');
-const edge=track.point(kerbProgress).addScaledVector(track.normal(kerbProgress),9.6);
+const edge=track.roadPoint(kerbProgress).addScaledVector(track.roadNormal(kerbProgress),9.6);
 assert.ok(track.kerbContact(edge,kerbHeading,kerbProgress)>.25,'A wheel overlapping a rendered corner kerb must be detected');
 const straightProgress=400/track.length,straightHeading=Math.atan2(track.tangent(straightProgress).x,track.tangent(straightProgress).z);
 assert.equal(track.kerbContact(track.point(straightProgress).addScaledVector(track.normal(straightProgress),9.3),straightHeading,straightProgress),0,'A road edge without rendered kerbs must stay smooth');
@@ -1043,7 +1043,7 @@ feelCamera.mode=0;feelCamera.update(feelCar,1,feedback);assert.ok(Number.isFinit
 feel.strength=0;const noMotion=feel.update(feelCar,track,1/60,true);
 for(const key of ['pitch','roll','heave','sway','longitudinal','surfaceHeave','cockpitHeave','cockpitPitch','boostFov'])assert.equal(Math.abs(noMotion[key]),0,'Zero motion strength must disable added camera movement');
 assert.ok(noMotion.wind>0,'Motion preference must not silence wind audio');
-feel.strength=1;feelCar.resetAt(kerbProgress,9.6);feelCar.speed=35;
+feel.strength=1;feelCar.resetAt(kerbProgress,9.6);feelCar.position.copy(edge);feelCar.speed=35;
 let kerbFrame,maxKerbBounce=0;for(let i=0;i<60;i++){feelCar.distance+=35/60/track.length;kerbFrame=feel.update(feelCar,track,1/60,true);maxKerbBounce=Math.max(maxKerbBounce,Math.abs(kerbFrame.surfaceHeave));}
 assert.ok(kerbFrame.kerb>.2&&maxKerbBounce>.012&&maxKerbBounce<=.042,'Actual kerbs need perceptible suspension travel, without excessive camera shake');
 feelCar.present(kerbFrame.surfaceHeave);assert.ok(Math.abs(feelCar.model.chassis.position.y)<=.042);
@@ -1214,14 +1214,14 @@ for(let i=0;i<ribbonGeometry.index.count;i+=3){
   assert.ok(b.sub(a).cross(c.sub(a)).y>1e-7,'Kerbs must not fold or disappear at tight inside corners');
 }
 for(let i=0;i<kerbSurfacePositions.count;i++){
-  const t=(kerbSurfaceUV.getX(i)*2-.5)/track.kerbSegments.length,p=track.point(t),n=track.roadNormal(t),lateral=Math.abs((kerbSurfacePositions.getX(i)-p.x)*n.x+(kerbSurfacePositions.getZ(i)-p.z)*n.z);
+  const t=ribbonGeometry.getAttribute('progress').getX(i),p=track.roadPoint(t),n=track.roadNormal(t),lateral=Math.abs((kerbSurfacePositions.getX(i)-p.x)*n.x+(kerbSurfacePositions.getZ(i)-p.z)*n.z);
   assert.ok(lateral>=9.649&&lateral<=11.051,'Visible strips must stay on the shared road-edge footprint');
   assert.ok(kerbSurfacePositions.getY(i)>=-.07801&&kerbSurfacePositions.getY(i)<=.11501,'Kerbs must blend low into the road and grass');
 }
 let cornerRuns=0;for(let i=0;i<track.kerbSegments.length;i++)if(track.kerbSegments[i]&&!track.kerbSegments[(i+track.kerbSegments.length-1)%track.kerbSegments.length])cornerRuns++;
 assert.ok(cornerRuns<=22,'A single corner must not break into many short disconnected kerbs');
 for(const section of track.sections){const t=section.progress,h=Math.atan2(track.tangent(t).x,track.tangent(t).z);assert.equal(track.kerbContact(track.point(t),h,t),0,'Track centres must not trigger kerb feedback');}
-const visibleKerbEdge=track.point(kerbProgress).addScaledVector(track.roadNormal(kerbProgress),9.6);
+const visibleKerbEdge=track.roadPoint(kerbProgress).addScaledVector(track.roadNormal(kerbProgress),9.6);
 assert.ok(track.kerbContact(visibleKerbEdge,kerbHeading,kerbProgress)>.25,'Wheel feedback must follow the smoothed visible kerb');
 // Slick tread and its shoulders are one carcass. Sidewall text conforms to it
 // within 0.35mm rather than creating a flat disc or a raised outer trim ring.
@@ -1317,3 +1317,26 @@ try{
   let releasedPhoto=false;latePhoto.addEventListener('dispose',()=>{releasedPhoto=true;});lateLighting.dispose();assert.equal(releasedPhoto,true);
 }finally{HDRLoader.prototype.loadAsync=originalHDRLoad;}
 console.log('PASS: deferred HDR loading follows current quality, matches sun direction, releases resources and preserves a fallback sky on failure');
+
+// Tight bends need an actually smooth path and bounded polygon approximation,
+// not only more triangles following the same kinked source line.
+const {kerbRows,KERB_PAINT_LENGTH}=await import(moduleURL('KerbGeometry'));
+const curvedRows=kerbRows(track,track.kerbSegments);let largestChordError=0,smallestStep=Infinity,largestDeviation=0,largestGuideOffset=0;
+for(const rows of curvedRows)for(let i=1;i<rows.length;i++){
+  const a=rows[i-1],b=rows[i],t=(a.coordinate+b.coordinate)/2/track.kerbSegments.length,p=track.roadPoint(t),n=track.roadNormal(t);
+  smallestStep=Math.min(smallestStep,(b.coordinate-a.coordinate)*track.length/track.kerbSegments.length);
+  for(const offset of [-11.05,-9.65,9.65,11.05]){
+    const pa=a.p.clone().addScaledVector(a.n,offset),pb=b.p.clone().addScaledVector(b.n,offset),mid=p.clone().addScaledVector(n,offset);
+    largestChordError=Math.max(largestChordError,mid.distanceTo(pa.add(pb).multiplyScalar(.5)));
+  }
+}
+assert.ok(largestChordError<=.00100001&&smallestStep<.25,'Small-radius kerbs must refine to less than 1mm midpoint error');
+assert.ok(KERB_PAINT_LENGTH<=.75,'Paint marks must be shorter than the former 3.1m blocks');
+for(let i=0;i<planner.count;i++){
+  const t=i/planner.count;largestDeviation=Math.max(largestDeviation,track.roadPoint(t).distanceTo(track.point(t)));
+  largestGuideOffset=Math.max(largestGuideOffset,Math.abs(planner.point(t).sub(track.roadPoint(t)).dot(track.roadNormal(t))));
+}
+assert.ok(largestDeviation<1.8&&largestGuideOffset<9.5,'The visual smoothing must leave the unchanged physical racing line inside the road');
+for(let i=0;i<Math.ceil(track.length);i+=19){const t=i/Math.ceil(track.length),epsilon=.001/track.length;assert.ok(track.roadNormal(t-epsilon).dot(track.roadNormal(t+epsilon))>.999999,'Spline knots and the closed seam must not produce heading discontinuities');}
+assert.ok(ribbonGeometry.index.count/3<160000,'Adaptive curves must retain a bounded geometry budget');
+console.log('PASS: smooth visual spline, adaptive small-radius kerbs, short arc-length paint, sub-millimetre chord error and preserved racing-line clearance',{largestChordError,smallestStep,largestDeviation,largestGuideOffset});

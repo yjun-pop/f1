@@ -28,7 +28,7 @@ export class DrivingFeedback {
     if(this.engine.gear!==this.previousGear){this.shiftAge=0;this.shiftDirection=this.engine.gear>this.previousGear?-1:.65;}
     this.previousGear=this.engine.gear;this.previousDistance=vehicle.distance;this.shiftAge+=dt;
     // A short attack and rebound remain visible for several render frames.
-    const kick=this.shiftAge<.4?this.shiftDirection*.15*(1-Math.exp(-this.shiftAge*65))*Math.exp(-this.shiftAge*10)*Math.cos(this.shiftAge*22):0;
+    const kick=this.shiftAge<.4?this.shiftDirection*.105*(1-Math.exp(-this.shiftAge*65))*Math.exp(-this.shiftAge*10)*Math.cos(this.shiftAge*22):0;
     const smooth=(value:number,target:number,rate:number)=>value+(target-value)*(1-Math.exp(-rate*dt));
     const moving=Math.min(1,vehicle.speed/8),strength=clamp(this.strength,0,1);
     this.pitch=smooth(this.pitch,clamp(vehicle.acceleration,-40,25)*.0011*moving,9);

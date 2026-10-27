@@ -12,7 +12,7 @@ export function createRoadDressing(track:Track){
     for(const wheel of [-1,1]){
       const base=rubberPositions.length/3;
       for(let i=0;i<=80;i++){
-        const metres=-130+i*2.3,progress=t+metres/track.length,p=track.point(progress),n=track.roadNormal(progress);
+        const metres=-130+i*2.3,progress=t+metres/track.length,p=track.roadPoint(progress),n=track.roadNormal(progress);
         const cornerBlend=Math.exp(-((metres/55)**2)),lane=-turn*(1.7+cornerBlend*1.4)+wheel*.78,width=.16+cornerBlend*.08;
         const fade=THREE.MathUtils.smoothstep(i,0,18)*(1-THREE.MathUtils.smoothstep(i,58,80));
         for(const side of [-1,1]){rubberPositions.push(p.x+n.x*(lane+side*width),.044,p.z+n.z*(lane+side*width));rubberUV.push((side+1)/2,i/6);rubberColors.push(1,1,1,fade);}
@@ -21,7 +21,7 @@ export function createRoadDressing(track:Track){
     }
     const base=gravelPositions.length/3;
     for(let i=0;i<=64;i++){
-      const progress=t+(i-32)*2/track.length,p=track.point(progress),n=track.roadNormal(progress),edge=Math.sin(i/64*Math.PI)**.55;
+      const progress=t+(i-32)*2/track.length,p=track.roadPoint(progress),n=track.roadNormal(progress),edge=Math.sin(i/64*Math.PI)**.55;
       for(const outer of [false,true]){const offset=11.08+(outer?4.7*edge:0);gravelPositions.push(p.x+n.x*turn*offset,-.074,p.z+n.z*turn*offset);gravelUV.push((outer?4.7*edge:0)/2,i);}
       if(i<64){const k=base+i*2;gravelIndices.push(k,k+1,k+2,k+1,k+3,k+2);}
     }

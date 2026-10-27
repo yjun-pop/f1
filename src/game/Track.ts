@@ -7,6 +7,7 @@ import type {GraphicsTier} from './Graphics';
 import {connectKerbSegments,createKerbContacts,createKerbGeometry,kerbPaintMap,type KerbContactSegment} from './KerbGeometry';
 import {createWoodland,landscapeShade} from './NaturalScenery';
 import {createRoadDressing} from './RoadDressing';
+import {VisualRoadCurve} from './VisualRoadCurve';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name='MONZA';readonly country='ITALY';readonly cornerCount=11;
@@ -18,6 +19,7 @@ export class Track {
   private kerbContacts:KerbContactSegment[][]=[];
   readonly details:CircuitDetails;
   private startBulbs:THREE.MeshStandardMaterial[]=[];
+  private visualRoad:VisualRoadCurve;
   constructor(scene:THREE.Scene){
     let raw=MONZA_POINTS.map(([x,z])=>new THREE.Vector3(x,0,z));
     // Long sparse source segments must remain straight. Densification prevents
@@ -35,6 +37,7 @@ export class Track {
     this.curve.arcLengthDivisions=24000;this.curve.updateArcLengths();
     const scale=MONZA_LENGTH/this.curve.getLength();for(const p of points)p.multiplyScalar(scale);
     this.curve.updateArcLengths();this.length=this.curve.getLength();
+    this.visualRoad=new VisualRoadCurve(this.length,t=>this.point(t));
     this.sampleCount=Math.ceil(this.length/2);
     this.samples=Array.from({length:this.sampleCount},(_,i)=>this.point(i/this.sampleCount));
     this.bounds.setFromPoints(this.samples);
@@ -50,9 +53,8 @@ export class Track {
   point(t:number){return this.curve.getPointAt(((t%1)+1)%1);}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
-  // Average small source-line kinks for the visible road edge only. AI/path
-  // normals and the physical centreline retain their existing definitions.
-  roadNormal(t:number){const v=this.point(t+12/this.length).sub(this.point(t-12/this.length)).normalize();return new THREE.Vector3(-v.z,0,v.x);}
+  roadPoint(t:number){return this.visualRoad.point(t);}
+  roadNormal(t:number){return this.visualRoad.normal(t);}
   kerbContact(position:THREE.Vector3,heading:number,progress:number){
     let contact=0;
     for(const axle of [-1.8,1.8])for(const side of [-1,1]){
@@ -81,9 +83,9 @@ export class Track {
     }return best;
   }
   private buildRoad(){
-    const count=Math.ceil(this.length/2.5),positions:number[]=[],uvs:number[]=[],indices:number[]=[],colors:number[]=[];
+    const count=Math.ceil(this.length),positions:number[]=[],uvs:number[]=[],indices:number[]=[],colors:number[]=[];
     for(let i=0;i<=count;i++){
-      const t=i/count,p=this.point(t),n=this.roadNormal(t);
+      const t=i/count,p=this.roadPoint(t),n=this.roadNormal(t);
       for(const side of [-1,-.55,0,.55,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH),shade=(.85+Math.abs(side)*.13)*landscapeShade(q.x*.6,q.z*.6);positions.push(q.x,.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);colors.push(shade,shade,shade);}
       if(i<count)for(let cross=0;cross<4;cross++){const k=i*5+cross;indices.push(k,k+1,k+5,k+1,k+6,k+5);}
     }
@@ -91,7 +93,7 @@ export class Track {
     const road=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({...surfaceMaps('asphalt'),color:0xb9bfc4,vertexColors:true,side:THREE.DoubleSide,roughness:.94,metalness:0,bumpScale:.012}));road.name='asphalt-road';
     road.receiveShadow=true;this.group.add(road);
     this.group.add(createRoadDressing(this));
-    for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>this.point(i/count).addScaledVector(this.roadNormal(i/count),side*9.6).setY(.07));this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
+    for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>this.roadPoint(i/count).addScaledVector(this.roadNormal(i/count),side*9.6).setY(.07));this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
     const start=new THREE.Group();start.position.copy(this.point(0));const t=this.tangent(0);start.rotation.y=Math.atan2(t.x,t.z);
     for(let row=0;row<2;row++)for(let col=0;col<20;col++){const tile=new THREE.Mesh(new THREE.BoxGeometry(1,.025,.7),new THREE.MeshBasicMaterial({color:(row+col)%2?0x14191f:0xfaf8f0}));tile.position.set(col-9.5,.1,row*.7);start.add(tile);}this.group.add(start);
     // Physical grid boxes, rather than floating markings on the main straight.
