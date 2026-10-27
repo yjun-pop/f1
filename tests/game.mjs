@@ -1565,3 +1565,71 @@ console.log('Twelve-car 90/85s replay',{gaps:twelveEliteGaps,offroad:twelveElite
 // The eleven-car fixture starts 180–320m back (the old five-car fixture
 // starts 180–236m back). Bound additional loss as well as absolute separation.
 assert.ok(twelveEliteGaps.every((gap,i)=>Math.abs(gap)<400&&gap<180+i*14+80),'The larger field must match the 90/85s pace without an unbounded trailing deficit');assert.ok(twelveEliteGaps.filter(gap=>Math.abs(gap)<150).length>=6);assert.ok(Math.min(...twelveEliteGaps.map(Math.abs))<35);assert.ok(twelveEliteOffroad.every(n=>n/trajectory.length<.005));
+
+// Timing is measured at shared physical gates, including acceleration and seams.
+{
+const {RaceTiming,formatInterval}=await import(moduleURL('RaceTiming'));
+const outcomes=[];
+for(const fps of [30,60,144]){
+ const clock=new RaceTiming(1000),at=t=>(10*t+2*t*t)/1000;let samples;
+ for(let i=0;i<=fps*6;i++){const t=i/fps;samples=[{id:'A',name:'NOVA',distance:at(t+1)},{id:'PLAYER',name:'PLAYER',distance:at(t)},{id:'B',name:'VECTOR',distance:at(t-1)}];clock.update(samples,t);}
+ const intervals=clock.neighbours(samples,'PLAYER',6);assert.ok(Math.abs(intervals.ahead.seconds-1)<.001);assert.ok(Math.abs(intervals.behind.seconds-1)<.001);assert.equal(formatInterval(intervals.ahead,true),'+1.00s');assert.equal(formatInterval(intervals.behind,false),'−1.00s');
+ assert.equal(clock.neighbours(samples,'PLAYER',9).ahead.seconds,null);
+ clock.reset();assert.equal(clock.neighbours(samples,'PLAYER',6).ahead.seconds,null);
+ outcomes.push({fps,intervals});
+}
+const seam=new RaceTiming(1000);let samples;
+for(let i=0;i<=180;i++){const t=i/60;samples=[{id:'A',name:'A',distance:.97+t*.05},{id:'PLAYER',name:'P',distance:.92+t*.05},{id:'B',name:'B',distance:.87+t*.05}];seam.update(samples,t);}
+const intervals=seam.neighbours(samples,'PLAYER',3);assert.equal(intervals.ahead.laps,0);assert.ok(Math.abs(intervals.ahead.seconds-1)<1e-6);assert.ok(Math.abs(intervals.behind.seconds-1)<1e-6);
+const jump=new RaceTiming(1000);jump.update([{id:'A',name:'A',distance:.01},{id:'PLAYER',name:'P',distance:0}],0);jump.update([{id:'A',name:'A',distance:.51},{id:'PLAYER',name:'P',distance:.5}],.01);assert.equal(jump.between({id:'A'},{id:'PLAYER'},.01),null);
+const leader=seam.neighbours([{id:'A',name:'A',distance:2.1},{id:'PLAYER',name:'P',distance:.05}], 'PLAYER',3);assert.equal(leader.ahead.laps,2);assert.equal(formatInterval(leader.ahead,true),'+2랩');
+console.log('PASS: actual passage-time gaps at 30/60/144fps, acceleration, signs, stale data, reset, lap seam and lapped cars');
+
+}
+
+{
+  const cornerMetres=planner.apices[5].progress*track.length;
+  const cornerRace=new FullGridRace(track,new THREE.Scene(),planner),cornerGhost=new Vehicle(track,new THREE.Scene());cornerGhost.position.set(1e6,0,1e6);
+  const a=cornerRace.opponents[0],b=cornerRace.opponents[1];a.pace=1.38;
+  function stageCorner(){cornerRace.reset();cornerRace.state='racing';cornerRace.elapsed=50;for(const [i,o] of cornerRace.opponents.entries())if(i>1){o.car.position.set(1e6+i*20,0,1e6);o.car.drive=()=>{};}}
+  for(const role of ['inside','cutback','defend']){
+    stageCorner();place(a.car,cornerMetres-170,0,60);a.lane=0;place(b.car,cornerMetres-170+(role==='defend'?-32:28),role==='cutback'?1:0,role==='defend'?63:59);
+    cornerRace.decide(a,cornerGhost);const plan=a.agent.corner.current;assert.equal(plan?.role,role);assert.ok(plan.opponent===b.car);
+    if(role==='inside'){assert.equal(plan.preview,.09);assert.ok(plan.laneAt(cornerMetres/track.length)>.8);}
+    if(role==='cutback'){assert.equal(plan.preview,.15);assert.ok(plan.laneAt((cornerMetres+22)/track.length)<-.7);}
+    if(role==='defend'){
+      const lane=plan.laneAt(cornerMetres/track.length);assert.ok(lane>.5);
+      place(b.car,cornerMetres-202,-2,63);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current.laneAt(cornerMetres/track.length),lane,'One corner defence must not weave in reaction to the attacker');
+      place(b.car,cornerMetres-175,2,63);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current,null,'An alongside car must cancel a new corner blocking move');
+    }
+  }
+  stageCorner();place(a.car,cornerMetres-120,0,65);a.lane=0;place(b.car,cornerMetres-85,0,64);cornerRace.decide(a,cornerGhost);const attackingBrake=a.control.brake;
+  a.agent.corner.cancel();cornerRace.decide(a,cornerGhost);assert.ok(attackingBrake<a.control.brake-.01,'The inside approach must actually defer some entry braking, rather than only changing its status label');
+  stageCorner();place(a.car,planner.apices[0].progress*track.length-150,0,65);a.lane=0;place(b.car,planner.apices[0].progress*track.length-120,0,64);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current,null,'The protected first chicane must not become a dive-bomb target');
+
+  stageCorner();place(a.car,cornerMetres-190,0,52);a.lane=0;place(b.car,cornerMetres-162,0,51);b.lane=0;
+  let peakInside=0,cornerExitFrames=0,cornerOffroad=0;
+  for(let i=0;i<120*18;i++){
+    cornerRace.update(1/120,cornerGhost);
+    for(const o of [a,b]){
+      cornerOffroad+=o.car.offRoad?1:0;const plan=o.agent.corner.current;
+      if(plan?.exiting)cornerExitFrames++;
+      if(plan?.role==='inside'&&Math.abs(o.car.distance*track.length-plan.apex)<15)peakInside=Math.max(peakInside,o.car.position.clone().sub(planner.point(o.car.progress)).dot(track.normal(o.car.progress)));
+    }
+  }
+  assert.ok(peakInside>.5&&peakInside<1.7,'The physical car must take a bounded inside trajectory');assert.ok(cornerExitFrames>60);assert.equal(cornerOffroad,0);assert.equal(a.collisionCount+b.collisionCount,0);
+  a.agent.onContact(b.car,3,cornerRace.elapsed);assert.equal(a.agent.corner.current,null);assert.ok(b.agent.corner!==a.agent.corner);cornerRace.reset();assert.equal(a.agent.corner.selections,0);
+  console.log('PASS: inside entry, actual later braking, stable defence, no late blocking, cutback choice, chicane protection and clean physical corner/exit',{peakInside,cornerExitSeconds:cornerExitFrames/120});
+}
+
+{
+  const timedRace=new FullGridRace(track,new THREE.Scene(),planner,{opponentCount:2}),timedPlayer=new Vehicle(track,new THREE.Scene());
+  const at=t=>(10*t+2*t*t)/track.length;
+  for(let i=0;i<=360;i++){const t=i/60;timedRace.timing.update([{id:'NOVA',name:'NOVA',distance:at(t+1)},{id:'PLAYER',name:'PLAYER',distance:at(t)},{id:'VECTOR',name:'VECTOR',distance:at(t-1)}],t);}
+  timedRace.state='racing';timedRace.elapsed=6;timedPlayer.distance=at(6);
+  timedRace.opponents.forEach((o,i)=>{o.car.distance=at(i===0?7:5);o.car.position.set(10000+i*100,0,10000);o.car.drive=()=>{};});timedRace.update(0,timedPlayer);
+  signalHUD.update(timedPlayer,timedRace,false,track,1);assert.equal(nodes.get('#gap-ahead-name').textContent,'NOVA');assert.equal(nodes.get('#gap-behind-name').textContent,'VECTOR');assert.equal(nodes.get('#gap-ahead').textContent,'+1.00s');assert.equal(nodes.get('#gap-behind').textContent,'−1.00s');
+  const frozenIntervals=timedRace.intervals;signalHUD.update(timedPlayer,timedRace,true,track,1);assert.deepEqual(timedRace.intervals,frozenIntervals,'Opening pause must freeze measured gaps');
+  timedRace.reset();signalHUD.update(timedPlayer,timedRace,false,track,1);assert.equal(nodes.get('#gap-ahead').textContent,'—');assert.equal(nodes.get('#gap-behind').textContent,'—');
+  console.log('PASS: real Race/HUD neighbour names, front/back signs, pause and restart timing state');
+}

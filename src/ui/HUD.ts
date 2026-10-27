@@ -3,6 +3,7 @@ import {Track} from '../game/Track';
 import {Race,formatTime} from '../game/Race';
 import {graphicsMode,type GraphicsMode,type GraphicsTier} from '../game/Graphics';
 import {DEFAULT_FIELD_SIZE} from '../game/RaceRoster';
+import {formatInterval} from '../game/RaceTiming';
 export class HUD {
   private root:HTMLElement;
   private map:CanvasRenderingContext2D;
@@ -14,7 +15,7 @@ export class HUD {
     this.root=root;
     root.innerHTML=`<header><div class="brand"><i>Λ</i> APEX<span>FORMULA</span><small>OPEN WHEEL RACING / 01</small></div><div class="session"><b>MONZA · ITALY</b><small>RACE · 3 LAPS · DRY · LATE AFTERNOON</small></div></header>
     <div class="rearview-frame" role="img" aria-label="차량 뒤쪽 실시간 백미러"><div id="rearview-viewport"></div><span>REAR VIEW</span></div>
-    <aside class="timing"><div class="eyebrow">RACE CLASSIFICATION</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>POSITION</small></span></div><div class="timingrow"><span>LAP</span><b id="lap">1 / 3</b></div><div class="timingrow"><span>CURRENT</span><b id="current"></b></div><div class="timingrow"><span>LAST</span><b id="last"></b></div><div class="timingrow best"><span>BEST</span><b id="best"></b></div></aside>
+    <aside class="timing"><div class="eyebrow">RACE CLASSIFICATION</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>POSITION</small></span></div><div class="intervals" aria-label="앞뒤 차량 시간 차"><div class="interval-row"><span>앞차 <b id="gap-ahead-name">—</b></span><strong id="gap-ahead">—</strong></div><div class="interval-row"><span>뒤차 <b id="gap-behind-name">—</b></span><strong id="gap-behind">—</strong></div></div><div class="timingrow"><span>LAP</span><b id="lap">1 / 3</b></div><div class="timingrow"><span>CURRENT</span><b id="current"></b></div><div class="timingrow"><span>LAST</span><b id="last"></b></div><div class="timingrow best"><span>BEST</span><b id="best"></b></div></aside>
     <div class="mapbox"><canvas id="map" width="240" height="190"></canvas><span>MONZA · ITALY · ${ (track.length/1000).toFixed(2) } KM</span></div>
 <div id="warning"></div><footer><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> 주행</span><span><kbd>C</kbd> 시점</span><span><kbd>G</kbd> 라인</span><span><kbd>R</kbd> 트랙 복귀</span><span><kbd>ESC</kbd> 일시정지</span><span id="audio-state"><kbd>M</kbd> 음소거</span><button id="camera">시점 변경</button><button id="restart">다시 시작</button></footer>
     <div class="overlay" id="overlay"><div class="intro"><div class="eyebrow">THE GRID IS YOURS</div><h1>CHASE THE<br><em>APEX.</em></h1><p>긴 직선과 11개 코너, 몬차 3랩 스프린트.<br>실제 GP 레이아웃에서 가속과 제동을 연습하세요.</p><div class="specs"><span><b id="driver-count">${DEFAULT_FIELD_SIZE}</b>DRIVERS</span><span><b>03</b>LAPS</span><span><b>320</b>KM/H MAX</span></div><button class="start" id="start">그리드 진입 <span>→</span></button><small>W / ↑ 가속 · S / ↓ 브레이크 · A D / ← → 조향 · SHIFT 부스트</small></div></div>
@@ -52,6 +53,9 @@ export class HUD {
     this.root.classList.toggle('cockpit-view',cameraMode===1);
     this.text('field-size',String(r.fieldSize).padStart(2,'0'));this.text('driver-count',String(r.fieldSize).padStart(2,'0'));
     this.text('position',String(r.position).padStart(2,'0'));this.text('lap',`${Math.min(v.lap,3)} / 3`);this.text('current',formatTime(r.lapTime));this.text('last',formatTime(r.lastLap));this.text('best',formatTime(r.best));
+    const intervals=r.intervals,active=r.state==='racing'||r.state==='finished';
+    this.text('gap-ahead-name',active?intervals.ahead?.name??'—':'—');this.text('gap-behind-name',active?intervals.behind?.name??'—':'—');
+    this.text('gap-ahead',formatInterval(intervals.ahead,true,active));this.text('gap-behind',formatInterval(intervals.behind,false,active));
     this.text('warning',paused?'':v.offRoad?'트랙 이탈 · 속도를 줄이세요':v.boosting?'ERS DEPLOYING': '');
     (this.root.querySelector('#overlay') as HTMLElement).hidden=r.state!=='ready'&&r.state!=='finished';
     if(r.state==='ready'){this.root.querySelector('.intro h1')!.innerHTML='CHASE THE<br><em>APEX.</em>';this.root.querySelector('.intro p')!.innerHTML='긴 직선과 11개 코너, 몬차 3랩 스프린트.<br>실제 GP 레이아웃에서 가속과 제동을 연습하세요.';this.root.querySelector('#start')!.innerHTML='그리드 진입 →';}
