@@ -6,13 +6,23 @@ import type {Vehicle} from './Vehicle';
 export class PackDirector {
   pace=1;active=false;
   private stopped=0;private cornerPace=.75;private lapPace=.75;
-  get referencePace(){return Math.max(this.pace,this.cornerPace,this.lapPace);}
+  private completedCorners:number[]=[];private completedPace=.75;
+  get referencePace(){return Math.max(this.pace,this.cornerPace,this.lapPace,this.completedPace>1.08?this.completedPace:.75);}
+  // Only demonstrated corner speeds above the guide raise the early skill
+  // estimate. Following conservative advice must not promote the whole field.
+  recordCorner(speed:number,reference:number){
+    if(!Number.isFinite(speed)||!Number.isFinite(reference)||speed<=8||reference<8)return;
+    this.completedCorners.push(THREE.MathUtils.clamp(speed/reference,.65,1.47));
+    if(this.completedCorners.length>12)this.completedCorners.shift();
+    const sorted=[...this.completedCorners].sort((a,b)=>a-b);
+    this.completedPace=sorted[Math.ceil((sorted.length-1)*.75)];
+  }
   recordLap(seconds:number,standing=false){
     if(!Number.isFinite(seconds)||seconds<=0)return;
     const flying=seconds-(standing?4:0);
     this.lapPace=seconds<94?THREE.MathUtils.clamp(1.3+(100-flying)*.012,.75,1.47):.75;
   }
-  reset(){this.pace=1;this.active=false;this.stopped=0;this.cornerPace=.75;this.lapPace=.75;}
+  reset(){this.pace=1;this.active=false;this.stopped=0;this.cornerPace=.75;this.lapPace=.75;this.completedCorners=[];this.completedPace=.75;}
   observe(player:Vehicle,referenceSpeed:number,onTrack:boolean,dt:number){
     if(!onTrack){this.active=false;return;}
     this.stopped=player.speed<5?this.stopped+dt:0;
@@ -44,7 +54,10 @@ export class PackDirector {
     const regroup=behind?.008*THREE.MathUtils.smoothstep(-gap,120,350):-.035*THREE.MathUtils.smoothstep(gap,100,350);
     const character=THREE.MathUtils.clamp((basePace-1.42)*.1,-.006,.006);
     const skill=THREE.MathUtils.clamp(neighbour-rankPenalty+pressure+regroup,-.1,.032);
-    const pace=THREE.MathUtils.clamp(this.referencePace*(1+skill)+character,.65,1.47);
+    // Near the front, completed corner ability matters more than the lower
+    // normalized straight speed. Lower ranks keep the gentler overall match.
+    const reference=Math.max(this.referencePace,THREE.MathUtils.lerp(.75,this.completedPace,tier));
+    const pace=THREE.MathUtils.clamp(reference*(1+skill)+character,.65,1.47);
     // Tiny assistance is reserved for distant trailing cars. Race also checks
     // physical visibility and removes it while the player is using ERS.
     const hidden=behind?THREE.MathUtils.smoothstep(-gap,180,350):0;

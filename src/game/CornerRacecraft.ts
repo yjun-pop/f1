@@ -18,7 +18,7 @@ export class CornerRacecraft {
   private commitment?:Commitment;private blockedApex=-Infinity;
   current:CornerPlan|null=null;
   selections=0;
-  constructor(private track:Track,private planner:LinePlanner,narrow:readonly {entry:number;exit:number}[]){
+  constructor(private track:Track,planner:LinePlanner,narrow:readonly {entry:number;exit:number}[],private path:Pick<LinePlanner,'point'>=planner){
     this.corners=planner.apices.filter(a=>!narrow.some(n=>a.progress*track.length>=n.entry-1&&a.progress*track.length<=n.exit+1));
   }
   reset(){this.commitment=undefined;this.current=null;this.blockedApex=-Infinity;this.selections=0;}
@@ -28,10 +28,10 @@ export class CornerRacecraft {
     const enter=role==='cutback'?THREE.MathUtils.smoothstep(metres,-35,22):THREE.MathUtils.smoothstep(metres,role==='defend'?-220:-180,-40);
     return enter*(1-THREE.MathUtils.smoothstep(metres,18,110));
   }
-  update(driver:Omit<Rival,'agent'>,traffic:readonly TrafficSample[],enabled:boolean,elite:boolean):CornerPlan|null{
+  update(driver:Omit<Rival,'agent'>,traffic:readonly TrafficSample[],enabled:boolean,elite:boolean,preferExit=false):CornerPlan|null{
     const car=driver.car,length=this.track.length,metres=car.distance*length;
     const gap=(other:TrafficSample)=>{let t=other.progress-car.progress;if(t<-.5)t++;if(t>.5)t--;return t*length;};
-    const bias=(other:Pick<Vehicle,'position'|'progress'>)=>other.position.clone().sub(this.planner.point(other.progress)).dot(this.track.normal(other.progress));
+    const bias=(other:Pick<Vehicle,'position'|'progress'>)=>other.position.clone().sub(this.path.point(other.progress)).dot(this.track.normal(other.progress));
     if(!enabled||car.offRoad){this.cancel();return null;}
     if(this.commitment){
       const target=traffic.find(t=>t.car===this.commitment!.opponent);
@@ -45,13 +45,13 @@ export class CornerRacecraft {
       const ahead=nearby.filter(t=>gap(t)>16&&gap(t)<48&&car.speed-t.speed>-.5).sort((a,b)=>gap(a)-gap(b))[0];
       const behind=nearby.filter(t=>gap(t)<-18&&gap(t)>-42&&t.speed-car.speed>.5).sort((a,b)=>gap(b)-gap(a))[0];
       let role:CornerRole,opponent:TrafficSample;
-      if(ahead&&driver.aggression-driver.avoidance*.3>.45){role=bias(ahead)*corner.direction>.5?'cutback':'inside';opponent=ahead;}
+      if(ahead&&driver.aggression-driver.avoidance*.3>.45){role=preferExit||bias(ahead)*corner.direction>.5?'cutback':'inside';opponent=ahead;}
       else if(behind&&driver.aggression-driver.avoidance*.35>.5){role='defend';opponent=behind;}
       else return this.current=null;
       let amplitude=elite?0:corner.direction*(role==='cutback'?-.95:role==='defend'?.85:1.15);
       // Do not add clipping to the already calibrated road-edge trajectory.
       for(const offset of [-220,-180,-140,-100,-60,-35,0,22,50,80,110]){
-        const t=(corner.apex+offset)/length,base=this.planner.point(t).sub(this.track.point(t)).dot(this.track.normal(t));
+        const t=(corner.apex+offset)/length,base=this.path.point(t).sub(this.track.point(t)).dot(this.track.normal(t));
         if(Math.abs(base+amplitude*this.weight(role,offset))>Math.max(7.2,Math.abs(base))+.01){amplitude=0;break;}
       }
       this.commitment={role,opponent:opponent.car,apex:corner.apex,amplitude,elite};this.selections++;

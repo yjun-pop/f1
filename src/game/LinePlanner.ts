@@ -17,12 +17,13 @@ export class LinePlanner {
   readonly distances:Float64Array;
   private pathLengths:Float64Array;
   private curvatures:Float64Array;
-  constructor(private track:Track){
+  constructor(private track:Track,options:{halfWidth?:number}={}){
     this.count=Math.ceil(track.length/4);this.offsets=new Float64Array(this.count);this.speeds=new Float64Array(this.count);this.cornerSpeeds=new Float64Array(this.count);this.distances=new Float64Array(this.count);this.pathLengths=new Float64Array(this.count+1);this.curvatures=new Float64Array(this.count);
     const centers=Array.from({length:this.count},(_,i)=>track.point(i/this.count));
     const normals=centers.map((_,i)=>track.normal(i/this.count));
     const apexWidths:number[]=[];
-    const lower=new Float64Array(this.count).fill(-ROAD_HALF_WIDTH+2.2),upper=new Float64Array(this.count).fill(ROAD_HALF_WIDTH-2.2);
+    const halfWidth=options.halfWidth??ROAD_HALF_WIDTH-2.2;
+    const lower=new Float64Array(this.count).fill(-halfWidth),upper=new Float64Array(this.count).fill(halfWidth);
     // Signed heading changes distinguish inside from outside. Join small
     // straight gaps in polygonal source data, but never merge opposite turns.
     const angles=centers.map((_,i)=>{

@@ -406,7 +406,7 @@ for(let step=0;step<120*330;step++){
 }
 assert.equal(calibratedLaps.length,3,'The calibrated AI must complete three actual physical laps');
 assert.ok(calibratedLaps[0]<105,'Equal-power AI must complete a competitive standing lap');
-assert.ok(calibratedLaps.slice(1).every(time=>time>=88&&time<=96),'Equal-power flying laps must remain competitive and consistent');
+assert.ok(calibratedLaps.slice(1).every(time=>time>=80&&time<88),'Physical corner plans must beat the previous 90.65s baseline with the same engine');
 assert.equal(skilledOffroad,0,'The calibrated laps must remain on asphalt');
 console.log('PASS: equal-power AI over three clean physical laps',calibratedLaps.map(t=>t.toFixed(2)));
 // A higher skill setting must improve real lap time rather than switching to
@@ -425,6 +425,38 @@ for(const pace of [1.38,1.47]){
 }
 assert.ok(skillLaps[0]>calibratedLaps[1]+.5&&skillLaps[1]<calibratedLaps[1]+.5,'Increasing corner skill must not make the AI slower');
 console.log('PASS: monotonic physical skill without stronger engines',{pace138:skillLaps[0],pace146:calibratedLaps[1],pace147:skillLaps[1]});
+// Human advice may be conservative or be retuned without imposing a hidden
+// speed limit on an expert AI. Geometry and available grip bound the plan.
+const {AISpeedPlanner}=await import(moduleURL('AISpeedPlanner'));
+const changedAdvice=Object.assign(Object.create(Object.getPrototypeOf(planner)),planner,{cornerSpeeds:new Float64Array(planner.count).fill(12),speeds:new Float64Array(planner.count).fill(12)});
+const physicalPlan=new AISpeedPlanner(track),independentPlan=new AISpeedPlanner(track);
+for(const [i,p] of physicalPlan.points.entries()){
+  assert.ok(Math.abs(p.clone().sub(track.point(i/planner.count)).dot(track.normal(i/planner.count)))<=7.20001,'The independent AI path must preserve whole-car road clearance');
+}
+assert.ok(physicalPlan.point(0).distanceTo(physicalPlan.point(1))<1e-9);
+let liberatedCorners=0;
+for(const apex of planner.apices)if(physicalPlan.cornerLimit(apex.progress,1.47,1.4)>planner.cornerLimit(apex.progress)*1.47+2)liberatedCorners++;
+assert.ok(liberatedCorners>=3,'Fast bends must no longer use a capped linear multiple of human corner advice');
+for(let metres=0;metres<track.length;metres+=7){
+  const t=metres/track.length,speed=physicalPlan.speed(t,1.47,1.4),k=physicalPlan.curvature(t);
+  assert.equal(speed,independentPlan.speed(t,1.47,1.4));assert.ok(speed>0&&speed<=94);
+  assert.ok(speed*speed*k<=(HANDLING.baseGrip+HANDLING.downforce*speed*speed)*1.4*.96*.94+.05,'Targets must remain inside actual lateral tire capacity');
+}
+assert.equal(physicalPlan.speed(0,1.47,1.4),physicalPlan.speed(1,1.47,1.4));
+const adviceRaces=[planner,changedAdvice].map(line=>{
+  const race=new FullGridRace(track,new THREE.Scene(),line,{opponentCount:1}),ghost=new Vehicle(track,new THREE.Scene());ghost.position.set(1e6,0,1e6);const o=race.opponents[0];o.racePace=1.47;race.state='racing';race.balanceRivals=()=>{race.position=1;o.rank=2;};return {race,ghost,o};
+});
+let completedAdviceCheck=false;
+for(let step=0;step<120*100;step++){
+  adviceRaces.forEach(({race,ghost})=>race.update(1/120,ghost));
+  const [a,b]=adviceRaces.map(({o})=>o.car);
+  assert.ok(Math.abs(a.speed-b.speed)<1e-7&&a.position.distanceTo(b.position)<1e-7,'Changing only the guide must not slow the expert controller');
+  assert.equal(a.offRoad,false);assert.equal(b.offRoad,false);
+  if(a.distance>=1&&b.distance>=1){completedAdviceCheck=true;break;}
+}
+assert.ok(completedAdviceCheck);
+console.log('PASS: independent physical corner targets, available tire capacity, lap seam and actual full-lap immunity to slower human advice',{liberatedCorners});
+
 
 
 // On a straight, drive around a slower physical vehicle instead of queuing
@@ -586,10 +618,11 @@ console.log('PASS: equal production engine output, stock player physics and gene
 const sideRace=new Race(track,new THREE.Scene(),planner),sidePlayer=new Vehicle(track,new THREE.Scene());
 sideRace.opponents.splice(1);const sideRival=sideRace.opponents[0],sideProgress=400/track.length;
 const offset=planner.point(sideProgress).sub(track.point(sideProgress)).dot(track.normal(sideProgress));
-sideRival.car.resetAt(sideProgress,offset+6);sideRival.car.speed=30;sideRival.lane=6;
+sideRival.car.resetAt(sideProgress,offset+6);sideRival.car.speed=30;
+const heldLane=sideRival.car.position.clone().sub(sideRace.speedPlanner.point(sideProgress)).dot(track.normal(sideProgress));sideRival.lane=heldLane;
 sidePlayer.resetAt(sideProgress,offset+2.5);sidePlayer.speed=30;
 sideRace.elapsed=10;sideRace.decide(sideRival,sidePlayer);
-assert.ok(Math.abs(sideRival.lane-6)<.001,'AI must hold its corridor when a merge would cross an alongside vehicle');
+assert.ok(Math.abs(sideRival.lane-heldLane)<.001,'AI must hold its corridor when a merge would cross an alongside vehicle');
 console.log('PASS: AI checks the full merge corridor before returning to the racing line');
 
 
@@ -849,6 +882,33 @@ console.log('PASS: five independent driver agents, individual reaction clocks, s
 // normalized pace, so braking at a corner does not park the other cars.
 const {PackDirector}=await import(moduleURL('PackDirector'));
 const director=new PackDirector(),paceCar=new Vehicle(track,new THREE.Scene());paceCar.speed=60;
+const {CornerPaceObserver}=await import(moduleURL('CornerPaceObserver'));
+function cornerObservation(mode='clean'){
+  const observer=new CornerPaceObserver(track,planner),entry=planner.apices[0].progress*track.length-180,exit=planner.apices[1].progress*track.length+80;
+  const fake={distance:0,progress:0,speed:70,lateralSpeed:0,lateralAcceleration:20,offRoad:false};let observed=null;
+  const start=mode==='partial'?entry+60:entry-2;
+  for(let metres=start;metres<=exit+4;metres+=2){
+    fake.distance=fake.progress=metres/track.length;fake.speed=metres>entry+120&&metres<exit-30?24:70;
+    if(mode==='teleport'&&metres>entry+80&&metres<entry+83)fake.distance=fake.progress=(metres+16)/track.length;
+    fake.offRoad=mode==='grass'&&metres>entry+80&&metres<entry+86;
+    fake.lateralSpeed=mode==='spin'&&metres>entry+80&&metres<entry+86?15:0;
+    fake.lateralAcceleration=mode==='telemetry-only'?0:20;
+    if(mode==='stop'&&metres>entry+80&&metres<entry+86)fake.speed=0;
+    const result=observer.sample(fake,2/Math.max(1,fake.speed));if(result)observed=result;
+    if(mode==='reset'&&metres>entry+120&&metres<entry+123)observer.reset();
+  }
+  return observed;
+}
+const cleanCorner=cornerObservation();assert.ok(cleanCorner&&cleanCorner.speed===24,'Learn the completed corner minimum, not its 70m/s approach');
+for(const mode of ['partial','grass','spin','stop','teleport','telemetry-only','reset'])assert.equal(cornerObservation(mode),null,'Invalid or incomplete passages must not teach a faster pace: '+mode);
+const cornerLearner=new PackDirector();cornerLearner.recordCorner(26,18);assert.ok(cornerLearner.referencePace>1.4,'A fast completed corner must be recognized before the first lap ends');
+for(let i=0;i<12;i++)cornerLearner.recordCorner(16,20);assert.equal(cornerLearner.referencePace,1,'Old fast corners must expire rather than permanently raise difficulty');
+cornerLearner.recordCorner(Infinity,18);assert.equal(cornerLearner.referencePace,1);cornerLearner.recordCorner(26,18);cornerLearner.reset();assert.equal(cornerLearner.referencePace,1);
+const contextualCorner=new PackDirector();contextualCorner.pace=.8;contextualCorner.recordCorner(20,20);
+assert.ok(contextualCorner.targets(-20,2,1,1.42,1,12).pace>1,'A leader must face challengers that recognize completed corner ability');
+assert.ok(contextualCorner.targets(20,11,12,1.42,0,12).pace<.81,'Conservative guide following must not promote the entire field around a low-ranked player');
+console.log('PASS: completed-corner pace learning, rejected overspeed approaches/grass/spins/stops/partial passages, bounded history and reset');
+
 for(let i=0;i<120*10;i++)director.observe(paceCar,60,true,1/120);
 assert.ok(director.active);assert.ok(Math.abs(director.pace-1)<1e-9);
 for(const playerRank of [1,3,6,9,12]){
@@ -914,7 +974,7 @@ closeRace.reset();assert.ok(closeRace.opponents.every(o=>o.racePace===undefined)
 
 // Leading-player pressure is earned through driving, not a speed advantage.
 for(const driverPace of [1,1.1]){
-  const leaderRace=new Race(track,new THREE.Scene(),planner),leaderPlayer=new Vehicle(track,new THREE.Scene());
+  const leaderRace=new FullGridRace(track,new THREE.Scene(),planner),leaderPlayer=new Vehicle(track,new THREE.Scene());
   leaderPlayer.resetAt(200/track.length);leaderRace.state='racing';
   let firstChallenge=Infinity,wasLeading=true,pressureFrames=0,leadingFrames=0;
   for(let step=0;step<120*180;step++){
@@ -936,7 +996,7 @@ for(const driverPace of [1,1.1]){
     if(wasLeading&&leaderRace.position>1)firstChallenge=Math.min(firstChallenge,step/120);
     wasLeading=leaderRace.position===1;
   }
-  assert.ok(firstChallenge<70,'A player with a 137–185m head start must face a physical overtake attempt within 70 seconds');
+  assert.ok(firstChallenge<70,'A nearby leader in the production twelve-car field must face a physical overtake attempt within 70 seconds');
   assert.ok(pressureFrames/Math.max(1,leadingFrames)>.6,'A leading stock player must generally have a challenger within 25m');
   assert.ok(leaderRace.opponents.filter(o=>Math.abs(o.car.distance-leaderPlayer.distance)*track.length<150).length>=2,'The nearest challengers must sustain a fair contest without forcing every car into a fixed pack');
   assert.equal(leaderPlayer.gripScale,1);assert.equal(leaderPlayer.powerScale,1);assert.equal(leaderPlayer.raceSpeedCap,undefined);
@@ -971,7 +1031,7 @@ for(let step=0;step<120*320;step++){
   if(c.distance>=referenceCrossed+1){const time=(step+1)/120;referenceLaps.push(time-previousCrossing);previousCrossing=time;referenceCrossed++;if(referenceCrossed===3)break;}
 }
 assert.equal(referenceLaps.length,3);assert.ok(referenceLaps[0]<105);
-assert.ok(referenceLaps.slice(1).every(lap=>lap>=88&&lap<96));assert.equal(referenceOffroad,0);
+assert.ok(referenceLaps.slice(1).every(lap=>lap>=80&&lap<88));assert.equal(referenceOffroad,0);
 const eliteResults=[];
 for(const initial of ['grid','180m-deficit']){
   const eliteRace=new Race(track,new THREE.Scene(),planner),recordedPlayer=new Vehicle(track,new THREE.Scene());eliteRace.state='racing';
@@ -1613,34 +1673,43 @@ console.log('PASS: actual passage-time gaps at 30/60/144fps, acceleration, signs
 {
   const cornerMetres=planner.apices[5].progress*track.length;
   const cornerRace=new FullGridRace(track,new THREE.Scene(),planner),cornerGhost=new Vehicle(track,new THREE.Scene());cornerGhost.position.set(1e6,0,1e6);
-  const a=cornerRace.opponents[0],b=cornerRace.opponents[1];a.pace=1.38;
+  const a=cornerRace.opponents[0],b=cornerRace.opponents[1];a.pace=1.30;
+  const cornerPlace=(car,metres,bias,speed)=>{
+    const t=metres/track.length,offset=cornerRace.speedPlanner.point(t).sub(track.point(t)).dot(track.normal(t));car.resetAt(t,offset+bias);car.speed=speed;
+  };
   function stageCorner(){cornerRace.reset();cornerRace.state='racing';cornerRace.elapsed=50;for(const [i,o] of cornerRace.opponents.entries())if(i>1){o.car.position.set(1e6+i*20,0,1e6);o.car.drive=()=>{};}}
   for(const role of ['inside','cutback','defend']){
-    stageCorner();place(a.car,cornerMetres-170,0,60);a.lane=0;place(b.car,cornerMetres-170+(role==='defend'?-32:28),role==='cutback'?1:0,role==='defend'?63:59);
+    stageCorner();cornerPlace(a.car,cornerMetres-170,0,60);a.lane=0;cornerPlace(b.car,cornerMetres-170+(role==='defend'?-32:28),role==='cutback'?1:0,role==='defend'?63:59);
     cornerRace.decide(a,cornerGhost);const plan=a.agent.corner.current;assert.equal(plan?.role,role);assert.ok(plan.opponent===b.car);
     if(role==='inside'){assert.equal(plan.preview,.09);assert.ok(plan.laneAt(cornerMetres/track.length)>.8);}
     if(role==='cutback'){assert.equal(plan.preview,.15);assert.ok(plan.laneAt((cornerMetres+22)/track.length)<-.7);}
     if(role==='defend'){
       const lane=plan.laneAt(cornerMetres/track.length);assert.ok(lane>.5);
-      place(b.car,cornerMetres-202,-2,63);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current.laneAt(cornerMetres/track.length),lane,'One corner defence must not weave in reaction to the attacker');
-      place(b.car,cornerMetres-175,2,63);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current,null,'An alongside car must cancel a new corner blocking move');
+      cornerPlace(b.car,cornerMetres-202,-2,63);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current.laneAt(cornerMetres/track.length),lane,'One corner defence must not weave in reaction to the attacker');
+      cornerPlace(b.car,cornerMetres-175,2,63);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current,null,'An alongside car must cancel a new corner blocking move');
     }
   }
-  stageCorner();place(a.car,cornerMetres-120,0,65);a.lane=0;place(b.car,cornerMetres-85,0,64);cornerRace.decide(a,cornerGhost);const attackingBrake=a.control.brake;
+  stageCorner();cornerPlace(a.car,cornerMetres-120,0,65);a.lane=0;cornerPlace(b.car,cornerMetres-85,0,64);cornerRace.decide(a,cornerGhost);const attackingBrake=a.control.brake;
   a.agent.corner.cancel();cornerRace.decide(a,cornerGhost);assert.ok(attackingBrake<a.control.brake-.01,'The inside approach must actually defer some entry braking, rather than only changing its status label');
-  stageCorner();place(a.car,planner.apices[0].progress*track.length-150,0,65);a.lane=0;place(b.car,planner.apices[0].progress*track.length-120,0,64);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current,null,'The protected first chicane must not become a dive-bomb target');
+  stageCorner();cornerPlace(a.car,planner.apices[0].progress*track.length-150,0,65);a.lane=0;cornerPlace(b.car,planner.apices[0].progress*track.length-120,0,64);cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current,null,'The protected first chicane must not become a dive-bomb target');
 
-  stageCorner();place(a.car,cornerMetres-190,0,52);a.lane=0;place(b.car,cornerMetres-162,0,51);b.lane=0;
+  stageCorner();cornerPlace(a.car,cornerMetres-190,0,52);a.lane=0;cornerPlace(b.car,cornerMetres-162,0,51);b.lane=0;
   let peakInside=0,cornerExitFrames=0,cornerOffroad=0;
   for(let i=0;i<120*18;i++){
     cornerRace.update(1/120,cornerGhost);
     for(const o of [a,b]){
       cornerOffroad+=o.car.offRoad?1:0;const plan=o.agent.corner.current;
       if(plan?.exiting)cornerExitFrames++;
-      if(plan?.role==='inside'&&Math.abs(o.car.distance*track.length-plan.apex)<15)peakInside=Math.max(peakInside,o.car.position.clone().sub(planner.point(o.car.progress)).dot(track.normal(o.car.progress)));
+      if(plan?.role==='inside'&&Math.abs(o.car.distance*track.length-plan.apex)<15)peakInside=Math.max(peakInside,o.car.position.clone().sub(cornerRace.speedPlanner.point(o.car.progress)).dot(track.normal(o.car.progress)));
     }
   }
   assert.ok(peakInside>.5&&peakInside<1.7,'The physical car must take a bounded inside trajectory');assert.ok(cornerExitFrames>60);assert.equal(cornerOffroad,0);assert.equal(a.collisionCount+b.collisionCount,0);
+  stageCorner();a.pace=b.pace=a.racePace=b.racePace=1.47;
+  cornerPlace(a.car,cornerMetres-190,0,52);a.lane=0;cornerPlace(b.car,cornerMetres-162,0,51);b.lane=0;
+  cornerRace.decide(a,cornerGhost);assert.equal(a.agent.corner.current?.role,'cutback','A fast driver using most of its tire capacity must choose a clean exit attack instead of an infeasible tighter apex');
+  let fastCornerOffroad=0;
+  for(let i=0;i<120*18;i++){cornerRace.update(1/120,cornerGhost);fastCornerOffroad+=[a,b].filter(o=>o.car.offRoad).length;}
+  assert.equal(fastCornerOffroad,0);assert.equal(a.collisionCount+b.collisionCount,0);
   a.agent.onContact(b.car,3,cornerRace.elapsed);assert.equal(a.agent.corner.current,null);assert.ok(b.agent.corner!==a.agent.corner);cornerRace.reset();assert.equal(a.agent.corner.selections,0);
   console.log('PASS: inside entry, actual later braking, stable defence, no late blocking, cutback choice, chicane protection and clean physical corner/exit',{peakInside,cornerExitSeconds:cornerExitFrames/120});
 }

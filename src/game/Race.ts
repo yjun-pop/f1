@@ -8,6 +8,8 @@ import {PackDirector} from './PackDirector';
 import {StartSequence,type StartSignal} from './StartSequence';
 import {DEFAULT_FIELD_SIZE,DRIVER_PROFILES} from './RaceRoster';
 import {RaceTiming} from './RaceTiming';
+import {AISpeedPlanner} from './AISpeedPlanner';
+import {CornerPaceObserver} from './CornerPaceObserver';
 export interface Rival {
   agent:DriverAgent;car:Vehicle;distance:number;speed:number;name:string;
   personality:string;caution:number;launch:number;collisionScore:number;collisionCount:number;avoidance:number;
@@ -20,6 +22,8 @@ export class Race {
   readonly startSequence=new StartSequence();
   get startSignal():StartSignal {return this.state==='countdown'||this.state==='racing'&&this.elapsed<.85?this.startSequence.signal:{run:this.startSequence.signal.run,phase:'idle',lights:0};}
   private aiSpeeds:Float64Array;
+  private speedPlanner:AISpeedPlanner;
+  private cornerObserver:CornerPaceObserver;
   private contacts=new Map<string,number>();
   private pack=new PackDirector();
   private lapStart=0;private completed=0;private storageKey:string;
@@ -42,15 +46,18 @@ export class Race {
         this.aiSpeeds[next]=Math.min(this.aiSpeeds[next],Math.sqrt(speed*speed+2*acceleration*planner.distances[i]));
       }
     }
+    this.speedPlanner=new AISpeedPlanner(track);
+    this.cornerObserver=new CornerPaceObserver(track,planner);
     this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
     const profiles=DRIVER_PROFILES.slice(0,Math.max(1,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
-    profiles.forEach((p,i)=>{const driver:Omit<Rival,'agent'>={...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1}),distance:0,speed:0,collisionScore:0,collisionCount:0,avoidance:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}};const rival=Object.assign(driver,{agent:new DriverAgent(driver,track,planner,this.aiSpeeds)});this.opponents.push(rival);});this.reset();
+    profiles.forEach((p,i)=>{const driver:Omit<Rival,'agent'>={...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1}),distance:0,speed:0,collisionScore:0,collisionCount:0,avoidance:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}};const rival=Object.assign(driver,{agent:new DriverAgent(driver,track,planner,this.aiSpeeds,this.speedPlanner)});this.opponents.push(rival);});this.reset();
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
-  reset(){this.contacts.clear();this.pack.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
-    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceGripAssist=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
+  reset(){this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
+    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.speedPlanner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceGripAssist=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready'){this.startSequence.arm();this.countdown=this.startSequence.remaining;this.state='countdown';}}
   private balanceRivals(player:Vehicle,dt:number){
+    const corner=this.cornerObserver.sample(player,dt);if(corner)this.pack.recordCorner(corner.speed,corner.reference);
     const sample=((player.progress%1+1)%1)*this.aiSpeeds.length,index=Math.floor(sample);
     const referenceSpeed=THREE.MathUtils.lerp(this.aiSpeeds[index],this.aiSpeeds[(index+1)%this.aiSpeeds.length],sample-index);
     this.pack.observe(player,referenceSpeed,player.position.distanceToSquared(this.track.point(player.progress))<18*18,dt);
@@ -91,11 +98,11 @@ export class Race {
   }
   private agentFor(o:Rival){
     // Also support test/reference drivers and dynamically added vehicles.
-    if(!o.agent||o.agent.driver!==o)o.agent=new DriverAgent(o,this.track,this.planner,this.aiSpeeds);
+    if(!o.agent||o.agent.driver!==o)o.agent=new DriverAgent(o,this.track,this.planner,this.aiSpeeds,this.speedPlanner);
     return o.agent;
   }
   private decide(o:Rival,player:Vehicle,traffic=observeTraffic([player,...this.opponents.map(other=>other.car)])){
-    this.agentFor(o).think({elapsed:this.elapsed,playerPosition:this.position,traffic});
+    this.agentFor(o).think({elapsed:this.elapsed,playerPosition:this.position,fieldSize:this.fieldSize,traffic});
   }
   private scoreContact(a:Vehicle,b:Vehicle,key:string,impact:number){
     const previous=this.contacts.get(key);this.contacts.set(key,this.elapsed);
