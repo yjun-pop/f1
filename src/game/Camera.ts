@@ -65,7 +65,6 @@ export class CockpitCamera {
     ctx.textAlign='center';ctx.fillStyle='#eaffef';ctx.font='bold 115px monospace';ctx.fillText(String(engine.gear),192,148);
     ctx.fillStyle='#a6b4bd';ctx.font='18px monospace';ctx.fillText('GEAR',192,178);
     ctx.fillStyle='#fff';ctx.font='bold 34px monospace';ctx.fillText(String(v.kmh).padStart(3,'0'),320,98);ctx.font='14px monospace';ctx.fillText('KM/H',320,122);
-    ctx.fillStyle='#fff';ctx.font='bold 28px monospace';ctx.fillText(String(Math.round(engine.rpm)),320,164);ctx.fillStyle='#a6b4bd';ctx.font='14px monospace';ctx.fillText('RPM',320,184);
     ctx.strokeStyle='#e9ed43';ctx.lineWidth=10;ctx.beginPath();ctx.arc(65,98,39,.6*Math.PI,(.6+v.boost/100*1.8)*Math.PI);ctx.stroke();ctx.font='bold 23px monospace';ctx.fillStyle='#e9ed43';ctx.fillText(`${Math.round(v.boost)}%`,65,108);
     ctx.fillStyle='#607d84';ctx.fillRect(22,208,340,5);ctx.fillStyle=v.boosting?'#ffc141':'#5dffb3';ctx.fillRect(22,208,v.boost*3.4,5);ctx.font='16px monospace';ctx.fillStyle='#c5d3d6';ctx.fillText('ERS   /   APEX RACING',192,244);this.displayTexture.needsUpdate=true;
   }
