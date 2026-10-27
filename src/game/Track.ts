@@ -12,6 +12,7 @@ import {createTrackChunks,freezeStaticWorld} from './TrackChunks';
 import {GRAPHICS_PROFILES} from './Graphics';
 import {BarrierPath,createBarriers} from './BarrierGeometry';
 import {createGrandstands,updateGrandstands} from './Grandstands';
+import {DEFAULT_FIELD_SIZE} from './RaceRoster';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name='MONZA';readonly country='ITALY';readonly cornerCount=11;
@@ -117,7 +118,7 @@ export class Track {
     for(let row=0;row<2;row++)for(let col=0;col<20;col++){const tile=new THREE.Mesh(new THREE.BoxGeometry(1,.025,.7),new THREE.MeshBasicMaterial({color:(row+col)%2?0x14191f:0xfaf8f0}));tile.position.set(col-9.5,.1,row*.7);start.add(tile);}this.group.add(start);
     // Physical grid boxes, rather than floating markings on the main straight.
     const lineMaterial=new THREE.LineBasicMaterial({color:0xc5cecf});
-    for(let i=0;i<12;i++){const t=(i*8+14)/this.length,p=this.point(t),n=this.normal(t),f=this.tangent(t),side=i%2?1:-1;p.addScaledVector(n,side*3.3).setY(.08);const vertices=[p.clone().addScaledVector(n,-1.3).addScaledVector(f,-2.4),p.clone().addScaledVector(n,1.3).addScaledVector(f,-2.4),p.clone().addScaledVector(n,1.3).addScaledVector(f,2.4)];this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(vertices),lineMaterial));}
+    for(let i=0;i<DEFAULT_FIELD_SIZE;i++){const t=(i===0?0:15+(i-1)*12)/this.length,p=this.point(t),n=this.normal(t),f=this.tangent(t),lane=i===0?0:(DEFAULT_FIELD_SIZE-1-i)%2?3:-3;p.addScaledVector(n,lane).setY(.08);const vertices=[p.clone().addScaledVector(n,-1.3).addScaledVector(f,-2.4),p.clone().addScaledVector(n,1.3).addScaledVector(f,-2.4),p.clone().addScaledVector(n,1.3).addScaledVector(f,2.4)];this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(vertices),lineMaterial));}
   }
   private buildScenery(){
     const center=this.bounds.getCenter(new THREE.Vector3());

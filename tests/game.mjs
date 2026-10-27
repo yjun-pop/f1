@@ -18,7 +18,10 @@ globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>new Pro
 const {Vehicle}=await import(moduleURL('Vehicle'));
 const {CockpitCamera}=await import(moduleURL('Camera'));
 const {Track,ROAD_HALF_WIDTH}=await import(moduleURL('Track'));
-const {Race}=await import(moduleURL('Race'));
+const {Race:FullGridRace}=await import(moduleURL('Race'));
+// Historical six-car fixtures retain their recorded grid/pace calibration.
+// The default twelve-car field receives separate full-grid safety/racing checks.
+class Race extends FullGridRace {constructor(track,scene,planner){super(track,scene,planner,{opponentCount:5});}}
 const {LinePlanner}=await import(moduleURL('LinePlanner'));
 const {brakingDeceleration,integrateBody,HANDLING,steeringLock}=await import(moduleURL('Dynamics'));
 const scene=new THREE.Scene(),track=new Track(scene),v=new Vehicle(track,scene),camera=new CockpitCamera(scene);
@@ -1492,3 +1495,73 @@ for(const fps of [30,60,144]){
   rpmDisplayResults.push({fps,postShiftLights:snapshots.map(s=>s.lights),postShiftRPM:snapshots.map(s=>Math.round(s.after))});
 }
 console.log('PASS: shared numeric RPM/LED/audio sample, immediate shift repaint, falling upshift RPM, downshift progression and readable shift-warning range',rpmDisplayResults);
+
+// Production defaults to twelve. Historical six-car traces above intentionally
+// remain independent checks of the established handling and fast chase pace.
+const twelveResults=[];
+for(const scenario of ['grid','mirrored-grid','rolling-pack']){
+  const fullRace=new FullGridRace(track,new THREE.Scene(),planner),ghost=new Vehicle(track,new THREE.Scene());ghost.position.set(1e6,0,1e6);fullRace.state='racing';
+  assert.equal(fullRace.fieldSize,12);assert.equal(fullRace.opponents.length,11);assert.equal(new Set(fullRace.opponents.map(o=>o.agent)).size,11);assert.equal(new Set(fullRace.opponents.map(o=>o.name)).size,11);
+  if(scenario!=='grid')fullRace.opponents.forEach((o,i)=>{const metres=scenario==='rolling-pack'?650+(10-i)*12:15+(10-i)*12,lane=i%2?-3:3;o.car.resetAt(metres/track.length,lane);o.car.speed=scenario==='rolling-pack'?75:0;o.lane=lane-planner.point(o.car.progress).sub(track.point(o.car.progress)).dot(track.normal(o.car.progress));});
+  let cleared=false,offroad=0,stopped=0,seconds=0;
+  for(let step=0;step<120*45;step++){
+    fullRace.update(1/120,ghost);seconds=(step+1)/120;
+    for(const o of fullRace.opponents){offroad+=o.car.offRoad?1:0;const metres=o.car.progress*track.length;if(metres>600&&metres<970&&o.car.speed<5)stopped++;}
+    if(fullRace.opponents.every(o=>o.car.distance*track.length>1250)){cleared=true;break;}
+  }
+  assert.ok(cleared,'Every car in the larger grid must clear both first-chicane apices');assert.equal(offroad,0);assert.equal(stopped,0);assert.ok(fullRace.opponents.every(o=>o.collisionCount===0),'The twelve-car launch must not restore the first-corner pile-up');
+  twelveResults.push({scenario,seconds,contacts:0,offroad:0});
+}
+
+// A slower AI, rather than the player, is an independent passing target.
+const autonomousRace=new FullGridRace(track,new THREE.Scene(),planner),autonomousGhost=new Vehicle(track,new THREE.Scene());autonomousGhost.position.set(1e6,0,1e6);autonomousRace.state='racing';autonomousRace.elapsed=50;
+for(const [i,o] of autonomousRace.opponents.entries())if(i>1){o.car.position.set(1e6+i*20,0,1e6);o.car.drive=()=>{};}
+const autonomousPasser=autonomousRace.opponents[0],autonomousTarget=autonomousRace.opponents[1];
+for(const [o,metres,speed] of [[autonomousPasser,200,75],[autonomousTarget,220,60]]){o.car.resetAt(metres/track.length);o.car.position.copy(planner.point(o.car.progress));o.car.speed=speed;o.lane=0;}
+autonomousTarget.pace=.8;let ownBoost=false;
+for(let i=0;i<120*8;i++){autonomousRace.update(1/120,autonomousGhost);ownBoost ||= autonomousPasser.control.boost;assert.equal(autonomousPasser.car.offRoad,false);}
+assert.ok(autonomousPasser.car.distance>autonomousTarget.car.distance+12/track.length);assert.ok(autonomousPasser.agent.passesCompleted>=1);assert.ok(ownBoost,'AI must spend its own ERS in an AI-versus-AI battle, even ahead of the player');assert.equal(autonomousPasser.collisionCount+autonomousTarget.collisionCount,0);assert.ok(Math.abs(autonomousPasser.lane)<1.5,'A completed pass must merge back after leaving clearance');
+assert.ok(autonomousRace.opponents.slice(2).every(o=>o.agent.passesCompleted===0),'Passing memory must belong only to the acting driver');
+
+// Unscripted AI racing must include sustained order changes and genuine
+// lateral overlap. Count an overtake only after 12m clearance in either order.
+const independentRace=new FullGridRace(track,new THREE.Scene(),planner),independentGhost=new Vehicle(track,new THREE.Scene());independentGhost.position.set(1e6,0,1e6);independentRace.state='racing';
+let independentPasses=0,independentTwoWide=0,independentOffroad=0;const pairHistory=new Map();
+for(let step=0;step<120*200;step++){
+  independentRace.update(1/120,independentGhost);independentOffroad+=independentRace.opponents.filter(o=>o.car.offRoad).length;
+  if(independentRace.elapsed<40)continue;let alongside=false;
+  for(let i=0;i<11;i++)for(let j=i+1;j<11;j++){
+    const a=independentRace.opponents[i].car,b=independentRace.opponents[j].car,gap=(a.distance-b.distance)*track.length,key=i+':'+j;
+    if(Math.abs(gap)>12){const sign=Math.sign(gap),old=pairHistory.get(key);if(old&&old.sign!==sign&&independentRace.elapsed-old.time>3){independentPasses++;pairHistory.set(key,{sign,time:independentRace.elapsed});}else if(!old)pairHistory.set(key,{sign,time:independentRace.elapsed});}
+    if(Math.abs(gap)<8&&Math.abs(b.position.clone().sub(a.position).dot(track.normal(a.progress)))>2.6&&a.position.distanceTo(b.position)<13)alongside=true;
+  }
+  if(alongside)independentTwoWide++;
+}
+assert.ok(independentPasses>=2,'The field must not remain in its first-corner order for two physical laps');assert.ok(independentTwoWide>120,'Independent cars must genuinely race alongside one another');assert.equal(independentOffroad,0);assert.ok(independentRace.opponents.every(o=>o.collisionCount===0));// Similar reaction values can share a 120Hz tick interval; independence is
+// measured by separate controllers/memory and each controller actually acting.
+assert.ok(independentRace.opponents.every(o=>o.agent.decisions>3000));assert.ok(new Set(independentRace.opponents.map(o=>o.reaction)).size>=8);
+const fullGridSummary={launch:twelveResults,independentPasses,twoWideSeconds:independentTwoWide/120};
+console.log('PASS: twelve-car default, individual controllers, three clean chicane approaches, autonomous AI/AI pass and unscripted position exchanges',fullGridSummary);
+
+// Far cars use three colour batches plus their contact shadow, and restore the
+// detailed chassis/wheels without touching physical state or frame history.
+const lodCar=new Vehicle(track,new THREE.Scene(),0x32a9c8);lodCar.speed=65;lodCar.lateralSpeed=.5;const lodPosition=lodCar.position.clone();
+lodCar.setPresentation(200,'medium');let distantMeshes=0,distantTriangles=0;lodCar.group.traverseVisible(o=>{if(o instanceof THREE.Mesh){distantMeshes++;distantTriangles+=(o.geometry.index?.count??o.geometry.getAttribute('position').count)/3;assert.ok(o.geometry.getAttribute('position').array.every(Number.isFinite));}});
+assert.ok(distantMeshes<=4&&distantTriangles<500,'Distant full-grid traffic must not draw the detailed 33-mesh car');assert.ok(lodCar.position.equals(lodPosition)&&lodCar.speed===65&&lodCar.lateralSpeed===.5);
+lodCar.setPresentation(20,'medium');let nearMeshes=0;lodCar.group.traverseVisible(o=>{if(o instanceof THREE.Mesh)nearMeshes++;});assert.equal(nearMeshes,33);lodCar.setPresentation(700,'medium');assert.equal(lodCar.group.visible,false);lodCar.setPresentation(20,'medium');assert.equal(lodCar.group.visible,true);
+signalHUD.update(signalPlayer,independentRace,false,track,1);assert.equal(nodes.get('#field-size').textContent,'12');assert.equal(nodes.get('#driver-count').textContent,'12');
+console.log('PASS: accurate twelve-driver HUD and distant traffic geometry budget',{distantMeshes,distantTriangles,nearMeshes});
+
+// Keep the larger field competitive with the player's reported 90/85s pace.
+const twelveElite=new FullGridRace(track,new THREE.Scene(),planner),twelveReplay=new Vehicle(track,new THREE.Scene());twelveElite.state='racing';
+twelveElite.opponents.forEach((o,i)=>{const progress=-(180+i*14)/track.length,lane=i%2?3:-3;o.car.resetAt(progress,lane);o.lane=lane-planner.point(progress).sub(track.point(progress)).dot(track.normal(progress));});
+const twelveEliteOffroad=Array(11).fill(0);
+for(const f of trajectory){
+  twelveReplay.position.copy(f.position);twelveReplay.progress=f.progress;twelveReplay.distance=f.distance;twelveReplay.heading=f.heading;twelveReplay.speed=f.speed;twelveReplay.acceleration=f.acceleration;twelveReplay.lateralAcceleration=f.lateralAcceleration;twelveReplay.brake=f.brake;twelveReplay.throttle=f.throttle;
+  twelveElite.update(1/120,twelveReplay);twelveElite.opponents.forEach((o,i)=>{twelveEliteOffroad[i]+=o.car.offRoad?1:0;assert.ok(o.car.gripScale<=1.5&&o.powerAssist<=1.35&&o.speedCap<=104);});
+}
+const twelveEliteGaps=twelveElite.opponents.map(o=>Math.round((twelveReplay.distance-o.car.distance)*track.length));
+console.log('Twelve-car 90/85s replay',{gaps:twelveEliteGaps,offroad:twelveEliteOffroad.map(n=>n/trajectory.length),contacts:twelveElite.opponents.reduce((n,o)=>n+o.collisionCount,0)});
+// The eleven-car fixture starts 180–320m back (the old five-car fixture
+// starts 180–236m back). Bound additional loss as well as absolute separation.
+assert.ok(twelveEliteGaps.every((gap,i)=>Math.abs(gap)<400&&gap<180+i*14+80),'The larger field must match the 90/85s pace without an unbounded trailing deficit');assert.ok(twelveEliteGaps.filter(gap=>Math.abs(gap)<150).length>=6);assert.ok(Math.min(...twelveEliteGaps.map(Math.abs))<35);assert.ok(twelveEliteOffroad.every(n=>n/trajectory.length<.005));

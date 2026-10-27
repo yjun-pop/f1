@@ -6,6 +6,7 @@ import {Controls,brakingDeceleration} from './Dynamics';
 import {DriverAgent,observeTraffic} from './DriverAgent';
 import {PackDirector} from './PackDirector';
 import {StartSequence,type StartSignal} from './StartSequence';
+import {DEFAULT_FIELD_SIZE,DRIVER_PROFILES} from './RaceRoster';
 export interface Rival {
   agent:DriverAgent;car:Vehicle;distance:number;speed:number;name:string;
   personality:string;caution:number;launch:number;collisionScore:number;collisionCount:number;avoidance:number;
@@ -14,7 +15,7 @@ export interface Rival {
 }
 export class Race {
   state:'ready'|'countdown'|'racing'|'finished'='ready';
-  countdown=0;elapsed=0;lapTime=0;best=0;lastLap=0;position=6;
+  countdown=0;elapsed=0;lapTime=0;best=0;lastLap=0;position=DEFAULT_FIELD_SIZE;
   readonly startSequence=new StartSequence();
   get startSignal():StartSignal {return this.state==='countdown'||this.state==='racing'&&this.elapsed<.85?this.startSequence.signal:{run:this.startSequence.signal.run,phase:'idle',lights:0};}
   private aiSpeeds:Float64Array;
@@ -22,7 +23,8 @@ export class Race {
   private pack=new PackDirector();
   private lapStart=0;private completed=0;private storageKey:string;
   readonly opponents:Rival[]=[];
-  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner){
+  get fieldSize(){return this.opponents.length+1;}
+  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number}={}){
     // Calibrated for an approximately 86-second flying lap. Rivals use the
     // same physical integration with explicit bounded grip/power assistance;
     // the player's performance and human guidance remain stock.
@@ -37,17 +39,11 @@ export class Race {
       }
     }
     this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
-    const profiles=[
-      {name:'NOVA',personality:'공격형',caution:0.25,launch:0.99,color:0x31bca6,pace:1.46,aggression:.92,reaction:.025,lineBias:-.35},
-      {name:'VECTOR',personality:'전략형',caution:0.65,launch:1.01,color:0x2564d3,pace:1.38,aggression:.45,reaction:.03,lineBias:.55},
-      {name:'SOLAR',personality:'균형형',caution:0.5,launch:1,color:0xeab442,pace:1.42,aggression:.72,reaction:.027,lineBias:-.7},
-      {name:'POLAR',personality:'신중형',caution:0.9,launch:0.98,color:0xc6cdd1,pace:1.36,aggression:.25,reaction:.035,lineBias:.3},
-      {name:'ORBIT',personality:'추월형',caution:0.35,launch:1.02,color:0x9768d1,pace:1.45,aggression:.83,reaction:.025,lineBias:.8}
-    ];
+    const profiles=DRIVER_PROFILES.slice(0,Math.max(1,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
     profiles.forEach((p,i)=>{const driver:Omit<Rival,'agent'>={...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1.35}),distance:0,speed:0,collisionScore:0,collisionCount:0,avoidance:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}};const rival=Object.assign(driver,{agent:new DriverAgent(driver,track,planner,this.aiSpeeds)});this.opponents.push(rival);});this.reset();
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
-  reset(){this.contacts.clear();this.pack.reset();this.startSequence.reset();this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=6;
+  reset(){this.contacts.clear();this.pack.reset();this.startSequence.reset();this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
     this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.planner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceGripAssist=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready'){this.startSequence.arm();this.countdown=this.startSequence.remaining;this.state='countdown';}}
   private balanceRivals(player:Vehicle,dt:number){
@@ -75,7 +71,7 @@ export class Race {
       let targetPower=behind?1+warmup*(.01+.08*strength+.06*o.attack):1;
       if(this.pack.active){
         const matching=THREE.MathUtils.smoothstep(this.elapsed,4,18);
-        const pack=this.pack.targets(gap,o.rank,this.position,o.pace,o.attack);
+        const pack=this.pack.targets(gap,o.rank,this.position,o.pace,o.attack,this.fieldSize>6?18:0);
         targetCap=THREE.MathUtils.lerp(targetCap,pack.cap,matching);
         targetPower=THREE.MathUtils.lerp(targetPower,pack.power,matching);
         o.racePace=THREE.MathUtils.damp(o.racePace??o.pace,THREE.MathUtils.lerp(o.pace,pack.pace,THREE.MathUtils.smoothstep(this.elapsed,16,28)),.5,dt);
@@ -125,6 +121,9 @@ export class Race {
     });
     const cars=[player,...this.opponents.map(o=>o.car)];
     for(let a=0;a<cars.length;a++)for(let b=a+1;b<cars.length;b++){
+      // Capsule contacts cannot reach six metres. Avoid velocity/allocation
+      // work for the other pairs in a larger grid.
+      if(cars[a].position.distanceToSquared(cars[b].position)>36)continue;
       const impact=cars[a].velocity.sub(cars[b].velocity).length();
       if(resolveCollision(cars[a],cars[b]))this.scoreContact(cars[a],cars[b],`${a}:${b}`,impact);
     }

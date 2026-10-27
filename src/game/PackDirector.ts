@@ -30,14 +30,14 @@ export class PackDirector {
       }
     }
   }
-  targets(gap:number,rank:number,playerRank:number,basePace:number,attack:number){
+  targets(gap:number,rank:number,playerRank:number,basePace:number,attack:number,freedom=0){
     // A leading player needs challengers, rather than five cars whose goals
     // are deliberately 14–70m behind. Aim the first two at a clean pass.
     const chasingLeader=playerRank===1&&gap<0;
     const desiredGap=playerRank===1?12-(rank-2)*9:THREE.MathUtils.clamp((playerRank-rank)*14,-70,70);
     const fast=THREE.MathUtils.smoothstep(this.referencePace,1.32,1.44);
     const paceCap=1.47+.06*fast;
-    const error=gap-desiredGap;
+    const delta=gap-desiredGap,error=Math.sign(delta)*Math.max(0,Math.abs(delta)-freedom);
     const catchup=THREE.MathUtils.smoothstep(-error,10,85);
     const anchor=this.referencePace+(basePace-1.42)*.15;
     let pace=THREE.MathUtils.clamp(THREE.MathUtils.lerp(anchor,Math.max(anchor,basePace),catchup)-Math.max(0,error)*.002,.75,paceCap);

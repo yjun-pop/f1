@@ -48,6 +48,7 @@ export class Game {
     this.lighting.setQuality(this.graphics.tier);this.mirror.setQuality(this.graphics.tier);this.hud.setGraphics(this.graphics.mode,this.graphics.tier);
     this.cockpit.camera.far=this.graphics.profile.viewFar;this.cockpit.camera.updateProjectionMatrix();
     this.vehicle.setGraphics(this.graphics.tier);for(const rival of this.race.opponents)rival.car.setGraphics(this.graphics.tier);this.shadows.invalidate();
+    for(const rival of this.race.opponents)rival.car.setPresentation(rival.car.position.distanceTo(this.vehicle.position),this.graphics.tier);
     this.track.updatePresentation(this.vehicle.position,this.graphics.tier);
   }
   private pause(){if(this.race.state==='racing'||this.race.state==='countdown'){this.paused=true;this.audio.silence();this.accumulator=0;this.input.clear();}}
@@ -67,7 +68,7 @@ export class Game {
     this.vehicle.present(feedback.surfaceHeave);
     if(this.graphics.observe(elapsed,!this.paused&&this.race.state==='racing'))this.applyGraphics();
     this.sceneAge+=dt;
-    if(this.sceneAge>=.1||this.scenePosition.distanceToSquared(this.vehicle.position)>400){this.track.updatePresentation(this.vehicle.position,this.graphics.tier);this.scenePosition.copy(this.vehicle.position);this.sceneAge=0;}
+    if(this.sceneAge>=.1||this.scenePosition.distanceToSquared(this.vehicle.position)>400){this.track.updatePresentation(this.vehicle.position,this.graphics.tier);for(const rival of this.race.opponents)rival.car.setPresentation(rival.car.position.distanceTo(this.vehicle.position),this.graphics.tier);this.scenePosition.copy(this.vehicle.position);this.sceneAge=0;}
     // Keep a small, texel-stable shadow volume around the player, not the full circuit.
     if(this.shadows.shouldRefresh(this.vehicle.position,this.lighting.sunOffset,this.graphics.tier==='high'&&!this.paused&&this.race.state==='racing')){
       const texel=130/this.sun.shadow.mapSize.x,x=Math.round(this.vehicle.position.x/texel)*texel,z=Math.round(this.vehicle.position.z/texel)*texel;

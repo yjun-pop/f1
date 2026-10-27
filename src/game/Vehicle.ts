@@ -5,6 +5,7 @@ import {Controls,integrateBody} from './Dynamics';
 import {createCar,CarVisual} from './CarModel';
 import {TIRE_RADIUS} from './TireGeometry';
 import type {GraphicsTier} from './Graphics';
+import {createTrafficCar} from './TrafficCarModel';
 export class Vehicle {
   raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;
   private readonly baseGrip:number;raceGripAssist?:number;
@@ -12,11 +13,12 @@ export class Vehicle {
   readonly powerScale:number;
   readonly position=new THREE.Vector3();readonly group:THREE.Group;
   private model:CarVisual;
+  private farModel?:THREE.Group;private nearModel=true;
   speed=0;lateralSpeed=0;yawRate=0;heading=0;steer=0;steerAngle=0;progress=0;lap=1;offRoad=false;
   acceleration=0;lateralAcceleration=0;gripUsage=0;
   distance=0;throttle=0;brake=0;boost=100;boosting=false;
   private lastProgress=0;
-  constructor(private track:Track,scene:THREE.Scene,color=0x8c969f,performance={grip:1,power:1}){
+  constructor(private track:Track,scene:THREE.Scene,private color=0x8c969f,performance={grip:1,power:1}){
     this.baseGrip=THREE.MathUtils.clamp(performance.grip,1,1.5);
     this.powerScale=THREE.MathUtils.clamp(performance.power,1,1.5);
     this.model=createCar(color);this.group=this.model.group;scene.add(this.group);this.reset();
@@ -56,6 +58,14 @@ export class Vehicle {
   setGraphics(tier:GraphicsTier){
     this.group.traverse(child=>{if(child instanceof THREE.Mesh)child.castShadow=tier==='high'&&child.name!=='contact-shadow'&&!(child.material as THREE.Material).alphaTest;});
     this.model.contactShadow.material.opacity=tier==='high'?.12:.32;
+    this.farModel?.traverse(child=>{child.castShadow=false;});
+  }
+  setPresentation(distance:number,tier:GraphicsTier){
+    const threshold={low:55,medium:90,high:150}[tier],near=distance<threshold+(this.nearModel?10:-10);
+    this.group.visible=distance<650;this.nearModel=near;
+    if(!near&&!this.farModel){this.farModel=createTrafficCar(this.color);this.group.add(this.farModel);}
+    if(this.farModel)this.farModel.visible=!near;
+    this.model.chassis.visible=near;for(const child of this.group.children)if(child.name==='wheel-pivot')child.visible=near;
   }
   get kmh(){return Math.round(this.speed*3.6);}
 }
