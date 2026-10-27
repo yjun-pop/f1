@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {Vehicle} from './Vehicle';
 import type {DrivingFeedbackFrame} from './DrivingFeedback';
-import {EngineSoundState} from './EngineSound';
+import {EngineSoundState,shiftLightCount,SHIFT_LIGHT_COUNT} from './EngineSound';
 import {createHaloGeometry,createHaloSupport} from './HaloGeometry';
 export class CockpitCamera {
   readonly camera=new THREE.PerspectiveCamera(76,1,.06,1800);
@@ -9,7 +9,7 @@ export class CockpitCamera {
   readonly eyeHeight=1.5;
   private cockpit=new THREE.Group();private wheel=new THREE.Group();private initialized=false;
   private display=document.createElement('canvas');private displayTexture:THREE.CanvasTexture;
-  private displayAge=0;private displayGear=0;private fallbackEngine=new EngineSoundState();private cockpitSpring=0;
+  private displayAge=0;private displayGear=0;private displayLights=-1;private fallbackEngine=new EngineSoundState();private cockpitSpring=0;
   constructor(scene:THREE.Scene){
     const carbon=new THREE.MeshStandardMaterial({color:0x11161b,roughness:.43,metalness:.35});
     const mesh=(w:number,h:number,d:number,x:number,y:number,z:number,mat:THREE.Material=carbon)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);return m;};
@@ -54,14 +54,18 @@ export class CockpitCamera {
     this.cockpit.rotation.x=this.cockpitSpring+(feedback?.cockpitPitch??0);
     this.cockpit.rotation.z=THREE.MathUtils.damp(this.cockpit.rotation.z,feedback?feedback.roll*.5:-vehicle.lateralAcceleration*.00045,8,dt);
     const engine=feedback?.engine??this.fallbackEngine.advance(vehicle,dt);
-    this.displayAge+=dt;if(this.displayAge>.08||engine.gear!==this.displayGear){this.displayAge=0;this.displayGear=engine.gear;this.paintDisplay(vehicle,engine);}
+    const lights=shiftLightCount(engine.rpm),interval=engine.cut<1||engine.blip>0?1/60:1/20;
+    this.displayAge+=dt;
+    if(this.displayAge+1e-8>=interval||engine.gear!==this.displayGear||lights!==this.displayLights){this.displayAge=0;this.displayGear=engine.gear;this.displayLights=lights;this.paintDisplay(vehicle,engine);}
   }
   private paintDisplay(v:Vehicle,engine:DrivingFeedbackFrame['engine']){
     const ctx=this.display.getContext('2d')!;ctx.fillStyle='#070c12';ctx.fillRect(0,0,384,256);
-    for(let i=0;i<15;i++){ctx.fillStyle=i<Math.max(0,Math.min(1,(engine.rpm-6500)/5500))*15?(i>10?'#a970ff':'#5cfc9c'):'#1d2c30';ctx.fillRect(12+i*24,7,17,13);}
+    const lights=shiftLightCount(engine.rpm);
+    for(let i=0;i<SHIFT_LIGHT_COUNT;i++){ctx.fillStyle=i<lights?(i>10?'#a970ff':'#5cfc9c'):'#1d2c30';ctx.fillRect(12+i*24,7,17,13);}
     ctx.textAlign='center';ctx.fillStyle='#eaffef';ctx.font='bold 115px monospace';ctx.fillText(String(engine.gear),192,148);
     ctx.fillStyle='#a6b4bd';ctx.font='18px monospace';ctx.fillText('GEAR',192,178);
     ctx.fillStyle='#fff';ctx.font='bold 34px monospace';ctx.fillText(String(v.kmh).padStart(3,'0'),320,98);ctx.font='14px monospace';ctx.fillText('KM/H',320,122);
+    ctx.fillStyle='#fff';ctx.font='bold 28px monospace';ctx.fillText(String(Math.round(engine.rpm)),320,164);ctx.fillStyle='#a6b4bd';ctx.font='14px monospace';ctx.fillText('RPM',320,184);
     ctx.strokeStyle='#e9ed43';ctx.lineWidth=10;ctx.beginPath();ctx.arc(65,98,39,.6*Math.PI,(.6+v.boost/100*1.8)*Math.PI);ctx.stroke();ctx.font='bold 23px monospace';ctx.fillStyle='#e9ed43';ctx.fillText(`${Math.round(v.boost)}%`,65,108);
     ctx.fillStyle='#607d84';ctx.fillRect(22,208,340,5);ctx.fillStyle=v.boosting?'#ffc141':'#5dffb3';ctx.fillRect(22,208,v.boost*3.4,5);ctx.font='16px monospace';ctx.fillStyle='#c5d3d6';ctx.fillText('ERS   /   APEX RACING',192,244);this.displayTexture.needsUpdate=true;
   }

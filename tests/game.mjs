@@ -1465,3 +1465,30 @@ for(const object of [referenceBeam,referenceBlade]){
 }
 const {KERB_PROFILE}=await import(moduleURL('KerbGeometry'));assert.equal(KERB_PROFILE[0][1],.035);assert.ok(Math.max(...KERB_PROFILE.map(p=>p[1]))-.035<=.020001,'Painted kerbs must rise at most 2cm above asphalt');
 console.log('PASS: reference halo silhouette, clear upper view, no aerial, short lower support, valid facing/UVs and low painted kerbs');
+
+// Drive the actual canvas painter and audio graph from the shared RPM sample.
+// Check both the falling RPM after upshifts and rising RPM/blips on downshifts.
+const {shiftLightCount,SHIFT_LIGHT_START_RPM,SHIFT_LIGHT_FULL_RPM}=await import(moduleURL('EngineSound'));
+assert.equal(shiftLightCount(3800),0);assert.equal(shiftLightCount(SHIFT_LIGHT_START_RPM),0);assert.equal(shiftLightCount(SHIFT_LIGHT_FULL_RPM),15);assert.equal(shiftLightCount(12800),15);
+const rpmDisplayResults=[];
+for(const fps of [30,60,144]){
+  const syncCar=new Vehicle(track,new THREE.Scene()),syncFeel=new DrivingFeedback(),syncCamera=new CockpitCamera(new THREE.Scene());
+  let serial=0,paintedRPM='',gearText='',lit=0;const snapshots=[];
+  const rpmContext=new Proxy({fillStyle:'',fillRect:(x,y,w,h)=>{if(x===0&&y===0){serial++;lit=0;}if(y===7&&w===17&&h===13&&rpmContext.fillStyle!=='#1d2c30')lit++;},fillText:(text,x,y)=>{if(x===320&&y===164)paintedRPM=text;if(x===192&&y===148)gearText=text;}},{get:(target,key)=>target[key]??(()=>{}),set:(target,key,value)=>{target[key]=value;return true;}});
+  syncCamera.display.getContext=()=>rpmContext;globalThis.AudioContext=goodAudioContext;const syncAudio=new DrivingAudio();syncAudio.unlock([syncCar]);
+  let previousGear=1,previousRPM=3800,downshifts=0;
+  for(let i=0;i<fps*28;i++){
+    const time=i/fps;syncCar.speed=time<24?Math.min(94,time*4):Math.max(0,94-(time-24)*25);syncCar.throttle=time<24?1:0;syncCar.brake=time<24?0:1;
+    syncCar.distance+=syncCar.speed/fps/track.length;syncCar.progress=syncCar.distance%1;syncCar.position.copy(track.point(syncCar.progress));const tangent=track.tangent(syncCar.progress);syncCar.heading=Math.atan2(tangent.x,tangent.z);
+    const frame=syncFeel.update(syncCar,track,1/fps,true),beforePaint=serial;syncCamera.update(syncCar,1/fps,frame);syncAudio.update(syncCar,true,frame);
+    assert.equal(syncAudio.voices[0].low.frequency.value,frame.engine.rpm/120,'Sound pitch and dashboard must share the same engine RPM');
+    if(serial!==beforePaint){assert.equal(paintedRPM,String(Math.round(frame.engine.rpm)));assert.equal(gearText,String(frame.engine.gear));assert.equal(lit,shiftLightCount(frame.engine.rpm),'The actual painted LEDs must match the RPM number');}
+    if(frame.engine.gear>previousGear){assert.ok(frame.engine.rpm<previousRPM,'An upshift must lower the actual RPM in the same frame');assert.ok(serial>beforePaint,'A gear change must repaint without waiting for the normal interval');snapshots.push({gear:frame.engine.gear,time,before:previousRPM});}
+    if(frame.engine.gear<previousGear)downshifts++;
+    for(const snapshot of snapshots)if(snapshot.after===undefined&&time>=snapshot.time+.12){snapshot.after=frame.engine.rpm;snapshot.lights=lit;assert.ok(Number(paintedRPM)<snapshot.before-900,'The painted RPM must visibly fall promptly after an upshift');assert.ok(lit<=3,'Settled post-shift lights must not remain half-full at this acceleration');}
+    previousGear=frame.engine.gear;previousRPM=frame.engine.rpm;
+  }
+  assert.equal(snapshots.length,7);assert.equal(downshifts,7);syncAudio.silence();delete globalThis.AudioContext;
+  rpmDisplayResults.push({fps,postShiftLights:snapshots.map(s=>s.lights),postShiftRPM:snapshots.map(s=>Math.round(s.after))});
+}
+console.log('PASS: shared numeric RPM/LED/audio sample, immediate shift repaint, falling upshift RPM, downshift progression and readable shift-warning range',rpmDisplayResults);
