@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {DrivingAudio} from './DrivingAudio';
 import {DrivingFeedback} from './DrivingFeedback';
 import {Input} from './Input';
+import {transmissionMode,type TransmissionMode} from './Powertrain';
 import {Track} from './Track';
 import {Vehicle} from './Vehicle';
 import {CockpitCamera} from './Camera';
@@ -33,7 +34,8 @@ export class Game {
       const saved=localStorage.getItem('apex-motion-strength');
       this.feedback.strength=saved!==null&&Number.isFinite(Number(saved))?Math.max(0,Math.min(1,Number(saved))):window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?0:.6;
     }catch{this.feedback.strength=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?0:.6;}
-    this.hud=new HUD(hudRoot,this.track,{start:()=>{if(this.race.state==='finished')this.restart();this.race.start();},restart:()=>this.restart(),camera:()=>this.cockpit.toggle(),resume:()=>this.resume(),recover:()=>{this.vehicle.recover();this.feedback.reset();this.resume();},volume:value=>this.audio.setVolume(value),audioLevel:this.audio.level,motionLevel:this.feedback.strength,motion:value=>{this.feedback.strength=value;try{localStorage.setItem('apex-motion-strength',String(value));}catch{}},graphicsMode:this.graphics.mode,graphicsTier:this.graphics.tier,graphics:mode=>this.selectGraphics(mode)});
+    try{this.vehicle.setTransmissionMode(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}
+    this.hud=new HUD(hudRoot,this.track,{start:()=>{if(this.race.state==='finished')this.restart();this.race.start();},restart:()=>this.restart(),camera:()=>this.cockpit.toggle(),resume:()=>this.resume(),recover:()=>{this.vehicle.recover();this.feedback.reset();this.resume();},volume:value=>this.audio.setVolume(value),audioLevel:this.audio.level,motionLevel:this.feedback.strength,motion:value=>{this.feedback.strength=value;try{localStorage.setItem('apex-motion-strength',String(value));}catch{}},graphicsMode:this.graphics.mode,graphicsTier:this.graphics.tier,graphics:mode=>this.selectGraphics(mode),transmissionMode:this.vehicle.transmission.mode,transmission:mode=>this.selectTransmission(mode)});
     this.mirror=new RearViewMirror(this.renderer,this.scene,hudRoot.querySelector<HTMLElement>('#rearview-viewport')!);
     this.applyGraphics();
     const unlockAudio=()=>this.audio.unlock([this.vehicle,...this.race.opponents.map(o=>o.car)]);
@@ -42,6 +44,7 @@ export class Game {
     window.addEventListener('blur',()=>this.pause());document.addEventListener('visibilitychange',()=>{if(document.hidden)this.pause();});
     requestAnimationFrame(this.frame);
   }
+  private selectTransmission(mode:TransmissionMode){this.vehicle.setTransmissionMode(mode);this.hud.setTransmissionMode(mode);try{localStorage.setItem('apex-transmission-mode',mode);}catch{}}
   private selectGraphics(mode:GraphicsMode){this.graphics.select(mode);try{localStorage.setItem('apex-graphics-quality',mode);}catch{}this.applyGraphics();}
   private applyGraphics(){
     this.renderer.setPixelRatio(renderPixelRatio(window.devicePixelRatio,window.innerWidth,window.innerHeight,this.graphics.tier,this.graphics.renderScale));this.renderer.setSize(window.innerWidth,window.innerHeight);
@@ -60,6 +63,8 @@ export class Game {
     if(this.input.consume('Enter')){if(this.paused)this.resume();else{if(this.race.state==='finished')this.restart();this.race.start();}}
     if(this.input.consume('KeyR')&&!this.paused&&this.race.state==='racing'){this.vehicle.recover();this.feedback.reset();}
     if(this.input.consume('KeyM')){this.audio.toggleMute();this.hud.setMuted(this.audio.isMuted);}
+    if(this.input.consume('KeyT'))this.selectTransmission(this.vehicle.transmission.mode==='auto'?'manual':'auto');
+    if(this.paused||this.race.state!=='racing'){this.input.consume('KeyQ');this.input.consume('KeyE');}
     if(this.input.consume('KeyG'))this.line.toggle();if(this.input.consume('KeyC'))this.cockpit.toggle();
     if(!this.paused){this.accumulator+=dt;while(this.accumulator>=1/120){if(this.race.state==='racing')this.vehicle.update(1/120,this.input);this.race.update(1/120,this.vehicle);this.accumulator-=1/120;}}
     const feedback=this.feedback.update(this.vehicle,this.track,dt,!this.paused&&this.race.state==='racing');

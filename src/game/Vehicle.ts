@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {Input} from './Input';
+import {Powertrain,type TransmissionMode} from './Powertrain';
 import {Track} from './Track';
 import {Controls,integrateBody} from './Dynamics';
 import {createCar,CarVisual} from './CarModel';
@@ -7,6 +8,9 @@ import {TIRE_RADIUS} from './TireGeometry';
 import type {GraphicsTier} from './Graphics';
 import {createTrafficCar} from './TrafficCarModel';
 export class Vehicle {
+  readonly transmission=new Powertrain();
+  setTransmissionMode(mode:TransmissionMode){this.transmission.setMode(mode,this.speed);}
+  shiftGear(direction:-1|1){return this.transmission.shift(direction,this.speed);}
   raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;
   private readonly baseGrip:number;raceGripAssist?:number;
   get gripScale(){return Math.min(1.5,this.baseGrip*(this.raceGripAssist??1));}
@@ -25,6 +29,7 @@ export class Vehicle {
   }
   reset(){this.resetAt(0,0);this.boost=100;}
   resetAt(progress:number,lane=0){
+    this.transmission.reset();
     this.progress=((progress%1)+1)%1;this.lastProgress=this.progress;this.distance=progress;this.lap=1+Math.max(0,Math.floor(progress));
     this.position.copy(this.track.point(progress)).addScaledVector(this.track.normal(progress),lane);
     const t=this.track.tangent(progress);this.heading=Math.atan2(t.x,t.z);
@@ -32,6 +37,8 @@ export class Vehicle {
   }
   recover(){const distance=this.distance,lap=this.lap;this.resetAt(this.progress);this.distance=distance;this.lap=lap;}
   update(dt:number,input:Input){
+    const down=input.consume?.('KeyQ'),up=input.consume?.('KeyE');
+    if(down!==up){if(down)this.shiftGear(-1);else if(up)this.shiftGear(1);}
     const brake=input.down('KeyS','ArrowDown')?1:0;
     this.drive(dt,{throttle:!brake&&input.down('KeyW','ArrowUp')?1:0,brake,steer:(input.down('KeyA','ArrowLeft')?1:0)-(input.down('KeyD','ArrowRight')?1:0),boost:!brake&&input.down('ShiftLeft','ShiftRight'),keyboard:true});
   }

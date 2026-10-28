@@ -1,4 +1,5 @@
 import {Vehicle} from '../game/Vehicle';
+import {transmissionMode,type TransmissionMode} from '../game/Powertrain';
 import {Track} from '../game/Track';
 import {Race,formatTime} from '../game/Race';
 import {graphicsMode,type GraphicsMode,type GraphicsTier} from '../game/Graphics';
@@ -11,15 +12,15 @@ export class HUD {
   private wasPaused=false;
   private textNodes=new Map<string,Element>();
   private mapPoint:(p:{x:number;z:number})=>{x:number;y:number};
-  constructor(root:HTMLElement,track:Track,actions:{start:()=>void,restart:()=>void,camera:()=>void;resume:()=>void;recover:()=>void;volume:(value:number)=>void;audioLevel:number;motionLevel:number;motion:(value:number)=>void;graphicsMode:GraphicsMode;graphicsTier:GraphicsTier;graphics:(mode:GraphicsMode)=>void}) {
+  constructor(root:HTMLElement,track:Track,actions:{start:()=>void,restart:()=>void,camera:()=>void;resume:()=>void;recover:()=>void;volume:(value:number)=>void;audioLevel:number;motionLevel:number;motion:(value:number)=>void;graphicsMode:GraphicsMode;graphicsTier:GraphicsTier;graphics:(mode:GraphicsMode)=>void;transmissionMode?:TransmissionMode;transmission?:(mode:TransmissionMode)=>void}) {
     this.root=root;
     root.innerHTML=`<header><div class="brand"><i>Λ</i> APEX<span>FORMULA</span><small>OPEN WHEEL RACING / 01</small></div><div class="session"><b>MONZA · ITALY</b><small>RACE · 3 LAPS · DRY · LATE AFTERNOON</small></div></header>
     <div class="rearview-frame" role="img" aria-label="차량 뒤쪽 실시간 백미러"><div id="rearview-viewport"></div><span>REAR VIEW</span></div>
     <aside class="timing"><div class="eyebrow">RACE CLASSIFICATION</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>POSITION</small></span></div><div class="intervals" aria-label="앞뒤 차량 시간 차"><div class="interval-row"><span>앞차 <b id="gap-ahead-name">—</b></span><strong id="gap-ahead">—</strong></div><div class="interval-row"><span>뒤차 <b id="gap-behind-name">—</b></span><strong id="gap-behind">—</strong></div></div><div class="timingrow"><span>LAP</span><b id="lap">1 / 3</b></div><div class="timingrow"><span>CURRENT</span><b id="current"></b></div><div class="timingrow"><span>LAST</span><b id="last"></b></div><div class="timingrow best"><span>BEST</span><b id="best"></b></div></aside>
     <div class="mapbox"><canvas id="map" width="240" height="190"></canvas><span>MONZA · ITALY · ${ (track.length/1000).toFixed(2) } KM</span></div>
-<div id="warning"></div><footer><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> 주행</span><span><kbd>C</kbd> 시점</span><span><kbd>G</kbd> 라인</span><span><kbd>R</kbd> 트랙 복귀</span><span><kbd>ESC</kbd> 일시정지</span><span id="audio-state"><kbd>M</kbd> 음소거</span><button id="camera">시점 변경</button><button id="restart">다시 시작</button></footer>
-    <div class="overlay" id="overlay"><div class="intro"><div class="eyebrow">THE GRID IS YOURS</div><h1>CHASE THE<br><em>APEX.</em></h1><p>긴 직선과 11개 코너, 몬차 3랩 스프린트.<br>실제 GP 레이아웃에서 가속과 제동을 연습하세요.</p><div class="specs"><span><b id="driver-count">${DEFAULT_FIELD_SIZE}</b>DRIVERS</span><span><b>03</b>LAPS</span><span><b>320</b>KM/H MAX</span></div><button class="start" id="start">그리드 진입 <span>→</span></button><small>W / ↑ 가속 · S / ↓ 브레이크 · A D / ← → 조향 · SHIFT 부스트</small></div></div>
-    <div class="pause-shade" id="pause-menu" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden><section class="pause-panel"><div class="eyebrow">APEX FORMULA / SESSION CONTROL</div><h2 id="pause-title">일시정지</h2><p>레이스와 랩 타이머가 멈췄습니다.</p><button id="resume" class="primary">레이스 계속 <span>ESC →</span></button><button id="recover">트랙으로 복귀 후 계속</button><button id="pause-camera">시점 변경 <span>C</span></button><label for="motion-strength">주행 진동 <output id="motion-value"></output></label><input id="motion-strength" type="range" min="0" max="100" step="5" aria-label="제동·연석·변속 화면 움직임 강도"/><label for="audio-volume">주행 사운드 <output id="audio-value"></output></label><input id="audio-volume" type="range" min="0" max="100" step="1" aria-label="주행 사운드 음량"/><label for="graphics-quality">그래픽 품질 <output id="graphics-value"></output></label><select id="graphics-quality" aria-describedby="graphics-hint"><option value="auto">자동</option><option value="low">낮음 · 성능 우선</option><option value="medium">보통 · 균형</option><option value="high">높음 · 화질 우선</option></select><p id="graphics-hint">자동 설정은 주행 성능에 맞춰 화질을 조절합니다.</p><div class="pause-controls">W / ↑ 가속 · S / ↓ 제동<br>A D / ← → 조향 · SHIFT 부스트 · G 유도선</div><details class="rival-summary"><summary>AI 성향 · 충돌 감점</summary><div id="rival-scores"></div></details><button id="pause-restart" class="secondary">레이스 다시 시작</button></section></div>`;
+<div id="warning"></div><footer><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> 주행</span><span><kbd>Q / E</kbd> 기어 ↓ / ↑ · <kbd>T</kbd> <b id="gearbox-label">자동</b></span><span><kbd>C</kbd> 시점</span><span><kbd>G</kbd> 라인</span><span><kbd>R</kbd> 트랙 복귀</span><span><kbd>ESC</kbd> 일시정지</span><span id="audio-state"><kbd>M</kbd> 음소거</span><button id="camera">시점 변경</button><button id="restart">다시 시작</button></footer>
+    <div class="overlay" id="overlay"><div class="intro"><div class="eyebrow">THE GRID IS YOURS</div><h1>CHASE THE<br><em>APEX.</em></h1><p>긴 직선과 11개 코너, 몬차 3랩 스프린트.<br>실제 GP 레이아웃에서 가속과 제동을 연습하세요.</p><div class="specs"><span><b id="driver-count">${DEFAULT_FIELD_SIZE}</b>DRIVERS</span><span><b>03</b>LAPS</span><span><b>320</b>KM/H MAX</span></div><label class="gearbox-start" for="start-transmission">변속 방식 <select id="start-transmission"><option value="auto">자동</option><option value="manual">수동 · Q / E</option></select></label><button class="start" id="start">그리드 진입 <span>→</span></button><small>W / ↑ 가속 · S / ↓ 브레이크 · A D / ← → 조향 · SHIFT 부스트</small></div></div>
+    <div class="pause-shade" id="pause-menu" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden><section class="pause-panel"><div class="eyebrow">APEX FORMULA / SESSION CONTROL</div><h2 id="pause-title">일시정지</h2><p>레이스와 랩 타이머가 멈췄습니다.</p><button id="resume" class="primary">레이스 계속 <span>ESC →</span></button><button id="recover">트랙으로 복귀 후 계속</button><button id="pause-camera">시점 변경 <span>C</span></button><label for="transmission-mode">변속 방식</label><select id="transmission-mode" aria-describedby="transmission-hint"><option value="auto">자동</option><option value="manual">수동 · Q 내리기 / E 올리기</option></select><p id="transmission-hint">T 자동·수동 전환 · 수동은 Q / E로 변속합니다.<br>너무 높은 회전수가 되는 하향 변속은 보호됩니다.</p><label for="motion-strength">주행 진동 <output id="motion-value"></output></label><input id="motion-strength" type="range" min="0" max="100" step="5" aria-label="제동·연석·변속 화면 움직임 강도"/><label for="audio-volume">주행 사운드 <output id="audio-value"></output></label><input id="audio-volume" type="range" min="0" max="100" step="1" aria-label="주행 사운드 음량"/><label for="graphics-quality">그래픽 품질 <output id="graphics-value"></output></label><select id="graphics-quality" aria-describedby="graphics-hint"><option value="auto">자동</option><option value="low">낮음 · 성능 우선</option><option value="medium">보통 · 균형</option><option value="high">높음 · 화질 우선</option></select><p id="graphics-hint">자동 설정은 주행 성능에 맞춰 화질을 조절합니다.</p><div class="pause-controls">W / ↑ 가속 · S / ↓ 제동<br>A D / ← → 조향 · SHIFT 부스트 · G 유도선</div><details class="rival-summary"><summary>AI 성향 · 충돌 감점</summary><div id="rival-scores"></div></details><button id="pause-restart" class="secondary">레이스 다시 시작</button></section></div>`;
     root.querySelector('#start')!.addEventListener('click',actions.start);root.querySelector('#restart')!.addEventListener('click',actions.restart);root.querySelector('#camera')!.addEventListener('click',actions.camera);
     root.querySelector('#resume')!.addEventListener('click',actions.resume);root.querySelector('#recover')!.addEventListener('click',actions.recover);root.querySelector('#pause-restart')!.addEventListener('click',actions.restart);root.querySelector('#pause-camera')!.addEventListener('click',actions.camera);
     root.querySelector('#pause-menu')!.addEventListener('keydown',event=>{const e=event as KeyboardEvent;if(e.key!=='Tab')return;const elements=Array.from(root.querySelectorAll<HTMLElement>('#pause-menu button,#pause-menu input,#pause-menu select,#pause-menu summary'));const first=elements[0],last=elements[elements.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}});
@@ -29,6 +30,10 @@ export class HUD {
     const motion=root.querySelector<HTMLInputElement>('#motion-strength')!;motion.value=String(Math.round(actions.motionLevel*100));
     const showMotion=()=>root.querySelector('#motion-value')!.textContent=Number(motion.value)===0?'꺼짐':`${motion.value}%`;showMotion();
     motion.addEventListener('input',()=>{actions.motion(Number(motion.value)/100);showMotion();});
+    this.setTransmissionMode(actions.transmissionMode??'auto');
+    for(const id of ['#transmission-mode','#start-transmission'])root.querySelector(id)!.addEventListener('change',event=>{
+      const mode=transmissionMode((event.target as HTMLSelectElement).value);actions.transmission?.(mode);this.setTransmissionMode(mode);
+    });
     this.setGraphics(actions.graphicsMode,actions.graphicsTier);
     root.querySelector('#graphics-quality')!.addEventListener('change',event=>actions.graphics(graphicsMode((event.target as HTMLSelectElement).value)));
     this.map=(root.querySelector('#map') as HTMLCanvasElement).getContext('2d')!;
@@ -37,6 +42,10 @@ export class HUD {
     this.mapPoint=p=>({x:width/2+(p.x-centerX)*scale,y:height/2+(p.z-centerZ)*scale});
     this.path=new Path2D();for(let i=0;i<=1200;i++){const p=this.mapPoint(track.point(i/1200));i?this.path.lineTo(p.x,p.y):this.path.moveTo(p.x,p.y);}
 
+  }
+  setTransmissionMode(mode:TransmissionMode){
+    for(const id of ['#transmission-mode','#start-transmission'])(this.root.querySelector(id) as HTMLSelectElement).value=mode;
+    this.text('gearbox-label',mode==='auto'?'자동':'수동');
   }
   setGraphics(mode:GraphicsMode,tier:GraphicsTier){
     (this.root.querySelector('#graphics-quality') as HTMLSelectElement).value=mode;
@@ -48,8 +57,8 @@ export class HUD {
     (this.root.querySelector('#pause-menu') as HTMLElement).hidden=!paused;
     if(paused&&!this.wasPaused)(this.root.querySelector('#resume') as HTMLElement).focus();
     if(!paused&&this.wasPaused)(document.activeElement as HTMLElement)?.blur();
-    if(paused){const scores=this.root.querySelector('#rival-scores')!;scores.replaceChildren(...r.opponents.map(o=>{const row=document.createElement('div');row.textContent=`${o.name} · ${o.personality} · ${o.agent.status} / ${o.collisionScore.toFixed(0)}점 (${o.collisionCount}회)`;return row;}));}
-    this.wasPaused=paused;
+    if(paused){const scores=this.root.querySelector('#rival-scores')!;scores.replaceChildren(...r.opponents.map(o=>{const row=document.createElement('div');row.textContent=`${o.name} · ${o.personality} · ${o.agent.status} · ${o.agent.strategy.status} · ERS ${Math.round(o.car.boost)}% / ${o.collisionScore.toFixed(0)}점 (${o.collisionCount}회)`;return row;}));}
+    this.wasPaused=paused;this.setTransmissionMode(v.transmission.mode);
     this.root.classList.toggle('cockpit-view',cameraMode===1);
     this.text('field-size',String(r.fieldSize).padStart(2,'0'));this.text('driver-count',String(r.fieldSize).padStart(2,'0'));
     this.text('position',String(r.position).padStart(2,'0'));this.text('lap',`${Math.min(v.lap,3)} / 3`);this.text('current',formatTime(r.lapTime));this.text('last',formatTime(r.lastLap));this.text('best',formatTime(r.best));

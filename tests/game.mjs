@@ -11,6 +11,7 @@ function moduleURL(name){
   js=js.replace(/from 'three\/addons\/([^']+)'/g,(_,path)=>`from '${new URL('../node_modules/three/examples/jsm/'+path,import.meta.url).href}'`);
   js=js.replace(/from 'three'/g,`from '${threeURL}'`).replace(/from '\.\/(\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
   js=js.replace(/from '\.\.\/game\/(\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
+  js=js.replace(/from '\.\.\/ui\/(\w+)'/g,(_,dep)=>`from '${moduleURL('../ui/'+dep)}'`);
   const url=`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;cache.set(name,url);return url;
 }
 globalThis.window={innerWidth:1280,innerHeight:720};
@@ -909,7 +910,8 @@ assert.equal(learningDriver.agent.target,learningTarget);
 learningRace.scoreContact(learningDriver.car,learningTarget,'learning-contact',2);
 learningRace.elapsed=20.3;learningRace.decide(learningDriver,learningTarget);
 assert.equal(learningDriver.agent.intent,'yield');assert.equal(learningDriver.passLane,undefined);
-learningRace.elapsed=21.5;learningRace.decide(learningDriver,learningTarget);assert.equal(learningDriver.agent.intent,'overtake');
+learningRace.elapsed=21.5;learningRace.decide(learningDriver,learningTarget);assert.notEqual(learningDriver.agent.intent,'overtake');assert.equal(learningDriver.agent.strategy.mode,'manage','A contact now requires a longer private resource/safety recovery');
+learningRace.elapsed=27;learningRace.decide(learningDriver,learningTarget);assert.equal(learningDriver.agent.intent,'overtake');
 assert.equal(learningDriver.agent.memoryFor(learningTarget).contacts,1);
 
 // Reversing iteration order must not change decisions just because one car
@@ -1206,6 +1208,16 @@ listeners.keydown({code:'ArrowRight',repeat:false,target:{matches:()=>true},prev
 assert.equal(sliderInput.down('ArrowRight'),false);assert.equal(prevented,false,'Range inputs must retain their native keyboard controls');
 listeners.keydown({code:'Escape',repeat:false,target:{matches:()=>true},preventDefault:()=>{}});assert.equal(sliderInput.consume('Escape'),true,'Escape must still resume while a range input has focus');
 listeners.keydown({code:'ArrowRight',repeat:false,target:{matches:()=>false},preventDefault:()=>{prevented=true;}});assert.equal(sliderInput.down('ArrowRight'),true);assert.equal(prevented,true);
+const manualKeysCar=new Vehicle(track,new THREE.Scene());manualKeysCar.setTransmissionMode('manual');sliderInput.clear();
+const keyEvent=(code,repeat=false,focused=false)=>({code,repeat,target:{matches:()=>focused},preventDefault:()=>{}});
+listeners.keydown(keyEvent('KeyE'));manualKeysCar.update(1/120,sliderInput);assert.equal(manualKeysCar.transmission.gear,2);
+for(let step=0;step<120;step++){listeners.keydown(keyEvent('KeyE',true));manualKeysCar.update(1/120,sliderInput);}
+assert.equal(manualKeysCar.transmission.gear,2,'Holding a paddle key must only shift once');
+listeners.keyup(keyEvent('KeyE'));listeners.keydown(keyEvent('KeyE'));manualKeysCar.update(1/120,sliderInput);assert.equal(manualKeysCar.transmission.gear,3);
+sliderInput.clear();listeners.keydown(keyEvent('KeyQ'));listeners.keydown(keyEvent('KeyE'));manualKeysCar.update(.2,sliderInput);assert.equal(manualKeysCar.transmission.gear,3,'Opposite simultaneous paddle requests must cancel');
+sliderInput.clear();listeners.keydown(keyEvent('KeyE',false,true));manualKeysCar.update(.2,sliderInput);assert.equal(manualKeysCar.transmission.gear,3,'Editing a control must not shift the car');
+manualKeysCar.reset();assert.equal(manualKeysCar.transmission.mode,'manual');assert.equal(manualKeysCar.transmission.gear,1);
+console.log('PASS: actual paddle key events, repeat suppression, opposite-key cancellation, focused-control isolation and mode-preserving restart');
 globalThis.window=savedWindow;
 console.log('PASS: real kerb overlap, brake/gear camera feedback, stable horizon, adjustable motion, frame-rate independence, shared RPM, wind/kerb audio and pause/mute');
 
@@ -1405,10 +1417,23 @@ track.setStartLights(3);assert.equal(track.startBulbs.filter(m=>m.emissiveIntens
 // The start signal lives on the physical gantry; HUD must not duplicate it.
 const {HUD}=await import(moduleURL('../ui/HUD'));
 const nodes=new Map();
-function makeSignalNode(){const classes=new Set();return {value:'',textContent:'',hidden:false,classes,classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},addEventListener:()=>{},focus:()=>{},replaceChildren:()=>{},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})};}
+function makeSignalNode(){const classes=new Set(),events=new Map();return {events,value:'',textContent:'',hidden:false,classes,classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},addEventListener:(type,handler)=>events.set(type,handler),focus:()=>{},replaceChildren:()=>{},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})};}
 const hudRoot={innerHTML:'',classList:{toggle:()=>{}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,makeSignalNode());return nodes.get(selector);},querySelectorAll:()=>[]};
 const savedPath=globalThis.Path2D;globalThis.Path2D=class {moveTo(){}lineTo(){}};
-const noop=()=>{};const signalHUD=new HUD(hudRoot,track,{start:noop,restart:noop,camera:noop,resume:noop,recover:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop});
+const noop=()=>{};const signalHUD=new HUD(hudRoot,track,{start:noop,restart:noop,camera:noop,resume:noop,recover:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop,transmission:mode=>signalPlayer.setTransmissionMode(mode)});
+nodes.get('#start-transmission').events.get('change')({target:{value:'manual'}});
+assert.equal(signalPlayer.transmission.mode,'manual');assert.equal(nodes.get('#transmission-mode').value,'manual');assert.equal(nodes.get('#gearbox-label').textContent,'수동');
+nodes.get('#transmission-mode').events.get('change')({target:{value:'auto'}});
+assert.equal(signalPlayer.transmission.mode,'auto');assert.equal(nodes.get('#start-transmission').value,'auto');assert.equal(nodes.get('#gearbox-label').textContent,'자동');
+assert.ok(hudRoot.innerHTML.includes('Q / E')&&hudRoot.innerHTML.includes('transmission-hint'));
+const {Game}=await import(moduleURL('Game'));const savedStorage=globalThis.localStorage,transmissionWrites=new Map();
+globalThis.localStorage={setItem:(key,value)=>transmissionWrites.set(key,value)};
+Game.prototype.selectTransmission.call({vehicle:signalPlayer,hud:signalHUD},'manual');
+assert.equal(transmissionWrites.get('apex-transmission-mode'),'manual');assert.equal(signalPlayer.transmission.mode,'manual');assert.equal(nodes.get('#transmission-mode').value,'manual');
+Game.prototype.selectTransmission.call({vehicle:signalPlayer,hud:signalHUD},'auto');
+assert.equal(transmissionWrites.get('apex-transmission-mode'),'auto');
+if(savedStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=savedStorage;
+console.log('PASS: working start/pause transmission selectors, synchronized mode indicator and visible paddle controls');
 signalRace.reset();signalRace.start();signalRace.update(2.61,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);
 assert.ok(!/seat-height|seat-value/.test(hudRoot.innerHTML),'Fixed seat height must not retain an adjustment control');
 assert.ok(!/countdown|start-rack|light-pod|start-caption|빨간불이 모두/.test(hudRoot.innerHTML),'No screen-space start lights or captions may remain');
@@ -1788,3 +1813,29 @@ console.log('PASS: actual passage-time gaps at 30/60/144fps, acceleration, signs
   timedRace.reset();signalHUD.update(timedPlayer,timedRace,false,track,1);assert.equal(nodes.get('#gap-ahead').textContent,'—');assert.equal(nodes.get('#gap-behind').textContent,'—');
   console.log('PASS: real Race/HUD neighbour names, front/back signs, pause and restart timing state');
 }
+
+// Actual driven cars must feed the physical gearbox to the wheel painter and
+// audio graph; rendering at another rate must not shift the car a second time.
+const physicalPresentationResults=[];
+for(const fps of [30,60,144]){
+  const car=new Vehicle(track,new THREE.Scene());car.setTransmissionMode('manual');car.speed=20;
+  const feedbackState=new DrivingFeedback(),physicalCamera=new CockpitCamera(new THREE.Scene());
+  globalThis.AudioContext=goodAudioContext;const physicalAudio=new DrivingAudio();physicalAudio.unlock([car]);
+  let painted='',illuminated=0,accumulator=0,frame;
+  const context=new Proxy({fillStyle:'',fillRect:(x,y,w,h)=>{if(x===0&&y===0)illuminated=0;if(y===7&&w===17&&h===13&&context.fillStyle!=='#1d2c30')illuminated++;},fillText:(value,x,y)=>{if(x===192&&y===148)painted=value;}},{get:(target,key)=>target[key]??(()=>{}),set:(target,key,value)=>{target[key]=value;return true;}});
+  physicalCamera.display.getContext=()=>context;
+  for(let step=0;step<fps*3;step++){
+    accumulator+=1/fps;
+    while(accumulator+1e-10>=1/120){car.drive(1/120,{throttle:1,brake:0,steer:0});accumulator-=1/120;}
+    const sample={...car.transmission.sample};frame=feedbackState.update(car,track,1/fps,true);
+    physicalCamera.update(car,1/fps,frame);physicalAudio.update(car,true,frame);
+    assert.equal(frame.engine.gear,sample.gear);assert.equal(frame.engine.rpm,sample.rpm);assert.equal(frame.engine.cut,sample.cut);
+    assert.equal(painted,String(sample.gear));assert.equal(illuminated,shiftLightCount(sample.rpm));assert.equal(physicalAudio.voices[0].low.frequency.value,sample.rpm/120);
+    assert.equal(physicalAudio.voices[0].gain.gain.value,frame.engine.engine*sample.cut);
+    assert.deepEqual(car.transmission.sample,sample,'Feedback and rendering must leave the simulated gearbox untouched');
+  }
+  assert.equal(frame.engine.gear,1);assert.ok(car.speed<29&&car.transmission.sample.limiting);
+  physicalPresentationResults.push({fps,speed:car.speed,rpm:car.transmission.rpm});physicalAudio.silence();delete globalThis.AudioContext;
+}
+for(const sample of physicalPresentationResults.slice(1))assert.ok(Math.abs(sample.speed-physicalPresentationResults[0].speed)<1e-8&&Math.abs(sample.rpm-physicalPresentationResults[0].rpm)<1e-8);
+console.log('PASS: real manual driving, same physics/LED/audio gearbox, actual limiter envelope and fixed-physics independence at 30/60/144fps',physicalPresentationResults);
