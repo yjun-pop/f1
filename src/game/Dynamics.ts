@@ -30,6 +30,9 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
   const slipAngle=Math.atan2(body.lateralSpeed,Math.max(6,speed));
   const scrub=controls.keyboard&&requested*slipAngle>0&&speed>8?THREE.MathUtils.smoothstep(Math.abs(slipAngle),2*Math.PI/180,7*Math.PI/180)*(body.offRoad?.1:.2):0;
   const steerAngle=body.steer*steeringLimit*(1-scrub);body.steerAngle=steerAngle;
+  // Digital steering remains progressive, but combined hard braking and a
+  // large steering demand must not receive the same rescue as a gentle trail.
+  const brakeTurn=THREE.MathUtils.smoothstep(brake,.3,.9)*THREE.MathUtils.smoothstep(Math.abs(body.steer),.25,.85);
   let brakeForce=brake*brakingDeceleration(speed,body.offRoad,gripScale);
   if(controls.keyboard&&brake>0&&Math.abs(steerAngle)>.015){
     // Cornering assistance reserves some lateral grip, while allowing a
@@ -37,8 +40,9 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
     const lateralDemand=Math.min(grip*.9,speed*speed*Math.abs(Math.tan(steerAngle))/HANDLING.wheelbase);
     const available=Math.sqrt(Math.max(0,grip*grip-lateralDemand*lateralDemand))*.9;
     const reservedBraking=Math.min(brakeForce,Math.max(0,available-drag));
-    // Partial assistance: heavy trail braking still consumes cornering grip.
-    brakeForce=THREE.MathUtils.lerp(brakeForce,reservedBraking,.9);
+    // Keep modest assistance for light trail braking, yield most of the tire
+    // budget to the driver's actual brake demand during an aggressive entry.
+    brakeForce=THREE.MathUtils.lerp(brakeForce,reservedBraking,THREE.MathUtils.lerp(.9,.45,brakeTurn));
   }
   const longitudinal=THREE.MathUtils.clamp(throttle*engine-brakeForce-drag,-grip*.91,grip*.91);
   // Lateral tire forces use front/rear slip angles, load transfer and a friction circle.
@@ -63,7 +67,7 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
       // A bounded stability torque aligns the body with its actual motion.
       // Tire forces still carry lateral momentum; no heading or velocity snap.
       const correction=THREE.MathUtils.clamp(slip*12.8-(body.yawRate-targetYaw)*.96,-1.2,1.2);
-      body.yawRate+=correction*assistance*dt;
+      body.yawRate+=correction*assistance*THREE.MathUtils.lerp(1,.5,brakeTurn)*dt;
     }
     body.lateralSpeed+=(lateral-body.yawRate*speed)*dt;
   }

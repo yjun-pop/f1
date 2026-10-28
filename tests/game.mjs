@@ -156,7 +156,7 @@ const {resolveCollision}=await import(moduleURL('Vehicle'));
 const a=new Vehicle(track,scene),b=new Vehicle(track,scene);a.resetAt(0);b.resetAt(0);b.position.copy(a.position).addScaledVector(track.tangent(0),4);a.speed=40;b.speed=10;assert.ok(resolveCollision(a,b));assert.ok(a.speed<40&&b.speed>10,'Collision must exchange momentum');
 console.log('PASS: physics-based advice, surface grip, braking, persistent side-slip and collision momentum');
 // Reproduce full digital steering after braking, trail braking, and release.
-for(const [speed,brakingTime,turnTime,trail,maxSlip,minYaw] of [[60,1.7,1.5,false,6.2,.95],[40,0,1,true,8,1],[60,0,1,false,3,.45]]){
+for(const [speed,brakingTime,turnTime,trail,maxSlip,minYaw] of [[60,1.7,1.5,false,6.2,.95],[40,0,1,true,26,1],[60,0,1,false,3,.45]]){
   const car=body();car.speed=speed;let peakSlip=0,peakYaw=0;
   for(let i=0;i<brakingTime*120;i++)integrateBody(car,{throttle:0,brake:1,steer:0,keyboard:true},1/120);
   for(let i=0;i<(turnTime+2)*120;i++){
@@ -165,11 +165,32 @@ for(const [speed,brakingTime,turnTime,trail,maxSlip,minYaw] of [[60,1.7,1.5,fals
     peakSlip=Math.max(peakSlip,Math.abs(Math.atan2(car.lateralSpeed,Math.max(1,car.speed)))*180/Math.PI);
     peakYaw=Math.max(peakYaw,Math.abs(car.yawRate));
   }
-  assert.ok(peakSlip<maxSlip,'Digital corner entry must limit excessive sliding');
-  if(trail)assert.ok(peakSlip>6,'Full simultaneous braking and steering must require managing tire slip');
+  assert.ok(peakSlip<maxSlip,'A normal entry must remain stable; a hard combined-input mistake may slide');
+  if(trail)assert.ok(peakSlip>12,'Full simultaneous braking and steering must no longer be rescued into a mild slide');
   assert.ok(peakYaw>minYaw,'Stability must preserve useful turning authority');
   assert.ok(Math.abs(car.lateralSpeed)<.02&&Math.abs(car.yawRate)<.02,'Released steering must settle without continued drift');
 }
+// Distinguish a controlled trail brake from a genuine tire-overload mistake.
+// Releasing the inputs must restore grip through tire forces, without snapping.
+const brakeTurnResults=[];
+for(const speed of [40,60,80])for(const direction of [-1,1]){
+  const peaks=[];
+  for(const aggressive of [false,true]){
+    const car=body();car.speed=speed;let peak=0;
+    for(let step=0;step<120*4;step++){
+      const turning=step<120;
+      integrateBody(car,{keyboard:true,throttle:0,brake:turning?(aggressive?1:.2):0,steer:turning?direction*(aggressive?1:.4):0},1/120);
+      peak=Math.max(peak,Math.abs(Math.atan2(car.lateralSpeed,Math.max(1,car.speed)))*180/Math.PI);
+      assert.ok(Number.isFinite(car.speed)&&Number.isFinite(car.heading)&&Number.isFinite(car.yawRate));
+    }
+    if(!aggressive)assert.ok(peak<4,'Light trail braking with moderate steering must stay controllable');
+    assert.ok(Math.abs(car.lateralSpeed)<.02&&Math.abs(car.yawRate)<.02,'Lifting the brake and steering must allow grip recovery');
+    peaks.push(peak);
+  }
+  assert.ok(peaks[1]>peaks[0]+10,'Hard braking and large steering must create substantially more slip');
+  brakeTurnResults.push({speed,direction,gentle:peaks[0],hard:peaks[1]});
+}
+console.log('PASS: progressive trail-brake assistance, real combined-input grip loss, mirrored response and release recovery',brakeTurnResults);
 const tap=body();tap.speed=60;
 for(let i=0;i<12;i++)integrateBody(tap,{throttle:0,brake:0,steer:1,keyboard:true},1/120);
 assert.ok(tap.steer>.2&&tap.steer<.3,'Short key presses must build steering gradually');
@@ -736,7 +757,33 @@ console.log('PASS: engine/load, moving brake, tire slip, surface sound, graph re
 
 // Stateful reference-engine sound: upshift cuts, RPM drops, downshift blips,
 // bounded pitch and hysteresis, independent from the physical controls.
-const {EngineSoundState,ENGINE_TIMBRES}=await import(moduleURL('EngineSound'));
+const {EngineSoundState,ENGINE_TIMBRES,REV_LIMIT_RPM}=await import(moduleURL('EngineSound'));
+// Warning LEDs are not a limiter. Only a loaded engine at the actual ceiling
+// must bounce in RPM and cut ignition while holding the same gear.
+const limiterResults=[];
+for(const fps of [30,60,144]){
+  const warningState=new EngineSoundState(),warningCar={...telemetry,speed:91,throttle:1};
+  for(let step=0;step<fps;step++){
+    const sample=warningState.advance(warningCar,1/fps);
+    assert.equal(sample.limiting,false);assert.equal(sample.cut,1);
+    assert.ok(sample.rpm>11800,'The full purple warning range alone must not trigger a false limiter');
+  }
+  const state=new EngineSoundState(),limitCar={...telemetry,speed:94,throttle:1},original=JSON.stringify(limitCar),samples=[];
+  for(let step=0;step<fps*2;step++){
+    const sample=state.advance(limitCar,1/fps);
+    assert.equal(sample.gear,8,'The limiter must not invent a ninth gear');assert.equal(sample.limiting,true);
+    if(step>=fps*.5)samples.push(sample);
+  }
+  assert.equal(JSON.stringify(limitCar),original,'Presentation must never alter speed, throttle or the vehicle');
+  const low=Math.min(...samples.map(s=>s.rpm)),high=Math.max(...samples.map(s=>s.rpm));
+  assert.ok(high-low>350&&high<=REV_LIMIT_RPM+1,'Held rev limit must show a small, bounded RPM bounce');
+  assert.ok(samples.some(s=>s.cut<.3)&&samples.some(s=>s.cut===1),'Ignition must repeatedly cut and recover');
+  const lifted=state.advance({...limitCar,throttle:0},1/fps);assert.equal(lifted.limiting,false);assert.equal(lifted.cut,1);
+  const brakingSample=state.advance({...limitCar,brake:1},1/fps);assert.equal(brakingSample.limiting,false);assert.equal(brakingSample.cut,1);
+  const resetSample=state.advance(telemetry,1/fps);assert.equal(resetSample.gear,1);assert.equal(resetSample.limiting,false);assert.equal(resetSample.cut,1);
+  limiterResults.push({fps,low:Math.round(low),high:Math.round(high)});
+}
+console.log('PASS: actual rev-limit RPM bounce, repeated ignition cuts, purple warning without cuts, lift/brake/reset and frame rates',limiterResults);
 const gearbox=new EngineSoundState(),trace=[];let hadCut=false,hadBlip=false;
 let testSpeed=0,previousGear=1;
 for(let i=0;i<120*42;i++){
@@ -1564,8 +1611,22 @@ for(const fps of [30,60,144]){
     for(const snapshot of snapshots)if(snapshot.after===undefined&&time>=snapshot.time+.12){snapshot.after=frame.engine.rpm;snapshot.lights=lit;assert.ok(frame.engine.rpm<snapshot.before-900,'Engine RPM must still fall promptly after an upshift');assert.ok(lit<=3,'Settled post-shift lights must not remain half-full at this acceleration');}
     previousGear=frame.engine.gear;previousRPM=frame.engine.rpm;
   }
-  assert.equal(snapshots.length,7);assert.equal(downshifts,7);syncAudio.silence();delete globalThis.AudioContext;
-  rpmDisplayResults.push({fps,postShiftLights:snapshots.map(s=>s.lights),postShiftRPM:snapshots.map(s=>Math.round(s.after))});
+  assert.equal(snapshots.length,7);assert.equal(downshifts,7);
+  // Verify the new limiter through the actual feedback, LED painter and audio
+  // graph, so a telemetry-only oscillation cannot pass this integration check.
+  syncCar.speed=94;syncCar.throttle=1;syncCar.brake=0;const limiterLights=new Set();let ignitionCut=false,ignitionRestored=false;
+  for(let step=0;step<fps*2;step++){
+    const frame=syncFeel.update(syncCar,track,1/fps,true);syncCamera.update(syncCar,1/fps,frame);syncAudio.update(syncCar,true,frame);
+    assert.equal(frame.engine.gear,8);assert.equal(frame.engine.limiting,true);
+    assert.equal(lit,shiftLightCount(frame.engine.rpm),'Limiter LEDs must fall and recover with the shared RPM');
+    assert.equal(syncAudio.voices[0].low.frequency.value,frame.engine.rpm/120);
+    assert.equal(syncAudio.voices[0].gain.gain.value,frame.engine.engine*frame.engine.cut,'The real voice envelope must apply the ignition cut');
+    if(step>fps*.5)limiterLights.add(lit);
+    ignitionCut ||=frame.engine.cut<.3;ignitionRestored ||=ignitionCut&&frame.engine.cut===1;
+  }
+  assert.ok(limiterLights.size>=2&&ignitionCut&&ignitionRestored,'The actual dashboard and engine graph must show repeated limiter recovery');
+  syncAudio.silence();delete globalThis.AudioContext;
+  rpmDisplayResults.push({fps,postShiftLights:snapshots.map(s=>s.lights),postShiftRPM:snapshots.map(s=>Math.round(s.after)),limiterLights:[...limiterLights].sort((a,b)=>a-b)});
 }
 console.log('PASS: hidden numeric RPM, shared LED/audio sample, immediate shift repaint, falling upshift RPM, downshift progression and readable shift-warning range',rpmDisplayResults);
 
