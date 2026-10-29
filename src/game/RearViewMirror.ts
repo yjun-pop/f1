@@ -9,6 +9,7 @@ export class RearViewMirror {
   private overlay=new THREE.Scene();
   private overlayCamera=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
   private viewport=new THREE.Vector4();
+  private forward=new THREE.Vector3();private lookTarget=new THREE.Vector3();
   private quality=GRAPHICS_PROFILES.high as typeof GRAPHICS_PROFILES[GraphicsTier];private age=Infinity;
   constructor(private renderer:THREE.WebGLRenderer,private scene:THREE.Scene,private element:HTMLElement){
     this.target.texture.colorSpace=THREE.SRGBColorSpace;
@@ -24,19 +25,21 @@ export class RearViewMirror {
     const width=Math.max(1,rect.width*sx),height=Math.max(1,rect.height*sy);
     this.viewport.set((rect.left-canvas.left)*sx,(canvas.bottom-rect.bottom)*sy,width,height);
     this.camera.aspect=width/height;this.camera.updateProjectionMatrix();
-    // Bound the extra render cost independently of the main canvas pixel ratio.
-    const scale=Math.min(1,this.quality.mirrorWidth/width,this.quality.mirrorHeight/height);
+    // Supersample the small mirror even when automatic main-canvas scaling
+    // reduces resolution. Keep its own bounded pixel and antialiasing budgets.
+    const scale=Math.min(this.quality.mirrorScale,this.quality.mirrorWidth/width,this.quality.mirrorHeight/height);
+    const samples=Math.min(this.quality.mirrorSamples,this.renderer.capabilities?.maxSamples??0);
+    if(this.target.samples!==samples){this.target.samples=samples;this.target.dispose();}
     this.target.setSize(Math.max(1,Math.ceil(width*scale)),Math.max(1,Math.ceil(height*scale)));this.age=Infinity;
   }
   setQuality(tier:GraphicsTier){this.quality=GRAPHICS_PROFILES[tier];this.camera.far=this.quality.mirrorFar;this.resize();}
   update(vehicle:Vehicle){
-    const forward=new THREE.Vector3(Math.sin(vehicle.heading),0,Math.cos(vehicle.heading));
+    const forward=this.forward.set(Math.sin(vehicle.heading),0,Math.cos(vehicle.heading));
     this.camera.position.copy(vehicle.position).addScaledVector(forward,-3.8);this.camera.position.y+=1.7;
     this.camera.up.set(0,1,0);
-    this.camera.lookAt(vehicle.position.clone().addScaledVector(forward,-40).add(new THREE.Vector3(0,1.1,0)));
+    this.lookTarget.copy(vehicle.position).addScaledVector(forward,-40);this.lookTarget.y+=1.1;this.camera.lookAt(this.lookTarget);
   }
   render(vehicle:Vehicle,dt=1/60){
-    this.update(vehicle);
     const interval=1/this.quality.mirrorFPS;
     this.age+=Math.max(0,dt);const refresh=this.age+1e-6>=interval;
     const previousTarget=this.renderer.getRenderTarget();
@@ -46,6 +49,7 @@ export class RearViewMirror {
     const visible=vehicle.group.visible,shadowUpdate=this.renderer.shadowMap?.autoUpdate;
     try{
       if(refresh){
+        this.update(vehicle);
         vehicle.group.visible=false;
         if(this.renderer.shadowMap)this.renderer.shadowMap.autoUpdate=false;
         this.renderer.setScissorTest(false);this.renderer.setRenderTarget(this.target);

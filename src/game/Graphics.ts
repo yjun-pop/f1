@@ -1,9 +1,9 @@
 export type GraphicsTier='low'|'medium'|'high';
 export type GraphicsMode='auto'|GraphicsTier;
 export const GRAPHICS_PROFILES={
-  low:{pixelRatio:1,pixelBudget:1200000,shadowSize:512,reflectionWidth:256,mirrorWidth:320,mirrorHeight:90,mirrorFPS:15,mirrorFar:220,viewFar:800,detailRange:160,forestRange:600,forestDetail:45},
-  medium:{pixelRatio:1.1,pixelBudget:2100000,shadowSize:768,reflectionWidth:512,mirrorWidth:400,mirrorHeight:112,mirrorFPS:20,mirrorFar:320,viewFar:1100,detailRange:240,forestRange:850,forestDetail:75},
-  high:{pixelRatio:1.35,pixelBudget:3600000,shadowSize:1024,reflectionWidth:512,mirrorWidth:512,mirrorHeight:144,mirrorFPS:30,mirrorFar:500,viewFar:1400,detailRange:360,forestRange:1200,forestDetail:130}
+  low:{pixelRatio:1,pixelBudget:1200000,shadowSize:512,reflectionWidth:256,mirrorWidth:512,mirrorHeight:144,mirrorScale:1.25,mirrorSamples:0,mirrorFPS:30,mirrorFar:220,viewFar:800,detailRange:160,forestRange:600,forestDetail:45},
+  medium:{pixelRatio:1.1,pixelBudget:2100000,shadowSize:768,reflectionWidth:512,mirrorWidth:768,mirrorHeight:216,mirrorScale:1.75,mirrorSamples:2,mirrorFPS:60,mirrorFar:320,viewFar:1100,detailRange:240,forestRange:850,forestDetail:75},
+  high:{pixelRatio:1.35,pixelBudget:3600000,shadowSize:1024,reflectionWidth:512,mirrorWidth:1024,mirrorHeight:288,mirrorScale:2,mirrorSamples:4,mirrorFPS:60,mirrorFar:500,viewFar:1400,detailRange:360,forestRange:1200,forestDetail:130}
 } as const;
 export function graphicsMode(value:unknown):GraphicsMode{return value==='low'||value==='medium'||value==='high'?value:'auto';}
 export function recommendedTier(device:{memory?:number;cores?:number;maxTextureSize:number;width:number}):GraphicsTier {

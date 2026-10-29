@@ -571,7 +571,7 @@ const {RearViewMirror}=await import(moduleURL('RearViewMirror'));
 const renderState={target:null,viewport:new THREE.Vector4(0,0,1280,800),scissor:new THREE.Vector4(0,0,1280,800),scissorTest:false};
 const mirrorDraws=[];let failMirrorRender=false;
 const fakeRenderer={
-  autoClear:true,shadowMap:{autoUpdate:true},
+  autoClear:true,shadowMap:{autoUpdate:true},capabilities:{maxSamples:4},
   domElement:{getBoundingClientRect:()=>({left:0,top:0,bottom:800,width:1280,height:800})},
   getSize:out=>out.set(1280,800),
   getRenderTarget:()=>renderState.target,setRenderTarget:target=>{renderState.target=target;},
@@ -602,7 +602,8 @@ assert.equal(mirrorDraws[0].shadowUpdate,false,'Mirror must reuse the main shado
 assert.equal(fakeRenderer.shadowMap.autoUpdate,true,'Main shadow updates must be restored');
 assert.equal(mirrorDraws[0].scene,scene);assert.equal(mirrorDraws[0].playerVisible,false);
 assert.equal(mirrorDraws[1].playerVisible,true);
-assert.ok(mirrorDraws[0].target.width<=640&&mirrorDraws[0].target.height<=180,'Mirror texture must bound the extra render cost');
+assert.equal(mirrorDraws[0].target.width,800);assert.equal(mirrorDraws[0].target.height,200,'High-quality mirrors must supersample their displayed size');
+assert.equal(mirrorDraws[0].target.samples,4,'The offscreen mirror must have its own antialiasing');
 const mirrorUV=mirror.overlay.children[0].geometry.getAttribute('uv');
 assert.equal(mirrorUV.getX(0),1,'Mirror image must actually flip texture coordinates');
 assert.equal(renderState.target,null);assert.equal(renderState.scissorTest,false);
@@ -1296,18 +1297,26 @@ assert.equal(automaticGraphics.tier,'high','Manual quality must never be overrid
 automaticGraphics.select('auto');for(let i=0;i<20*20;i++)automaticGraphics.observe(1/20,false);
 assert.equal(automaticGraphics.tier,'high','Pausing must not reduce quality');
 for(const tier of ['low','medium','high']){
-  const p=GRAPHICS_PROFILES[tier];assert.ok(p.shadowSize>=512&&p.shadowSize<=2048&&p.mirrorWidth<=640&&p.pixelRatio<=1.75);
+  const p=GRAPHICS_PROFILES[tier];assert.ok(p.shadowSize>=512&&p.shadowSize<=2048&&p.mirrorWidth<=1024&&p.mirrorHeight<=288&&p.pixelRatio<=1.75);
 }
 // Keep the real mirror image composited each frame, with a smaller/slower scene
 // capture on low quality. Changing tiers must preserve aspect and refresh now.
 failMirrorRender=false;mirror.setQuality('low');mirrorDraws.length=0;
 for(let i=0;i<60;i++)mirror.render(v,1/60);
 const lowCaptures=mirrorDraws.filter(draw=>draw.scene===scene);
-assert.equal(lowCaptures.length,15);assert.equal(mirrorDraws.filter(draw=>draw.scene===mirror.overlay).length,60);
-assert.ok(mirror.target.width<=320&&mirror.target.height<=90);
+assert.equal(lowCaptures.length,30);assert.equal(mirrorDraws.filter(draw=>draw.scene===mirror.overlay).length,60);
+assert.equal(mirror.target.width,500);assert.equal(mirror.target.height,125);assert.equal(mirror.target.samples,0);
 assert.ok(Math.abs(mirror.target.width/mirror.target.height-mirror.camera.aspect)<.06,'Reduced mirror targets must preserve their camera aspect');
 mirror.setQuality('low');mirrorDraws.length=0;for(let i=0;i<144;i++)mirror.render(v,1/144);
-assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,15,'Fractional frame periods must preserve the mirror capture rate on fast displays');
+assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,30,'Fractional frame periods must preserve the mirror capture rate on fast displays');
+for(const tier of ['medium','high'])for(const fps of [30,60,144]){
+  mirror.setQuality(tier);mirrorDraws.length=0;for(let i=0;i<fps;i++)mirror.render(v,1/fps);
+  assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,Math.min(60,fps),'Normal and high-quality mirrors must refresh at 60fps when the main render can keep up');
+  assert.equal(mirrorDraws.filter(draw=>draw.scene===mirror.overlay).length,fps);
+  assert.equal(mirror.target.samples,tier==='high'?4:2);
+}
+fakeRenderer.capabilities.maxSamples=2;mirror.setQuality('high');assert.equal(mirror.target.samples,2,'Mirror antialiasing must respect hardware limits');
+fakeRenderer.capabilities.maxSamples=4;
 mirror.setQuality('high');mirrorDraws.length=0;mirror.render(v,0);
 assert.equal(mirrorDraws.filter(draw=>draw.scene===scene).length,1,'Quality changes must invalidate the cached mirror image');
 assert.equal(renderState.target,null);assert.equal(fakeRenderer.shadowMap.autoUpdate,true);
