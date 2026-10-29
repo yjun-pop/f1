@@ -62,4 +62,4 @@ export function circuitById(value:unknown):CircuitDefinition{return CIRCUITS.fin
 export function selectedCircuit(search:string,saved:unknown):CircuitDefinition {
   const id=new URLSearchParams(search).get('circuit');return circuitById(id??saved);
 }
-export function circuitURL(href:string,id:CircuitId){const url=new URL(href);url.searchParams.set('circuit',id);return url.href;}
+export function circuitURL(href:string,id:CircuitId,autoStart=false){const url=new URL(href);url.searchParams.set('circuit',id);if(autoStart)url.searchParams.set('race','start');else url.searchParams.delete('race');return url.href;}

@@ -21,10 +21,10 @@ export class DrivingAudio {
   setVolume(value:number){this.volume=Math.max(0,Math.min(1,value));try{localStorage.setItem('apex-audio-volume',String(this.volume));}catch{}this.applyGain();}
   toggleMute(){this.muted=!this.muted;this.applyGain();}
   // Create and resume synchronously inside the original user gesture.
-  unlock(cars:Vehicle[]){
+  unlock(cars:Vehicle[],unlockedContext?:AudioContext){
     try{
       if(!this.context){
-        const context=new AudioContext();this.context=context;this.lastUpdate=context.currentTime;
+        const context=unlockedContext??new AudioContext();this.context=context;this.lastUpdate=context.currentTime;
         const master=context.createGain(),compressor=context.createDynamicsCompressor();
         compressor.threshold.value=-14;compressor.knee.value=16;compressor.ratio.value=3;
         master.gain.value=0;master.connect(compressor);compressor.connect(context.destination);this.master=master;

@@ -23,7 +23,7 @@ export class Game {
   private graphics:GraphicsQuality;private lighting:WorldLighting;
   private paused=false;private changingCircuit=false;private previous=performance.now();private accumulator=0;
   private shadows=new ShadowBudget();private sceneAge=Infinity;private scenePosition=new THREE.Vector3(Infinity,0,0);private hudAge=Infinity;private hudStamp='';
-  constructor(container:HTMLElement,hudRoot:HTMLElement){
+  constructor(container:HTMLElement,hudRoot:HTMLElement,options:{circuit?:CircuitId;autoStart?:boolean;transmission?:TransmissionMode;audioContext?:AudioContext}={}){
     this.renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.7));this.renderer.setSize(window.innerWidth,window.innerHeight);this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=.95;this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;container.appendChild(this.renderer.domElement);
     let savedGraphics:unknown;try{savedGraphics=localStorage.getItem('apex-graphics-quality');}catch{}
     this.graphics=new GraphicsQuality(graphicsMode(savedGraphics),recommendedTier({memory:(navigator as Navigator&{deviceMemory?:number}).deviceMemory,cores:navigator.hardwareConcurrency,maxTextureSize:this.renderer.capabilities.maxTextureSize,width:window.innerWidth}));
@@ -31,30 +31,33 @@ export class Game {
     this.renderer.shadowMap.autoUpdate=false;
     void this.lighting.loadSky(new URL('../assets/park-sky.hdr',import.meta.url).href);
     let savedCircuit:unknown;try{savedCircuit=localStorage.getItem('apex-circuit');}catch{}
-    this.track=new Track(this.scene,selectedCircuit(window.location.search,savedCircuit));this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner);
+    this.track=new Track(this.scene,options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit));this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner);
     try{localStorage.setItem('apex-circuit',this.track.circuit.id);}catch{}
     try{
       const saved=localStorage.getItem('apex-motion-strength');
       this.feedback.strength=saved!==null&&Number.isFinite(Number(saved))?Math.max(0,Math.min(1,Number(saved))):window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?0:.6;
     }catch{this.feedback.strength=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?0:.6;}
     try{this.vehicle.setTransmissionMode(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}
-    this.hud=new HUD(hudRoot,this.track,{start:()=>{if(this.race.state==='finished')this.restart();this.race.start();},restart:()=>this.restart(),camera:()=>this.cockpit.toggle(),resume:()=>this.resume(),recover:()=>{this.vehicle.recover();this.feedback.reset();this.resume();},volume:value=>this.audio.setVolume(value),audioLevel:this.audio.level,motionLevel:this.feedback.strength,motion:value=>{this.feedback.strength=value;try{localStorage.setItem('apex-motion-strength',String(value));}catch{}},graphicsMode:this.graphics.mode,graphicsTier:this.graphics.tier,graphics:mode=>this.selectGraphics(mode),transmissionMode:this.vehicle.transmission.mode,transmission:mode=>this.selectTransmission(mode),circuit:id=>this.selectCircuit(id)});
+    if(options.transmission)this.vehicle.setTransmissionMode(options.transmission);
+    this.hud=new HUD(hudRoot,this.track,{start:id=>{if(id!==this.track.circuit.id){this.selectCircuit(id,true);return;}if(this.race.state==='finished')this.restart();this.race.start();},restart:()=>this.restart(),camera:()=>this.cockpit.toggle(),resume:()=>this.resume(),recover:()=>{this.vehicle.recover();this.feedback.reset();this.resume();},volume:value=>this.audio.setVolume(value),audioLevel:this.audio.level,motionLevel:this.feedback.strength,motion:value=>{this.feedback.strength=value;try{localStorage.setItem('apex-motion-strength',String(value));}catch{}},graphicsMode:this.graphics.mode,graphicsTier:this.graphics.tier,graphics:mode=>this.selectGraphics(mode),transmissionMode:this.vehicle.transmission.mode,transmission:mode=>this.selectTransmission(mode),menu:()=>this.selectCircuit(this.track.circuit.id)});
     this.mirror=new RearViewMirror(this.renderer,this.scene,hudRoot.querySelector<HTMLElement>('#rearview-viewport')!);
     this.applyGraphics();
     const unlockAudio=()=>this.audio.unlock([this.vehicle,...this.race.opponents.map(o=>o.car)]);
     window.addEventListener('pointerdown',unlockAudio);window.addEventListener('keydown',unlockAudio);
     window.addEventListener('resize',()=>{this.applyGraphics();this.cockpit.resize();});
     window.addEventListener('blur',()=>this.pause());document.addEventListener('visibilitychange',()=>{if(document.hidden)this.pause();});
+    if(options.audioContext)this.audio.unlock([this.vehicle,...this.race.opponents.map(o=>o.car)],options.audioContext);
+    if(options.autoStart)this.race.start();
     requestAnimationFrame(this.frame);
   }
-  private selectCircuit(id:CircuitId){
-    const next=circuitById(id);if(next.id===this.track.circuit.id)return;
+  private selectCircuit(id:CircuitId,autoStart=false){
+    const next=circuitById(id);
     this.changingCircuit=true;this.paused=true;this.input.clear();this.accumulator=0;this.audio.silence();
     try{localStorage.setItem('apex-circuit',next.id);}catch{}
     // Navigation owns world teardown: only one circuit/renderer/audio graph
     // remains alive, including after repeated swaps on lower-memory devices.
     this.hud.showCircuitLoading(next.label);
-    window.location.assign(circuitURL(window.location.href,next.id));
+    window.location.assign(circuitURL(window.location.href,next.id,autoStart));
   }
   private selectTransmission(mode:TransmissionMode){this.vehicle.setTransmissionMode(mode);this.hud.setTransmissionMode(mode);try{localStorage.setItem('apex-transmission-mode',mode);}catch{}}
   private selectGraphics(mode:GraphicsMode){this.graphics.select(mode);try{localStorage.setItem('apex-graphics-quality',mode);}catch{}this.applyGraphics();}
@@ -73,7 +76,7 @@ export class Game {
     if(this.changingCircuit)return;
     const elapsed=(now-this.previous)/1000,dt=Math.max(0,Math.min(elapsed,.04));this.previous=now;
     if(this.input.consume('Escape')){if(this.paused)this.resume();else this.pause();}
-    if(this.input.consume('Enter')){if(this.paused)this.resume();else{if(this.race.state==='finished')this.restart();this.race.start();}}
+    if(this.input.consume('Enter')){if(this.paused)this.resume();else if(this.race.state==='ready'||this.race.state==='finished')this.hud.startSelectedCircuit();}
     if(this.input.consume('KeyR')&&!this.paused&&this.race.state==='racing'){this.vehicle.recover();this.feedback.reset();}
     if(this.input.consume('KeyM')){this.audio.toggleMute();this.hud.setMuted(this.audio.isMuted);}
     if(this.input.consume('KeyT'))this.selectTransmission(this.vehicle.transmission.mode==='auto'?'manual':'auto');

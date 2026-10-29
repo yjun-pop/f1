@@ -9,7 +9,7 @@ function moduleURL(name){
   const source=fs.readFileSync(new URL(`../src/game/${name}.ts`,import.meta.url),'utf8');
   let js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   js=js.replace(/from 'three\/addons\/([^']+)'/g,(_,path)=>`from '${new URL('../node_modules/three/examples/jsm/'+path,import.meta.url).href}'`);
-  js=js.replace(/from 'three'/g,`from '${threeURL}'`).replace(/from '\.\/(\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
+  js=js.replace(/from 'three'/g,`from '${threeURL}'`).replace(/from '\.\/(\w+)'/g,(_,dep)=>`from '${moduleURL(name.startsWith('../ui/')?'../ui/'+dep:dep)}'`);
   js=js.replace(/from '\.\.\/game\/(\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
   js=js.replace(/from '\.\.\/ui\/(\w+)'/g,(_,dep)=>`from '${moduleURL('../ui/'+dep)}'`);
   const url=`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;cache.set(name,url);return url;
@@ -749,6 +749,9 @@ audio.update(v,true);assert.ok(audioNodes[0].gain.value>0);audio.toggleMute();as
 audio.setVolume(.3);assert.equal(audioNodes[0].gain.value,.3);audio.silence();assert.equal(audioNodes[0].gain.value,0);audio.update(v,true);assert.equal(audioNodes[0].gain.value,.3);audio.update(v,false);assert.equal(audioNodes[0].gain.value,0);
 assert.ok(resumes===2);
 const goodAudioContext=globalThis.AudioContext;
+const preUnlockedContext=new goodAudioContext(),preUnlockedAudio=new DrivingAudio();
+preUnlockedAudio.unlock([v,a],preUnlockedContext);assert.equal(preUnlockedAudio.context,preUnlockedContext,'Deferred race setup must reuse the context unlocked by the start gesture');
+assert.equal(preUnlockedAudio.voices.length,2);preUnlockedAudio.silence();
 globalThis.AudioContext=class extends goodAudioContext {createStereoPanner(){throw new Error('Unsupported stereo audio');}};
 const unavailableAudio=new DrivingAudio();assert.doesNotThrow(()=>{unavailableAudio.unlock([v]);unavailableAudio.update(v,true);unavailableAudio.silence();});
 assert.equal(unavailableAudio.context,undefined,'Partial failed graphs must be discarded');

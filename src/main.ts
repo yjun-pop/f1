@@ -1,9 +1,34 @@
 import './style.css';
-import {Game} from './game/Game';
+import './ui/CircuitMenu.css';
+import {CircuitMenu} from './ui/CircuitMenu';
+import {circuitById,circuitURL,selectedCircuit,type CircuitId} from './game/Circuits';
+import {transmissionMode,type TransmissionMode} from './game/Powertrain';
+
 const app=document.querySelector<HTMLDivElement>('#app')!;
-app.innerHTML='<div id="viewport"></div><div id="hud"></div><div class="boot-loading" role="status">서킷과 주행선을 준비하고 있습니다…</div>';
-// Let the loading state paint before constructing a circuit and its AI lines.
-requestAnimationFrame(()=>requestAnimationFrame(()=>{
-  try{new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!);document.querySelector('.boot-loading')?.remove();}
-  catch(error){console.error(error);const loading=document.querySelector('.boot-loading');if(loading)loading.textContent='서킷을 불러오지 못했습니다. 새로고침해 다시 시도해 주세요.';}
-}));
+app.innerHTML='<div id="viewport"></div><div id="hud"></div><div id="front-menu"></div>';
+const front=document.querySelector<HTMLElement>('#front-menu')!;
+let savedCircuit:unknown,savedTransmission:unknown;
+try{savedCircuit=localStorage.getItem('apex-circuit');savedTransmission=localStorage.getItem('apex-transmission-mode');}catch{}
+const selected=selectedCircuit(window.location.search,savedCircuit),mode=transmissionMode(savedTransmission);
+let launching=false;
+function start(id:CircuitId,transmission:TransmissionMode){
+  if(launching)return;launching=true;
+  menu.setLoading(circuitById(id).label);
+  try{localStorage.setItem('apex-circuit',id);localStorage.setItem('apex-transmission-mode',transmission);}catch{}
+  try{window.history.replaceState(null,'',circuitURL(window.location.href,id));}catch{}
+  // Preserve the start-button gesture for audio, before yielding a paint frame
+  // and constructing the selected world. No renderer runs in the selection UI.
+  let audioContext:AudioContext|undefined;
+  try{audioContext=new AudioContext();void audioContext.resume().catch(()=>{});}catch{}
+  requestAnimationFrame(()=>requestAnimationFrame(async()=>{
+    try{
+      const {Game}=await import('./game/Game');
+      new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext});
+      menu.dispose();front.remove();
+    }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();}
+  }));
+}
+const menu=new CircuitMenu(front,{selected:selected.id,mode,prefix:'front-',keyboard:true,start,transmission:value=>{try{localStorage.setItem('apex-transmission-mode',value);}catch{}}});
+// A confirmed choice from a completed race goes straight to its next grid.
+// The intent is consumed by replaceState; refreshing returns to selection.
+if(new URLSearchParams(window.location.search).get('race')==='start')start(selected.id,mode);
