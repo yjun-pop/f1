@@ -9,10 +9,24 @@ export function cornerSpeed(curvature:number,maxSpeed=94){return Math.min(maxSpe
 export function steeringLock(speed:number,gripScale=1){const v=Math.abs(speed);
   // Keyboard input must not apply low-speed full lock at racing speeds.
   return Math.min(.43/(1+v*.025),Math.atan(HANDLING.wheelbase*lateralGrip(v)*gripScale*1.06/Math.max(36,v*v)));}
-export interface Controls {throttle:number;brake:number;steer:number;boost?:boolean;keyboard?:boolean;drs?:boolean}
+export interface Controls {throttle:number;brake:number;steer:number;boost?:boolean;keyboard?:boolean;drs?:boolean;reverse?:boolean}
 export interface DynamicBody {aero?:AeroState;transmission?:Powertrain;steerAngle?:number;raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;gripScale?:number;powerScale?:number;position:THREE.Vector3;speed:number;lateralSpeed:number;yawRate:number;heading:number;steer:number;offRoad:boolean;acceleration:number;lateralAcceleration:number;gripUsage:number}
 export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
   if(dt<=0)return;
+  if(controls.reverse&&body.speed<.5||body.speed<0){
+    // Low-speed reverse uses the same bounded acceleration and bicycle yaw
+    // response as low-speed forward travel. Progress comes only from motion.
+    const acceleration=THREE.MathUtils.clamp(((controls.reverse?-2.2:0)-body.speed)*3,-2,4);
+    body.speed=THREE.MathUtils.clamp(body.speed+acceleration*dt,-2.2,.5);
+    if(!controls.reverse&&Math.abs(body.speed)<.025)body.speed=0;
+    body.steer=THREE.MathUtils.damp(body.steer,controls.steer,10,dt);
+    body.steerAngle=body.steer*steeringLock(Math.abs(body.speed),body.gripScale??1);
+    body.yawRate=THREE.MathUtils.damp(body.yawRate,body.speed*Math.tan(body.steerAngle)/HANDLING.wheelbase,12,dt);
+    body.lateralSpeed=THREE.MathUtils.damp(body.lateralSpeed,0,12,dt);body.heading+=body.yawRate*dt;
+    body.position.x+=Math.sin(body.heading)*body.speed*dt;body.position.z+=Math.cos(body.heading)*body.speed*dt;
+    body.acceleration=acceleration;body.lateralAcceleration=body.speed*body.yawRate;body.gripUsage=Math.hypot(acceleration,body.lateralAcceleration)/lateralGrip(Math.abs(body.speed));
+    body.aero?.close();body.transmission?.advance(Math.abs(body.speed),controls.throttle,controls.brake,dt);return;
+  }
   const speed=Math.max(0,body.speed),gripScale=body.gripScale??1,powerScale=body.powerScale??1;
   const requested=THREE.MathUtils.clamp(controls.steer,-1,1);
   if(controls.keyboard){

@@ -22,6 +22,7 @@ export class CornerRacecraft {
     this.corners=planner.apices.filter(a=>!narrow.some(n=>a.progress*track.length>=n.entry-1&&a.progress*track.length<=n.exit+1));
   }
   reset(){this.commitment=undefined;this.current=null;this.blockedApex=-Infinity;this.selections=0;}
+  mayChangeRacingLine(distance:number){const metres=distance*this.track.length;return !this.commitment&&(metres<this.blockedApex-300||metres>this.blockedApex+110);}
   cancel(){if(this.commitment)this.blockedApex=this.commitment.apex;this.commitment=undefined;this.current=null;}
   private weight(role:CornerRole,metres:number){
     // A cutback stays on the entry line and opens its radius near the exit.
