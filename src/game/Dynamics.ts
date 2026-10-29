@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {Powertrain,engineAcceleration} from './Powertrain';
+import {AeroState,advanceAero,aerodynamicDrag} from './Aerodynamics';
 /** Shared dry-surface handling model used by the player, AI and line planner. */
 export const HANDLING={mass:798,wheelbase:3.6,inertiaPerMass:2.7,baseGrip:22,downforce:.0052,maxSpeed:94,cornerStiffness:330};
 export function lateralGrip(speed:number,offRoad=false){return (HANDLING.baseGrip+HANDLING.downforce*speed*speed)*(offRoad?.43:1);}
@@ -8,8 +9,8 @@ export function cornerSpeed(curvature:number,maxSpeed=94){return Math.min(maxSpe
 export function steeringLock(speed:number,gripScale=1){const v=Math.abs(speed);
   // Keyboard input must not apply low-speed full lock at racing speeds.
   return Math.min(.43/(1+v*.025),Math.atan(HANDLING.wheelbase*lateralGrip(v)*gripScale*1.06/Math.max(36,v*v)));}
-export interface Controls {throttle:number;brake:number;steer:number;boost?:boolean;keyboard?:boolean}
-export interface DynamicBody {transmission?:Powertrain;steerAngle?:number;raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;gripScale?:number;powerScale?:number;position:THREE.Vector3;speed:number;lateralSpeed:number;yawRate:number;heading:number;steer:number;offRoad:boolean;acceleration:number;lateralAcceleration:number;gripUsage:number}
+export interface Controls {throttle:number;brake:number;steer:number;boost?:boolean;keyboard?:boolean;drs?:boolean}
+export interface DynamicBody {aero?:AeroState;transmission?:Powertrain;steerAngle?:number;raceLaunchScale?:number;raceSpeedCap?:number;raceCruiseCap?:number;racePowerAssist?:number;gripScale?:number;powerScale?:number;position:THREE.Vector3;speed:number;lateralSpeed:number;yawRate:number;heading:number;steer:number;offRoad:boolean;acceleration:number;lateralAcceleration:number;gripUsage:number}
 export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
   if(dt<=0)return;
   const speed=Math.max(0,body.speed),gripScale=body.gripScale??1,powerScale=body.powerScale??1;
@@ -20,14 +21,15 @@ export function integrateBody(body:DynamicBody,controls:Controls,dt:number){
     const rate=requested===0?10:requested*body.steer<0?9:THREE.MathUtils.lerp(3.2,2.6,THREE.MathUtils.smoothstep(speed,12,65));
     body.steer+=THREE.MathUtils.clamp(requested-body.steer,-rate*dt,rate*dt);
   }else body.steer=THREE.MathUtils.damp(body.steer,requested,10,dt);
-  const grip=lateralGrip(speed,body.offRoad)*gripScale;
+  advanceAero(body.aero,!!controls.drs,speed,controls.brake,body.steer,body.lateralSpeed,body.offRoad,dt,body.yawRate);
+  const grip=(HANDLING.baseGrip+HANDLING.downforce*speed*speed*(1-.18*(body.aero?.flap??0)))*(body.offRoad?.43:1)*gripScale;
   const governed=body.raceSpeedCap!==undefined;
   const speedCap=governed?THREE.MathUtils.clamp(controls.boost?body.raceSpeedCap!:body.raceCruiseCap??87,72,110):(controls.boost?94:87);
   const pursuit=1+(THREE.MathUtils.clamp(body.racePowerAssist??1,1,1.35)-1)*THREE.MathUtils.smoothstep(speed,45,75);
   const throttle=THREE.MathUtils.clamp(controls.throttle,0,1)*(governed&&speed>=speedCap?0:1),brake=THREE.MathUtils.clamp(controls.brake,0,1);
   const transmission=(body.transmission??=new Powertrain()).advance(speed,throttle,brake,dt);
   const engine=engineAcceleration(speed,controls.boost,transmission.drive)*powerScale*(body.raceLaunchScale??1)*pursuit;
-  const drag=.00105*speed*speed+(body.offRoad?4.2:.35);
+  const drag=aerodynamicDrag(speed,body.offRoad,body.aero);
   const steeringLimit=controls.keyboard?Math.min(steeringLock(speed,gripScale),Math.atan(HANDLING.wheelbase*grip*THREE.MathUtils.lerp(.84,.88,THREE.MathUtils.smoothstep(speed,10,45))/Math.max(36,speed*speed))):steeringLock(speed,gripScale);
   const slipAngle=Math.atan2(body.lateralSpeed,Math.max(6,speed));
   const scrub=controls.keyboard&&requested*slipAngle>0&&speed>8?THREE.MathUtils.smoothstep(Math.abs(slipAngle),2*Math.PI/180,7*Math.PI/180)*(body.offRoad?.1:.2):0;

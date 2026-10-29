@@ -7,6 +7,7 @@ import {HANDLING,steeringLock,brakingDeceleration,cornerSpeed,lateralGrip} from 
 import {CornerRacecraft} from './CornerRacecraft';
 import {AISpeedPlanner} from './AISpeedPlanner';
 import {engineAcceleration} from './Powertrain';
+import {aerodynamicDrag} from './Aerodynamics';
 import {RaceStrategy} from './RaceStrategy';
 
 export interface TrafficSample {
@@ -23,7 +24,7 @@ interface OpponentMemory {lastSeen:number;gap:number;closing:number;contacts:num
 export class DriverAgent {
   intent:DriverIntent='race';decisions=0;lastDecision=0;lastIncident=-Infinity;
   target?:Vehicle;observation?:DriverObservation;
-  private elapsed=0;private playerPosition=6;
+  private elapsed=0;private playerPosition=6;private aeroPassUntil=0;
   private memory=new Map<Vehicle,OpponentMemory>();
   private passingTarget?:Vehicle;private pendingPass?:Vehicle;private passDeadline=0;
   passAttempts=0;passesCompleted=0;
@@ -41,11 +42,11 @@ export class DriverAgent {
   get memorySize(){return this.memory.size;}
   get status(){if(this.corner.current&&this.intent!=='yield'&&this.intent!=='recover')return this.corner.current.exiting?'코너 탈출':{inside:'인코스 공략',defend:'코너 방어',cutback:'탈출 준비'}[this.corner.current.role];return {race:'주행',follow:'추종',overtake:'추월',defend:'방어',yield:'양보',recover:'복귀'}[this.intent];}
   memoryFor(car:Vehicle):Readonly<OpponentMemory>|undefined{return this.memory.get(car);}
-  reset(){this.intent='race';this.decisions=0;this.lastDecision=0;this.lastIncident=-Infinity;this.target=undefined;this.observation=undefined;this.passingTarget=undefined;this.pendingPass=undefined;this.passDeadline=0;this.passAttempts=this.passesCompleted=0;this.memory.clear();this.corner.reset();this.strategy.reset();}
+  reset(){this.aeroPassUntil=0;this.intent='race';this.decisions=0;this.lastDecision=0;this.lastIncident=-Infinity;this.target=undefined;this.observation=undefined;this.passingTarget=undefined;this.pendingPass=undefined;this.passDeadline=0;this.passAttempts=this.passesCompleted=0;this.memory.clear();this.corner.reset();this.strategy.reset();}
   onContact(other:Vehicle,impact:number,time:number){
     const o=this.driver,remembered=this.memory.get(other);
     this.memory.set(other,{lastSeen:time,gap:remembered?.gap??0,closing:remembered?.closing??0,contacts:(remembered?.contacts??0)+1,riskUntil:time+6+o.caution*4,lane:remembered?.lane??0,lateralRate:remembered?.lateralRate??0});
-    this.strategy.onContact(time,o.car.distance);
+    this.aeroPassUntil=0;this.strategy.onContact(time,o.car.distance);
     this.lastIncident=time;this.intent='yield';this.target=other;
     this.passingTarget=undefined;this.pendingPass=undefined;
     this.corner.cancel();
@@ -130,7 +131,7 @@ export class DriverAgent {
     const strategy=this.strategy.update({elapsed:this.elapsed,distance:car.distance,speed:car.speed,boost:car.boost,gripUsage:car.gripUsage,lateralSpeed:car.lateralSpeed,
       window:!openingFormation&&!chicaneTraffic&&[0,40,80].every(distance=>this.speedPlanner.cornerLimit(car.progress+distance/this.track.length,pace,car.gripScale)>60),
       brakingSoon:this.speedPlanner.cornerLimit(car.progress+Math.max(80,car.speed*1.5)/this.track.length,pace,car.gripScale)<45,
-      settling:settling||car.offRoad,pressure:this.playerPosition===1&&o.rank>1,deploying:car.boosting,
+      settling:settling||car.offRoad,pressure:this.playerPosition===1&&o.rank>1,deploying:car.boosting,drsAvailable:car.aero.available,
       ahead:aheadResource?{id:aheadResource.car,gap:gapTo(aheadResource),closing:car.speed-aheadResource.speed}:undefined,
       behind:behindResource?{id:behindResource.car,gap:-gapTo(behindResource),closing:behindResource.speed-car.speed}:undefined});
     const physicalRoom=advanced>.8&&car.gripUsage<1.04&&Math.abs(Math.atan2(car.lateralSpeed,Math.max(8,car.speed)))<.1;
@@ -145,8 +146,8 @@ export class DriverAgent {
     // the standing-grid chicane, then blend continuously into physical plans.
     const speedAt=(progress:number)=>advanced===0?this.racingSpeed(progress)*pace:THREE.MathUtils.lerp(this.racingSpeed(progress)*pace,this.speedPlanner.speed(progress,pace,car.gripScale),advanced);
     const cornerAt=(progress:number)=>advanced===0?this.planner.cornerLimit(progress)*pace:THREE.MathUtils.lerp(this.planner.cornerLimit(progress)*pace,this.speedPlanner.cornerLimit(progress,pace,car.gripScale),advanced);
-    const safeTarget=(progress:number)=>{
-      let target=Math.min(o.speedCap,speedAt(progress));
+    const safeTarget=(progress:number,attack=0)=>{
+      let target=Math.min(o.speedCap,speedAt(progress)+attack);
       const braking=brakingDeceleration(car.speed,car.offRoad,car.gripScale)*THREE.MathUtils.lerp(.75,.82,advanced);
       const reaction=THREE.MathUtils.lerp(.18,.06,advanced);
       for(let distance=12;distance<=300;distance+=12){
@@ -189,6 +190,12 @@ export class DriverAgent {
           this.intent='overtake';
         }else if(competitive){this.passingTarget=undefined;passing=false;}
       }
+      // Spend a real tow/DRS opportunity on a committed pass instead of
+      // lifting back to the cruising target as soon as drag decreases. Keep
+      // the driving demand through the pullout, with the same engine/caps and
+      // unchanged future corner limits; following safety is applied below.
+      if(passing&&(car.aero.available||car.aero.wake>.15))this.aeroPassUntil=Math.min(o.passUntil,this.elapsed+5);
+      if(passing&&this.elapsed<this.aeroPassUntil&&!settling&&passRoadClear)target=Math.max(target,safeTarget(reference,2+o.aggression*2));
       if(chicaneTraffic&&narrow){
         // Include cars in the other lane: both corridors soon share an apex.
         // Build headway progressively, not by demanding the full braking-zone
@@ -286,7 +293,7 @@ export class DriverAgent {
     const feedforward=target<plannedTarget-.1?0:plannedAcceleration;
     const exitDrive=cleanExit&&!elitePursuit?Math.min(.8,Math.max(0,target-car.speed)*.12):0;
     const acceleration=feedforward+(target-car.speed)*2+exitDrive;
-    const drag=.00105*car.speed*car.speed+(car.offRoad?4.2:.35);
+    const drag=aerodynamicDrag(car.speed,car.offRoad,car.aero);
     let demand=acceleration+drag;
     if((advanced>.1||elitePursuit||cornerPlan)&&demand>drag){
       // Preserve cornering grip when a dense fast pack accelerates together.
@@ -301,6 +308,6 @@ export class DriverAgent {
     const boost=wantsBoost&&demand>0;
     const pursuit=1+(o.powerAssist-1)*THREE.MathUtils.smoothstep(car.speed,45,75);
     const engine=engineAcceleration(car.speed,boost,car.transmission.sample.drive)*car.powerScale*(car.raceLaunchScale??1)*pursuit;
-    o.control={steer,throttle:THREE.MathUtils.clamp(demand/Math.max(1,engine),0,1),brake:THREE.MathUtils.clamp(-demand/brakingDeceleration(car.speed,car.offRoad,car.gripScale),0,1),boost};
+    o.control={steer,throttle:THREE.MathUtils.clamp(demand/Math.max(1,engine),0,1),brake:THREE.MathUtils.clamp(-demand/brakingDeceleration(car.speed,car.offRoad,car.gripScale),0,1),boost,drs:car.aero.available&&!settling&&Math.abs(error)<.09&&demand>0};
   }
 }

@@ -3,7 +3,7 @@ import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {surfaceMaps} from './SurfaceTextures';
 import {createTireGeometry,createTireLetteringGeometry} from './TireGeometry';
 import {createHaloGeometry,createHaloSupport} from './HaloGeometry';
-export interface CarVisual {group:THREE.Group;frontWheels:THREE.Group[];tires:THREE.Mesh[];chassis:THREE.Group;contactShadow:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>}
+export interface CarVisual {rearFlap:THREE.Group;group:THREE.Group;frontWheels:THREE.Group[];tires:THREE.Mesh[];chassis:THREE.Group;contactShadow:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>}
 let sidewallMaterial:THREE.MeshStandardMaterial|undefined;
 let contactMap:THREE.DataTexture|undefined;
 function contactShadowMap(){
@@ -66,7 +66,7 @@ export function createCar(color:number):CarVisual {
     }
   }
   for(const side of [-1,1])addBox(chassis,.32,.16,.06,side*.66,.65,.28,carbon);
-  addBox(chassis,2.15,.1,.7,0,1.3,-2.4,carbon);addBox(chassis,2.1,.07,.4,0,1.15,-2.35,silver);
+  const rearFlap=new THREE.Group();rearFlap.name='drs-flap';rearFlap.position.set(0,1.3,-2.7);chassis.add(rearFlap);addBox(rearFlap,2.15,.1,.7,0,0,.3,carbon);addBox(chassis,2.1,.07,.4,0,1.15,-2.35,silver);
   const seat=new THREE.Mesh(new THREE.SphereGeometry(.49,24,16),carbon);seat.scale.set(.9,.45,1.6);seat.position.set(0,.77,-.45);seat.name='driver';chassis.add(seat);
   const helmet=new THREE.Mesh(new THREE.SphereGeometry(.25,24,16),accent);helmet.position.set(0,1.02,-.45);helmet.name='driver';chassis.add(helmet);
   const top=new THREE.Mesh(new THREE.SphereGeometry(.6,24,16),paint);top.scale.set(.6,.7,1.5);top.position.set(0,.8,-1.2);top.name='driver';chassis.add(top);
@@ -121,5 +121,5 @@ export function createCar(color:number):CarVisual {
   }
   group.traverse(child=>{if(child instanceof THREE.Mesh){child.castShadow=!(child.material as THREE.Material).alphaTest;child.receiveShadow=true;}});
   const contactShadow=new THREE.Mesh(new THREE.PlaneGeometry(2.8,5.8),new THREE.MeshBasicMaterial({map:contactShadowMap(),transparent:true,opacity:.32,depthWrite:false,toneMapped:false}));contactShadow.name='contact-shadow';contactShadow.rotation.x=-Math.PI/2;contactShadow.position.set(0,.042,-.1);contactShadow.renderOrder=-1;group.add(contactShadow);
-  return {group,chassis,frontWheels,tires,contactShadow};
+  return {group,chassis,frontWheels,tires,contactShadow,rearFlap};
 }

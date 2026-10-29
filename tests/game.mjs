@@ -981,7 +981,7 @@ director.reset();assert.equal(director.pace,1);assert.equal(director.active,fals
 // Run a stock keyboard-handling reference driver for a full three-lap race.
 // This controller follows the guide and brakes for physical traffic, just as
 // a driver must; it receives no AI grip/power or rank-speed assistance.
-let activeFieldPasses=0,activeFieldTwoWide=0;const activePairHistory=new Map();const activeRanks=new Set(),activeOffroad=Array(11).fill(0);
+let actualDRSFrames=0,actualWakeFrames=0;let activeFieldPasses=0,activeFieldTwoWide=0;const activePairHistory=new Map();const activeRanks=new Set(),activeOffroad=Array(11).fill(0);
 const closeRace=new FullGridRace(track,new THREE.Scene(),planner),closePlayer=new Vehicle(track,new THREE.Scene());
 closeRace.state='racing';let nearFrames=0,measuredFrames=0;const earlyStops=Array(11).fill(0);
 for(let step=0;step<120*500&&closeRace.state==='racing';step++){
@@ -998,6 +998,7 @@ for(let step=0;step<120*500&&closeRace.state==='racing';step++){
   const difference=advised-closePlayer.speed;
   closePlayer.drive(1/120,{keyboard:true,steer,throttle:THREE.MathUtils.clamp(difference/3,0,1),brake:THREE.MathUtils.clamp(-difference/4,0,1)});
   closeRace.update(1/120,closePlayer);activeRanks.add(closeRace.position);
+  actualDRSFrames+=closeRace.opponents.filter(o=>o.car.aero.active).length;actualWakeFrames+=closeRace.opponents.filter(o=>o.car.aero.wake>.2).length;
   closeRace.opponents.forEach((o,i)=>{activeOffroad[i]+=o.car.offRoad?1:0;});
   if(closeRace.elapsed>40){let alongside=false;
     for(let i=0;i<11;i++)for(let j=i+1;j<11;j++){
@@ -1017,6 +1018,8 @@ assert.ok(closeRace.opponents.some(o=>Math.abs(o.car.distance-closePlayer.distan
 assert.ok(activeFieldPasses>=2&&activeFieldTwoWide>120);assert.ok(activeRanks.has(12)&&Math.min(...activeRanks)<12,'A low-ranked player must have attainable opponents');assert.ok(activeOffroad.every(frames=>frames===0),'The adaptive contest must stay on asphalt');
 assert.ok(earlyStops.every(frames=>frames===0),'Rivals must not crawl or stop on the first-corner approach');
 assert.equal(closePlayer.gripScale,1);assert.equal(closePlayer.powerScale,1);assert.equal(closePlayer.raceSpeedCap,undefined);
+assert.ok(actualDRSFrames>120&&actualWakeFrames>120,'Real AI cars must earn and use DRS and slipstream during the three-lap race');
+console.log('PASS: actual full-grid AI DRS activation and slipstream use',{drsCarSeconds:actualDRSFrames/120,wakeCarSeconds:actualWakeFrames/120});
 console.log('PASS: two-sided player-pace matching and full three-lap close field',{nearFraction:nearFrames/measuredFrames,gaps:closeRace.opponents.map(o=>Math.round((o.car.distance-closePlayer.distance)*track.length)),earlyStops});
 closeRace.reset();assert.ok(closeRace.opponents.every(o=>o.racePace===undefined));
 
@@ -1218,6 +1221,16 @@ sliderInput.clear();listeners.keydown(keyEvent('KeyQ'));listeners.keydown(keyEve
 sliderInput.clear();listeners.keydown(keyEvent('KeyE',false,true));manualKeysCar.update(.2,sliderInput);assert.equal(manualKeysCar.transmission.gear,3,'Editing a control must not shift the car');
 manualKeysCar.reset();assert.equal(manualKeysCar.transmission.mode,'manual');assert.equal(manualKeysCar.transmission.gear,1);
 console.log('PASS: actual paddle key events, repeat suppression, opposite-key cancellation, focused-control isolation and mode-preserving restart');
+manualKeysCar.resetAt(400/track.length);manualKeysCar.speed=75;manualKeysCar.aero.available=true;sliderInput.clear();
+listeners.keydown(keyEvent('KeyF'));manualKeysCar.update(.04,sliderInput);assert.equal(manualKeysCar.aero.active,true);assert.ok(manualKeysCar.model.rearFlap.rotation.x<-.1,'The actual near-car rear wing must open with DRS');
+listeners.keyup(keyEvent('KeyF'));listeners.keydown(keyEvent('KeyF'));manualKeysCar.update(.01,sliderInput);assert.equal(manualKeysCar.aero.active,false);
+listeners.keyup(keyEvent('KeyF'));listeners.keydown(keyEvent('KeyF'));manualKeysCar.update(.04,sliderInput);assert.equal(manualKeysCar.aero.active,true);
+listeners.keydown(keyEvent('KeyS'));manualKeysCar.update(.01,sliderInput);assert.equal(manualKeysCar.aero.active,false);assert.equal(Math.abs(manualKeysCar.model.rearFlap.rotation.x),0);
+listeners.keyup(keyEvent('KeyS'));manualKeysCar.update(.01,sliderInput);assert.equal(manualKeysCar.aero.active,false,'Releasing the brake must not reopen player DRS without a new press');
+manualKeysCar.aero.available=false;listeners.keyup(keyEvent('KeyF'));listeners.keydown(keyEvent('KeyF'));manualKeysCar.update(.01,sliderInput);assert.equal(manualKeysCar.aero.active,false);
+sliderInput.clear();manualKeysCar.reset();
+console.log('PASS: actual DRS key toggle, visible rear-wing actuator, immediate brake closure, no automatic player reopening and eligibility guard');
+
 globalThis.window=savedWindow;
 console.log('PASS: real kerb overlap, brake/gear camera feedback, stable horizon, adjustable motion, frame-rate independence, shared RPM, wind/kerb audio and pause/mute');
 
@@ -1294,7 +1307,7 @@ assert.equal(renderState.target,null);assert.equal(fakeRenderer.shadowMap.autoUp
 const {createCar}=await import(moduleURL('CarModel'));const detailedCar=createCar(0xc12e35);
 let carMeshes=0,carTriangles=0;
 detailedCar.group.traverse(child=>{if(child instanceof THREE.Mesh){carMeshes++;const geometry=child.geometry;carTriangles+=(geometry.index?.count??geometry.getAttribute('position').count)/3;assert.ok(geometry.getAttribute('position').array.every(Number.isFinite));}});
-assert.ok(carMeshes<=33,'Model detail must not restore the old per-part draw-call overhead');
+assert.ok(carMeshes<=34,'Model detail must not restore the old per-part draw-call overhead');
 const pivots=detailedCar.group.children.filter(child=>child.name==='wheel-pivot');assert.equal(pivots.length,4);
 for(const pivot of pivots){
   const bounds=new THREE.Box3().setFromObject(pivot);assert.ok(bounds.min.y>.035&&bounds.min.y<.065,'Tyres must meet the asphalt without sinking');
@@ -1434,6 +1447,9 @@ Game.prototype.selectTransmission.call({vehicle:signalPlayer,hud:signalHUD},'aut
 assert.equal(transmissionWrites.get('apex-transmission-mode'),'auto');
 if(savedStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=savedStorage;
 console.log('PASS: working start/pause transmission selectors, synchronized mode indicator and visible paddle controls');
+signalPlayer.aero.active=true;signalPlayer.aero.available=true;signalPlayer.aero.wake=.6;signalHUD.update(signalPlayer,signalRace,false,track,1);assert.equal(nodes.get('#drs-status').textContent,'DRS 사용 중');assert.equal(nodes.get('#draft-status').textContent,'슬립스트림 60%');signalPlayer.aero.clear();
+console.log('PASS: live DRS/slipstream HUD status and activation control hint');
+
 signalRace.reset();signalRace.start();signalRace.update(2.61,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);
 assert.ok(!/seat-height|seat-value/.test(hudRoot.innerHTML),'Fixed seat height must not retain an adjustment control');
 assert.ok(!/countdown|start-rack|light-pod|start-caption|빨간불이 모두/.test(hudRoot.innerHTML),'No screen-space start lights or captions may remain');
@@ -1707,8 +1723,8 @@ console.log('PASS: twelve-car default, individual controllers, three clean chica
 // detailed chassis/wheels without touching physical state or frame history.
 const lodCar=new Vehicle(track,new THREE.Scene(),0x32a9c8);lodCar.speed=65;lodCar.lateralSpeed=.5;const lodPosition=lodCar.position.clone();
 lodCar.setPresentation(200,'medium');let distantMeshes=0,distantTriangles=0;lodCar.group.traverseVisible(o=>{if(o instanceof THREE.Mesh){distantMeshes++;distantTriangles+=(o.geometry.index?.count??o.geometry.getAttribute('position').count)/3;assert.ok(o.geometry.getAttribute('position').array.every(Number.isFinite));}});
-assert.ok(distantMeshes<=4&&distantTriangles<500,'Distant full-grid traffic must not draw the detailed 33-mesh car');assert.ok(lodCar.position.equals(lodPosition)&&lodCar.speed===65&&lodCar.lateralSpeed===.5);
-lodCar.setPresentation(20,'medium');let nearMeshes=0;lodCar.group.traverseVisible(o=>{if(o instanceof THREE.Mesh)nearMeshes++;});assert.equal(nearMeshes,33);lodCar.setPresentation(700,'medium');assert.equal(lodCar.group.visible,false);lodCar.setPresentation(20,'medium');assert.equal(lodCar.group.visible,true);
+assert.ok(distantMeshes<=4&&distantTriangles<500,'Distant full-grid traffic must not draw the detailed 34-mesh car');assert.ok(lodCar.position.equals(lodPosition)&&lodCar.speed===65&&lodCar.lateralSpeed===.5);
+lodCar.setPresentation(20,'medium');let nearMeshes=0;lodCar.group.traverseVisible(o=>{if(o instanceof THREE.Mesh)nearMeshes++;});assert.equal(nearMeshes,34);lodCar.setPresentation(700,'medium');assert.equal(lodCar.group.visible,false);lodCar.setPresentation(20,'medium');assert.equal(lodCar.group.visible,true);
 signalHUD.update(signalPlayer,independentRace,false,track,1);assert.equal(nodes.get('#field-size').textContent,'12');assert.equal(nodes.get('#driver-count').textContent,'12');
 console.log('PASS: accurate twelve-driver HUD and distant traffic geometry budget',{distantMeshes,distantTriangles,nearMeshes});
 const boundaryDistances=independentRace.opponents.map(o=>o.car.distance).sort((a,b)=>b-a);

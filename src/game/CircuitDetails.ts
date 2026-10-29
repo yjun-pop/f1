@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {GRAPHICS_PROFILES,type GraphicsTier} from './Graphics';
 import type {Track} from './Track';
+import type {DRSZone} from './Aerodynamics';
 
 /** Local batches keep detail near either view without drawing the whole circuit. */
 export class CircuitDetails {
@@ -59,6 +60,24 @@ export class CircuitDetails {
     pit.add(shutters,new THREE.Mesh(trimGeometry,steel));this.group.add(pit);pit.updateMatrixWorld(true);
     this.chunks.push({group:pit,center:pit.position.clone(),radius:125});
     track.group.add(this.group);
+  }
+  addDRSBoards(track:Track,zones:readonly DRSZone[]){
+    if(this.group.getObjectByName('drs-zone-signs'))return;
+    const signs=new THREE.Group();signs.name='drs-zone-signs';this.group.add(signs);
+    const materials=[false,true].map(end=>{
+      const canvas=document.createElement('canvas');canvas.width=256;canvas.height=128;const ctx=canvas.getContext('2d')!;
+      ctx.fillStyle=end?'#a7790b':'#087e49';ctx.fillRect(0,0,256,128);ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='bold 70px sans-serif';ctx.fillText(end?'END':'DRS',128,91);
+      const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;
+      return new THREE.MeshBasicMaterial({map,side:THREE.DoubleSide});
+    });
+    const steel=new THREE.MeshStandardMaterial({color:0x7b878b,roughness:.65});
+    for(const zone of zones)for(const [end,metres] of [[false,zone.start],[true,zone.end]] as const){
+      const t=metres/track.length,group=new THREE.Group();group.position.copy(track.point(t)).addScaledVector(track.normal(t),-12.4);
+      const tangent=track.tangent(t);group.rotation.y=Math.atan2(tangent.x,tangent.z)+Math.PI;
+      const post=new THREE.Mesh(new THREE.BoxGeometry(.08,2.5,.08),steel);post.position.y=1.25;
+      const panel=new THREE.Mesh(new THREE.PlaneGeometry(1.6,.8),materials[end?1:0]);panel.position.y=2.3;
+      group.add(post,panel);signs.add(group);this.chunks.push({group,center:group.position.clone(),radius:3});
+    }
   }
   update(position:THREE.Vector3,tier:GraphicsTier){
     const range=GRAPHICS_PROFILES[tier].detailRange;

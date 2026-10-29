@@ -10,6 +10,7 @@ import {DEFAULT_FIELD_SIZE,DRIVER_PROFILES} from './RaceRoster';
 import {RaceTiming} from './RaceTiming';
 import {AISpeedPlanner} from './AISpeedPlanner';
 import {CornerPaceObserver} from './CornerPaceObserver';
+import {RaceAerodynamics} from './Aerodynamics';
 export interface Rival {
   agent:DriverAgent;car:Vehicle;distance:number;speed:number;name:string;
   personality:string;caution:number;launch:number;collisionScore:number;collisionCount:number;avoidance:number;
@@ -17,6 +18,8 @@ export interface Rival {
   racePace?:number;rank:number;speedCap:number;powerAssist:number;attack:number;pace:number;aggression:number;reaction:number;lineBias:number;phase:number;lane:number;decision:number;stuck:number;control:Controls;
 }
 export class Race {
+  readonly aerodynamics:RaceAerodynamics;private aeroPreparedAt=-Infinity;
+  prepareAerodynamics(player:Vehicle){this.aerodynamics.update([player,...this.opponents.map(o=>o.car)],this.elapsed,this.state==='racing');this.aeroPreparedAt=this.elapsed;}
   state:'ready'|'countdown'|'racing'|'finished'='ready';
   countdown=0;elapsed=0;lapTime=0;best=0;lastLap=0;position=DEFAULT_FIELD_SIZE;
   readonly startSequence=new StartSequence();
@@ -33,7 +36,7 @@ export class Race {
   private timingSamples(player:Vehicle){return [{id:'PLAYER',name:'PLAYER',distance:player.distance},...this.opponents.map(o=>({id:o.name,name:o.name,distance:o.car.distance}))];}
   get intervals(){return this.player?this.timing.neighbours(this.timingSamples(this.player),'PLAYER',this.elapsed):{ahead:null,behind:null};}
   constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number}={}){
-    this.timing=new RaceTiming(track.length);
+    this.timing=new RaceTiming(track.length);this.aerodynamics=new RaceAerodynamics(track,planner);track.details.addDRSBoards(track,this.aerodynamics.zones);
     // Rivals retain fixed steering/grip calibration, but share the player's
     // engine output, ERS and speed limits. Difficulty adjusts driving targets.
     this.aiSpeeds=Float64Array.from(planner.cornerSpeeds);
@@ -53,7 +56,7 @@ export class Race {
     profiles.forEach((p,i)=>{const driver:Omit<Rival,'agent'>={...p,car:new Vehicle(track,scene,p.color,{grip:1.4,power:1}),distance:0,speed:0,collisionScore:0,collisionCount:0,avoidance:0,passUntil:0,defendUntil:0,defendCooldown:0,defendLane:0,phase:i*2.17,lane:0,decision:0,stuck:0,rank:i+1,speedCap:94,powerAssist:1,attack:0,control:{throttle:0,brake:0,steer:0}};const rival=Object.assign(driver,{agent:new DriverAgent(driver,track,planner,this.aiSpeeds,this.speedPlanner)});this.opponents.push(rival);});this.reset();
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
-  reset(){this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
+  reset(){this.aerodynamics.reset();this.aeroPreparedAt=-Infinity;this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
     this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.speedPlanner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceGripAssist=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready'){this.startSequence.arm();this.countdown=this.startSequence.remaining;this.state='countdown';}}
   private balanceRivals(player:Vehicle,dt:number){
@@ -116,10 +119,11 @@ export class Race {
     this.player=player;
     if(this.state==='countdown'){this.startSequence.advance(dt);this.countdown=this.startSequence.remaining;if(this.startSequence.signal.phase==='go'){this.state='racing';this.timing.update(this.timingSamples(player),0);}return;}
     if(this.state!=='racing')return;
+    if(this.aeroPreparedAt!==this.elapsed)this.prepareAerodynamics(player);this.aeroPreparedAt=-Infinity;
     this.elapsed+=dt;this.lapTime=this.elapsed-this.lapStart;
     const done=Math.floor(player.distance+1e-6);
     if(done>this.completed){this.lastLap=this.lapTime;this.pack.recordLap(this.lastLap,this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;try{localStorage.setItem(this.storageKey,String(this.best));}catch{}}
-      this.completed=done;this.lapStart=this.elapsed;this.lapTime=0;if(done>=3){this.timing.update(this.timingSamples(player),this.elapsed);this.state='finished';return;}}
+      this.completed=done;this.lapStart=this.elapsed;this.lapTime=0;if(done>=3){this.timing.update(this.timingSamples(player),this.elapsed);this.state='finished';this.aerodynamics.reset();return;}}
     this.balanceRivals(player,dt);
     // All drivers observe the same instant, before any car advances.
     const observation=observeTraffic([player,...this.opponents.map(o=>o.car)]);

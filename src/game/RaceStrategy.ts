@@ -2,7 +2,7 @@ export type StrategyMode='balanced'|'prepare'|'attack'|'defend'|'harvest'|'manag
 interface Neighbour {id:object;gap:number;closing:number}
 export interface StrategyObservation {
   elapsed:number;distance:number;speed:number;boost:number;gripUsage:number;lateralSpeed:number;
-  window:boolean;brakingSoon:boolean;settling:boolean;pressure?:boolean;deploying?:boolean;ahead?:Neighbour;behind?:Neighbour;
+  window:boolean;brakingSoon:boolean;settling:boolean;pressure?:boolean;deploying?:boolean;drsAvailable?:boolean;ahead?:Neighbour;behind?:Neighbour;
 }
 export interface StrategyPlan {mode:StrategyMode;reserve:number;allowAttack:boolean;deploy:boolean;preferExit:boolean;driveScale:number}
 /** Private race management per driver. It can only spend the car's actual
@@ -51,7 +51,7 @@ export class RaceStrategy {
     this.mode=mode;
     // Banking energy must not strand a faster car in a train. A clear pass
     // using an existing speed advantage needs no extra ERS or engine power.
-    const momentumPass=o.window&&!o.brakingSoon&&!!o.ahead&&o.ahead.closing>2;
+    const momentumPass=o.window&&!o.brakingSoon&&!!o.ahead&&(o.ahead.closing>2||!!o.drsAvailable&&o.ahead.closing>-.5);
     const allowAttack=!recovering&&(mode!=='harvest'&&o.boost>(final?5:floor)||momentumPass);
     const cruiseReserve=(o.pressure?22:reserve+(manager?22:10))-(o.deploying?8:0);
     const deploy=!o.brakingSoon&&o.window&&(mode==='attack'||mode==='defend'||mode==='finish'||mode==='balanced'&&o.boost>cruiseReserve);
