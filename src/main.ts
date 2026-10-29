@@ -24,7 +24,9 @@ function start(id:CircuitId,transmission:TransmissionMode){
     try{
       const {Game}=await import('./game/Game');
       new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext});
-      menu.dispose();front.remove();
+      // Game queues its first rendered frame first. Keep loading visible until
+      // that frame, rather than briefly revealing an empty canvas or old menu.
+      requestAnimationFrame(()=>{menu.dispose();front.remove();});
     }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();}
   }));
 }
