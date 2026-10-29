@@ -34,7 +34,7 @@ export function monzaDRSZones(length:number,apices:LinePlanner['apices']):DRSZon
 export class RaceAerodynamics {
   readonly zones:readonly DRSZone[];enabled=false;
   private history=new Map<Vehicle,History>();private passages=new Map<string,Passage[]>();
-  constructor(private track:Track,planner:LinePlanner){this.zones=monzaDRSZones(track.length,planner.apices);}
+  constructor(private track:Track,planner:LinePlanner){this.zones=track.drsZones??monzaDRSZones(track.length,planner.apices);}
   reset(){for(const car of this.history.keys())car.aero.clear();this.history.clear();this.passages.clear();this.enabled=false;}
   update(cars:readonly Vehicle[],elapsed:number,racing:boolean){
     if(!racing){this.reset();for(const car of cars)car.aero.clear();return;}

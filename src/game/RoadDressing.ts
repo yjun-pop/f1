@@ -6,7 +6,7 @@ import {surfaceMaps} from './SurfaceTextures';
 export function createRoadDressing(track:Track){
   const group=new THREE.Group();group.name='road-dressing';
   const rubberPositions:number[]=[],rubberUV:number[]=[],rubberIndices:number[]=[],rubberColors:number[]=[],gravelPositions:number[]=[],gravelUV:number[]=[],gravelIndices:number[]=[];
-  const sections=track.sections.filter(s=>[1,4,6,7,8,11].includes(s.number));
+  const sections=track.sections.filter(s=>s.braking??[1,4,6,7,8,11].includes(s.number));
   for(const section of sections){
     const t=section.progress,a=track.tangent(t-20/track.length),b=track.tangent(t+20/track.length),turn=Math.sign(a.z*b.x-a.x*b.z)||1;
     for(const wheel of [-1,1]){

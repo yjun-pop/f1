@@ -1,6 +1,6 @@
 # Circuit centerline data
 
-Monza centerline adapted from [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits), circuits/it-1922.geojson.
+Monza, Silverstone and Spa centerlines adapted from [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits): circuits/it-1922.geojson, circuits/gb-1948.geojson and circuits/be-1925.geojson. Layouts are projected and scaled to their published lengths; Silverstone is re-anchored to the modern Hamilton start straight. These are simplified geographic recreations, not surveyed circuit assets.
 
 Copyright (c) 2019-2025 Tomislav Bacinger
 

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {surfaceMaps} from './SurfaceTextures';
-import {MONZA_POINTS,MONZA_LENGTH,MONZA_SECTIONS,MONZA_ORIGIN} from './MonzaLayout';
+import {MONZA,type CircuitDefinition} from './Circuits';
+import type {DRSZone} from './Aerodynamics';
 import {CircuitDetails} from './CircuitDetails';
 import type {GraphicsTier} from './Graphics';
 import {connectKerbSegments,createKerbContacts,createKerbGeometry,kerbPaintMap,type KerbContactSegment} from './KerbGeometry';
@@ -15,10 +16,12 @@ import {createGrandstands,updateGrandstands} from './Grandstands';
 import {DEFAULT_FIELD_SIZE} from './RaceRoster';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
-  readonly name='MONZA';readonly country='ITALY';readonly cornerCount=11;
+  readonly name:string;readonly country:string;readonly cornerCount:number;
+  readonly drsZones?:readonly DRSZone[];
+  private controlMargins:{start:number;length:number;margin:number}[]=[];
   readonly curve:THREE.CatmullRomCurve3;readonly length:number;
   readonly group=new THREE.Group();
-  readonly sections:{number:number;name:string;progress:number}[]=[];
+  readonly sections:{number:number;name:string;progress:number;braking?:boolean}[]=[];
   readonly bounds=new THREE.Box3();
   private samples:THREE.Vector3[]=[];private sampleCount=0;private kerbSegments=new Uint8Array(0);
   private kerbContacts:KerbContactSegment[][]=[];
@@ -28,14 +31,17 @@ export class Track {
   readonly barrierPaths:readonly BarrierPath[];private grandstands:THREE.Group[]=[];
   readonly surfaceGeometries=new Map<string,THREE.BufferGeometry>();
   private kerbNearby=new Uint8Array(0);
-  constructor(scene:THREE.Scene){
-    let raw=MONZA_POINTS.map(([x,z])=>new THREE.Vector3(x,0,z));
+  constructor(scene:THREE.Scene,readonly circuit:CircuitDefinition=MONZA){
+    this.name=circuit.name;this.country=circuit.country;this.cornerCount=circuit.cornerCount;
+    let raw=circuit.points.map(([x,z])=>new THREE.Vector3(x,0,z));
     // Long sparse source segments must remain straight. Densification prevents
     // Catmull-Rom tangents from pulling kilometre-long straights into arcs.
-    const t1=raw.findIndex(p=>Math.abs(p.z+988.105)<8);
-    if(t1>0)raw=[raw[0],...raw.slice(t1)];
-    const direction=raw[1].clone().sub(raw[0]).normalize();
-    raw[raw.length-1].copy(raw[0]).addScaledVector(direction,-52);
+    if(circuit.id==='monza'){
+      const t1=raw.findIndex(p=>Math.abs(p.z+988.105)<8);
+      if(t1>0)raw=[raw[0],...raw.slice(t1)];
+      const direction=raw[1].clone().sub(raw[0]).normalize();
+      raw[raw.length-1].copy(raw[0]).addScaledVector(direction,-52);
+    }
     const points:THREE.Vector3[]=[];
     for(let i=0;i<raw.length;i++){
       const p=raw[i],q=raw[(i+1)%raw.length],steps=Math.ceil(p.distanceTo(q)/6);
@@ -43,17 +49,25 @@ export class Track {
     }
     this.curve=new THREE.CatmullRomCurve3(points,true,'centripetal');
     this.curve.arcLengthDivisions=24000;this.curve.updateArcLengths();
-    const scale=MONZA_LENGTH/this.curve.getLength();for(const p of points)p.multiplyScalar(scale);
+    const scale=circuit.length/this.curve.getLength();for(const p of points)p.multiplyScalar(scale);
     this.curve.updateArcLengths();this.length=this.curve.getLength();
     this.visualRoad=new VisualRoadCurve(this.length,t=>this.point(t));
     this.barrierPaths=[new BarrierPath(this,-1),new BarrierPath(this,1)];
     this.sampleCount=Math.ceil(this.length/2);
     this.samples=Array.from({length:this.sampleCount},(_,i)=>this.point(i/this.sampleCount));
     this.bounds.setFromPoints(this.samples);
-    for(const section of MONZA_SECTIONS){const [lon,lat]=section.coordinate;
-      const p=new THREE.Vector3((lon-MONZA_ORIGIN[0])*111320*Math.cos(MONZA_ORIGIN[1]*Math.PI/180)*scale,0,-(lat-MONZA_ORIGIN[1])*111320*scale);
+    for(const section of circuit.sections){const [lon,lat]=section.coordinate;
+      const p=new THREE.Vector3((lon-circuit.origin[0])*111320*Math.cos(circuit.origin[1]*Math.PI/180)*scale,0,-(lat-circuit.origin[1])*111320*scale);
       let closest=0,best=Infinity;for(let i=0;i<this.sampleCount;i++){const d=this.samples[i].distanceToSquared(p);if(d<best){best=d;closest=i;}}
-      this.sections.push({number:section.number,name:section.name,progress:closest/this.sampleCount});
+      this.sections.push({number:section.number,name:section.name,progress:closest/this.sampleCount,braking:section.braking});
+    }
+    this.sections.sort((a,b)=>a.progress-b.progress);
+    const wrap=(m:number)=>(m%this.length+this.length)%this.length;
+    const at=(gate:{section:number;offset:number})=>wrap(this.sections.find(s=>s.number===gate.section)!.progress*this.length+gate.offset);
+    this.controlMargins=(circuit.aiControlMargins??[]).map(zone=>({start:at(zone.from),length:wrap(at(zone.to)-at(zone.from)),margin:zone.margin}));
+    if(circuit.drs){
+      // Keep activation/expiry after detection, including a start-line crossing.
+      this.drsZones=circuit.drs.map(zone=>{const detection=at(zone.detection),start=detection+wrap(at(zone.start)-detection),end=start+wrap(at(zone.end)-start);return {id:zone.id,detection,start,end};});
     }
     this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
     freezeStaticWorld(this.group);
@@ -68,6 +82,14 @@ export class Track {
     }
   }
   setStartLights(count:number){this.startBulbs.forEach((material,i)=>{const lit=i<count;material.color.setHex(lit?0xcc160a:0x190b0c);material.emissiveIntensity=lit?3:.015;});}
+  aiControlMargin(progress:number){
+    let margin=1;
+    for(const zone of this.controlMargins){
+      const distance=((progress*this.length-zone.start)%this.length+this.length)%this.length;
+      if(distance<zone.length)margin=Math.min(margin,THREE.MathUtils.lerp(1,zone.margin,THREE.MathUtils.smoothstep(Math.min(distance,zone.length-distance),0,60)));
+    }
+    return margin;
+  }
   point(t:number){return this.curve.getPointAt(((t%1)+1)%1);}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
@@ -139,11 +161,11 @@ export class Track {
     this.group.add(kerbs,createBarriers(this.barrierPaths));
     this.grandstands=createGrandstands(this);this.group.add(...this.grandstands);
     const steel=new THREE.MeshStandardMaterial({color:0x263b36});
-    const pit=new THREE.Group();pit.position.copy(this.point(.035)).addScaledVector(this.normal(.035),31);pit.rotation.y=Math.atan2(this.tangent(.035).x,this.tangent(.035).z);
+    const pit=new THREE.Group(),pitProgress=this.circuit.pitProgress;pit.name='pit-building';pit.position.copy(this.point(pitProgress)).addScaledVector(this.normal(pitProgress),31);pit.rotation.y=Math.atan2(this.tangent(pitProgress).x,this.tangent(pitProgress).z);
     const building=new THREE.Mesh(new THREE.BoxGeometry(17,7,240),new THREE.MeshStandardMaterial({color:0xa1b0b0,roughness:.75}));building.position.y=3.5;pit.add(building);const windows=new THREE.Mesh(new THREE.BoxGeometry(17.2,1.5,225),new THREE.MeshStandardMaterial({color:0x233d4b,metalness:.5,roughness:.3}));windows.position.y=5.4;pit.add(windows);this.group.add(pit);
     const start=this.point(24/this.length),forward=this.tangent(24/this.length),gantry=new THREE.Group();gantry.name='start-gantry';
     for(const side of [-1,1]){const post=new THREE.Mesh(new THREE.BoxGeometry(.5,8,.5),steel);post.position.set(side*12,4,0);gantry.add(post);}const board=new THREE.Mesh(new THREE.BoxGeometry(25,2,.65),steel);board.position.y=7;gantry.add(board);
-    const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=96;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#143d2e';ctx.fillRect(0,0,1024,96);ctx.fillStyle='#fff';ctx.font='bold italic 56px sans-serif';ctx.textAlign='center';ctx.fillText('MONZA  /  TEMPLE OF SPEED',512,66);
+    const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=96;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#143d2e';ctx.fillRect(0,0,1024,96);ctx.fillStyle='#fff';ctx.font='bold italic 44px sans-serif';ctx.textAlign='center';ctx.fillText(`${this.name}  /  ${this.circuit.tagline}`,512,66);
     const sign=new THREE.Mesh(new THREE.PlaneGeometry(23,1.65),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas)}));sign.position.set(0,7,-.34);sign.rotation.y=Math.PI;gantry.add(sign);gantry.position.copy(start);gantry.rotation.y=Math.atan2(forward.x,forward.z);this.group.add(gantry);
     // Real lamps face back towards the grid, beneath the start-line gantry.
     // Shared/merged housings keep the signal independent of HUD and postprocessing.
@@ -164,7 +186,7 @@ export class Track {
     for(let i=0;i<count;i++){const t=i/count,side=i%2?1:-1,p=this.point(t).addScaledVector(this.normal(t),side*19),n=this.normal(t);dummy.rotation.set(0,0,0);dummy.position.set(p.x,7.5,p.z);dummy.updateMatrix();poles.setMatrixAt(i,dummy.matrix);dummy.position.set(p.x-n.x*side*1.5,15,p.z-n.z*side*1.5);dummy.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z);dummy.updateMatrix();lamps.setMatrixAt(i,dummy.matrix);}this.group.add(poles,lamps);
   }
   private buildBrakeBoards(){
-    for(const section of this.sections.filter(s=>[1,4,6,7,8,11].includes(s.number)))for(const distance of [150,100,50]){
+    for(const section of this.sections.filter(s=>s.braking))for(const distance of [150,100,50]){
       const t=section.progress-distance/this.length,p=this.point(t).addScaledVector(this.normal(t),-12.5),v=this.tangent(t),canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#eaf1e9';ctx.fillRect(0,0,128,128);ctx.fillStyle='#14231d';ctx.font='bold 64px sans-serif';ctx.textAlign='center';ctx.fillText(String(distance),64,85);
       const board=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),side:THREE.DoubleSide}));board.position.copy(p).setY(1.9);board.rotation.y=Math.atan2(v.x,v.z)+Math.PI;this.group.add(board);
     }

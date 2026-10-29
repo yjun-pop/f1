@@ -79,7 +79,7 @@ export class Race {
       let targetPace=freePace,targetCap=94,targetPower=1;
       if(this.pack.active){
         const pack=this.pack.targets(gap,o.rank,this.position,o.pace,o.attack,this.fieldSize);
-        const formation=this.fieldSize>6&&o.car.distance*this.track.length<1250;
+        const formation=this.fieldSize>6&&o.car.distance*this.track.length<(this.track.circuit?.formationEnd??1300)-50;
         const matching=formation?0:THREE.MathUtils.smoothstep(this.elapsed,4,18);
         targetPace=THREE.MathUtils.lerp(freePace,pack.pace,matching);
         // No extra straight-line performance in a visible duel or while the
@@ -122,7 +122,7 @@ export class Race {
     if(this.aeroPreparedAt!==this.elapsed)this.prepareAerodynamics(player);this.aeroPreparedAt=-Infinity;
     this.elapsed+=dt;this.lapTime=this.elapsed-this.lapStart;
     const done=Math.floor(player.distance+1e-6);
-    if(done>this.completed){this.lastLap=this.lapTime;this.pack.recordLap(this.lastLap,this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;try{localStorage.setItem(this.storageKey,String(this.best));}catch{}}
+    if(done>this.completed){this.lastLap=this.lapTime;this.pack.recordLap(this.lastLap*88/(this.track.circuit?.referenceLap??88),this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;try{localStorage.setItem(this.storageKey,String(this.best));}catch{}}
       this.completed=done;this.lapStart=this.elapsed;this.lapTime=0;if(done>=3){this.timing.update(this.timingSamples(player),this.elapsed);this.state='finished';this.aerodynamics.reset();return;}}
     this.balanceRivals(player,dt);
     // All drivers observe the same instant, before any car advances.

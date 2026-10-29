@@ -96,17 +96,19 @@ export class DriverAgent {
     const meters=car.progress*this.track.length;
     const fieldSize=observation.fieldSize??observation.traffic.length;
     const crowdedField=fieldSize>6;
-    // A larger standing grid must first clear Rettifilo; local battles then
+    // A larger standing grid must first clear its opening turns; local battles then
     // use their own timing instead of all drivers returning to one slot.
     const racingField=fieldSize>2;
-    const openingFormation=racingField&&this.elapsed<40&&meters<1300;
+    const openingFormation=racingField&&this.elapsed<40&&meters<(this.track.circuit?.formationEnd??1300);
     const competitive=racingField&&!openingFormation;
     const elitePursuit=competitive&&(o.racePace??o.pace)/Math.sqrt(car.gripScale)>1.24;
     const battleThreshold=elitePursuit?84:72;
     const straight=[0,20,40,60].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>(competitive?battleThreshold:60));
     const passRoadClear=!competitive||[0,30,60,90,120].every(distance=>this.planner.cornerLimit(car.progress+distance/this.track.length)>battleThreshold);
     const converging=competitive&&!passRoadClear;
-    const narrow=this.narrowCorners.find(corner=>meters>corner.entry-360&&meters<corner.exit+100);
+    const firstApex=this.planner.apices[0]?.progress*this.track.length;
+    const openingCorner=openingFormation&&this.track.circuit&&this.track.circuit.id!=='monza'&&Number.isFinite(firstApex)&&meters>firstApex-360&&meters<firstApex+120?{entry:firstApex,exit:firstApex+20}:undefined;
+    const narrow=this.narrowCorners.find(corner=>meters>corner.entry-360&&meters<corner.exit+100)??openingCorner;
     const chicaneTraffic=!!narrow&&traffic.some(other=>Math.abs(gapTo(other))<100);
     // Each independent driver remembers contact and spends more margin afterward.
     const caution=o.caution+o.avoidance,clearance=2.8+caution*.3;
@@ -125,7 +127,10 @@ export class DriverAgent {
     // varies the individual target inside the established physical pace cap.
     const rhythm=competitive&&!elitePursuit?1+.04*Math.sin(car.distance*Math.PI*7.3+o.phase):1;
     const pace=Math.min(1.47,(o.racePace??o.pace)*rhythm);
-    const advanced=openingFormation?0:THREE.MathUtils.smoothstep(pace,1.25,1.43);
+    // Monza retains its validated launch envelope. Other circuits use the
+    // physical AI path even in formation, rather than multiplying guide speeds
+    // that describe a different line through their first single corner.
+    const advanced=this.track.circuit&&this.track.circuit.id!=='monza'?1:openingFormation?0:THREE.MathUtils.smoothstep(pace,1.25,1.43);
     const aheadResource=traffic.filter(other=>gapTo(other)>0&&gapTo(other)<90).sort((a,b)=>gapTo(a)-gapTo(b))[0];
     const behindResource=traffic.filter(other=>gapTo(other)<0&&gapTo(other)>-45).sort((a,b)=>gapTo(b)-gapTo(a))[0];
     const strategy=this.strategy.update({elapsed:this.elapsed,distance:car.distance,speed:car.speed,boost:car.boost,gripUsage:car.gripUsage,lateralSpeed:car.lateralSpeed,
@@ -144,8 +149,9 @@ export class DriverAgent {
     // than a capped multiple of the conservative guide shown to the player.
     // Keep the established gentle targets for less experienced players and
     // the standing-grid chicane, then blend continuously into physical plans.
-    const speedAt=(progress:number)=>advanced===0?this.racingSpeed(progress)*pace:THREE.MathUtils.lerp(this.racingSpeed(progress)*pace,this.speedPlanner.speed(progress,pace,car.gripScale),advanced);
-    const cornerAt=(progress:number)=>advanced===0?this.planner.cornerLimit(progress)*pace:THREE.MathUtils.lerp(this.planner.cornerLimit(progress)*pace,this.speedPlanner.cornerLimit(progress,pace,car.gripScale),advanced);
+    const marginAt=(progress:number)=>this.track.aiControlMargin?.(progress)??1;
+    const speedAt=(progress:number)=>(advanced===0?this.racingSpeed(progress)*pace:THREE.MathUtils.lerp(this.racingSpeed(progress)*pace,this.speedPlanner.speed(progress,pace,car.gripScale),advanced))*marginAt(progress);
+    const cornerAt=(progress:number)=>(advanced===0?this.planner.cornerLimit(progress)*pace:THREE.MathUtils.lerp(this.planner.cornerLimit(progress)*pace,this.speedPlanner.cornerLimit(progress,pace,car.gripScale),advanced))*marginAt(progress);
     const safeTarget=(progress:number,attack=0)=>{
       let target=Math.min(o.speedCap,speedAt(progress)+attack);
       const braking=brakingDeceleration(car.speed,car.offRoad,car.gripScale)*THREE.MathUtils.lerp(.75,.82,advanced);

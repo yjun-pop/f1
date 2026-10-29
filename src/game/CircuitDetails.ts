@@ -45,7 +45,7 @@ export class CircuitDetails {
       this.chunks.push({group,center:sphere.center,radius:sphere.radius});this.group.add(group);
     }
     // Pit openings face the road. All shutters and all frames use one batch each.
-    const pit=new THREE.Group();pit.name='pit-garage-details';pit.position.copy(track.point(.035)).addScaledVector(track.normal(.035),31);pit.rotation.y=Math.atan2(track.tangent(.035).x,track.tangent(.035).z);
+    const pit=new THREE.Group(),pitProgress=track.circuit?.pitProgress??.035;pit.name='pit-garage-details';pit.position.copy(track.point(pitProgress)).addScaledVector(track.normal(pitProgress),31);pit.rotation.y=Math.atan2(track.tangent(pitProgress).x,track.tangent(pitProgress).z);
     const shutters=new THREE.InstancedMesh(new THREE.BoxGeometry(.06,3.25,8.5),new THREE.MeshStandardMaterial({color:0x35434c,roughness:.78}),24);
     const trimPieces:THREE.BufferGeometry[]=[];
     const trim=(w:number,h:number,d:number,x:number,y:number,z:number)=>{const g=new THREE.BoxGeometry(w,h,d);g.translate(x,y,z);trimPieces.push(g);};
