@@ -1494,10 +1494,10 @@ const {resizeSkyTexture}=await import(moduleURL('WorldLighting'));
 for(const tier of ['low','medium','high']){const photo=resizeSkyTexture(sourceSky,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(photo.image.width,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(photo.flipY,true);assert.ok(photo.image.data.every(value=>Number.isFinite(THREE.DataUtils.fromHalfFloat(value))));photo.dispose();}
 const scenery=track.group.getObjectByName('woodland');assert.ok(scenery.children.length>=20&&scenery.children.every(child=>child instanceof THREE.InstancedMesh));
 assert.ok(scenery.children.filter(child=>child.material.map).every(child=>child.material.alphaTest>0),'Leaf cutouts must survive forest detail changes');
-const roadMesh=track.surfaceGeometries.get('asphalt-road'),grassMesh=track.group.getObjectByName('grass-terrain').geometry;
+const roadMesh=track.surfaceGeometries.get('asphalt-road'),grassMesh=track.surfaceGeometries.get('grass-terrain');
 for(const geometry of [roadMesh,grassMesh]){const colors=geometry.getAttribute('color');assert.ok(colors&&colors.array.some(v=>Math.abs(v-colors.getX(0))>.03),'World-scale variation must break up repeated texture tiles');}
-for(const name of ['curved-rubber','gravel-runoff']){const mesh=track.group.getObjectByName(name);assert.ok(mesh&&mesh.geometry.getAttribute('position').array.every(Number.isFinite));}
-const rubberFade=track.group.getObjectByName('curved-rubber').geometry.getAttribute('color');assert.equal(rubberFade.itemSize,4);assert.equal(rubberFade.getW(0),0);assert.equal(rubberFade.getW(80*2),0);assert.equal(rubberFade.getW(40*2),1,'Rubber deposits must fade in and out instead of ending as rectangular stamps');
+for(const name of ['curved-rubber','gravel-runoff']){const group=track.group.getObjectByName(name);assert.ok(group.children.every(mesh=>mesh.geometry.getAttribute('position').array.every(Number.isFinite)));}
+const rubberFade=track.surfaceGeometries.get('curved-rubber').getAttribute('color');assert.equal(rubberFade.itemSize,4);assert.equal(rubberFade.getW(0),0);assert.equal(rubberFade.getW(80*2),0);assert.equal(rubberFade.getW(40*2),1,'Rubber deposits must fade in and out instead of ending as rectangular stamps');
 assert.equal(surfaceMaps('asphalt').map.image.width,512);assert.equal(surfaceMaps('gravel').map.image.width,512);sourceSky.dispose();
 console.log('PASS: five-light sequence, variable hold, frame-rate independence, held grid/timers, shared AI launch, gantry-only start lights, unique start cues, pause/mute, bundled HDR and varied road/woodland');
 // A late HDR load must adopt the currently selected quality, and a failed load

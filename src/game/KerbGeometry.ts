@@ -76,10 +76,13 @@ export function createKerbGeometry(track:KerbPath,mask:Uint8Array){
 let paintMap:THREE.DataTexture|undefined;
 export function kerbPaintMap(){
   if(paintMap)return paintMap;
-  const width=64,height=8,data=new Uint8Array(width*height*4);
+  const width=256,height=64,data=new Uint8Array(width*height*4);
   for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-    const color=x<width/2?[214,73,59]:[245,243,232],i=(y*width+x)*4;
-    for(let c=0;c<3;c++)data[i+c]=color[c];data[i+3]=255;
+    const color=x<width/2?[201,55,43]:[234,231,218],i=(y*width+x)*4;
+    const grain=((Math.imul(x+19,374761393)^Math.imul(y+71,668265263))>>>0)/4294967295;
+    const scuff=(.5+.5*Math.sin(x*.15+Math.sin(y*.19)*2))*Math.exp(-(((y/height-.24)/.19)**2));
+    const shade=.95+grain*.07-scuff*.14,dust=THREE.MathUtils.smoothstep(y/height,.7,1)*.13;
+    for(let c=0;c<3;c++)data[i+c]=THREE.MathUtils.lerp(color[c]*shade,[120,113,93][c],dust);data[i+3]=255;
   }
   paintMap=new THREE.DataTexture(data,width,height);paintMap.colorSpace=THREE.SRGBColorSpace;paintMap.wrapS=THREE.RepeatWrapping;
   paintMap.magFilter=THREE.LinearFilter;paintMap.minFilter=THREE.LinearMipmapLinearFilter;paintMap.generateMipmaps=true;paintMap.anisotropy=4;paintMap.needsUpdate=true;return paintMap;

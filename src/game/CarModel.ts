@@ -21,9 +21,9 @@ function tireLettering(){
 }
 export function createCar(color:number):CarVisual {
   const group=new THREE.Group(),chassis=new THREE.Group();group.add(chassis);
-  const carbon=new THREE.MeshPhysicalMaterial({...surfaceMaps('carbon'),color:0xd0d5dd,roughness:.65,metalness:.15,clearcoat:.3,clearcoatRoughness:.25,bumpScale:.002});
-  const paint=new THREE.MeshPhysicalMaterial({color,roughness:.24,metalness:.55,clearcoat:1,clearcoatRoughness:.12,envMapIntensity:1.25});
-  const silver=new THREE.MeshPhysicalMaterial({color:0xc6cdd1,roughness:.22,metalness:.85,clearcoat:.65,clearcoatRoughness:.15});
+  const carbon=new THREE.MeshStandardMaterial({...surfaceMaps('carbon'),color:0xd0d5dd,roughness:.72,metalness:.08,bumpScale:.002});
+  const paint=new THREE.MeshPhysicalMaterial({color,roughness:.29,metalness:.18,clearcoat:.95,clearcoatRoughness:.18,envMapIntensity:1.1});
+  const silver=new THREE.MeshStandardMaterial({color:0xc6cdd1,roughness:.27,metalness:.85});
   const rubber=new THREE.MeshStandardMaterial({...surfaceMaps('rubber'),color:0xa7aaad,roughness:.94,bumpScale:.001});
   const accent=new THREE.MeshStandardMaterial({color:0xb48b40,roughness:.58,metalness:.1});
   const inlet=new THREE.MeshStandardMaterial({color:0x080d12,roughness:.94});

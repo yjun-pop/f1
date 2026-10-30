@@ -14,6 +14,7 @@ import {RearViewMirror} from './RearViewMirror';
 import {WorldLighting} from './WorldLighting';
 import {GraphicsQuality,graphicsMode,recommendedTier,renderPixelRatio,type GraphicsMode} from './Graphics';
 import {ShadowBudget} from './ShadowBudget';
+import {setSurfaceQuality} from './SurfaceTextures';
 export class Game {
   private renderer:THREE.WebGLRenderer;
   private scene=new THREE.Scene();private input=new Input();private track:Track;private vehicle:Vehicle;private cockpit:CockpitCamera;private line:RacingLine;private hud:HUD;private race:Race;
@@ -62,6 +63,7 @@ export class Game {
   private selectTransmission(mode:TransmissionMode){this.vehicle.setTransmissionMode(mode);this.hud.setTransmissionMode(mode);try{localStorage.setItem('apex-transmission-mode',mode);}catch{}}
   private selectGraphics(mode:GraphicsMode){this.graphics.select(mode);try{localStorage.setItem('apex-graphics-quality',mode);}catch{}this.applyGraphics();}
   private applyGraphics(){
+    setSurfaceQuality(this.graphics.tier,this.renderer.capabilities.getMaxAnisotropy());
     this.renderer.setPixelRatio(renderPixelRatio(window.devicePixelRatio,window.innerWidth,window.innerHeight,this.graphics.tier,this.graphics.renderScale));this.renderer.setSize(window.innerWidth,window.innerHeight);
     this.lighting.setQuality(this.graphics.tier);this.mirror.setQuality(this.graphics.tier);this.hud.setGraphics(this.graphics.mode,this.graphics.tier);
     this.cockpit.camera.far=this.graphics.profile.viewFar;this.cockpit.camera.updateProjectionMatrix();

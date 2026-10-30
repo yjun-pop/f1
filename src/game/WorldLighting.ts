@@ -51,14 +51,14 @@ export function createSkyTexture(width:number){
   return sky;
 }
 export class WorldLighting {
-  readonly sun=new THREE.DirectionalLight(0xffe0b5,3.1);
+  readonly sun=new THREE.DirectionalLight(0xfff1dd,2.8);
   readonly sunOffset=new THREE.Vector3(-85,50,-77);
   private sky?:THREE.DataTexture;private environment?:THREE.WebGLRenderTarget;private tier?:GraphicsTier;
   private photograph?:THREE.DataTexture;private loadVersion=0;private disposed=false;
   private backdrop?:THREE.DataTexture;
   constructor(private scene:THREE.Scene,private renderer:THREE.WebGLRenderer,tier:GraphicsTier){
-    scene.backgroundIntensity=.85;scene.environmentIntensity=.9;scene.fog=new THREE.Fog(0xa6b5c2,300,1800);
-    scene.add(new THREE.HemisphereLight(0xb8cce7,0x484a35,.9));
+    scene.backgroundIntensity=.85;scene.environmentIntensity=.85;scene.fog=new THREE.Fog(0xb0c0cc,300,1800);
+    scene.add(new THREE.HemisphereLight(0xbdd4e5,0x545649,.8));
     const sun=this.sun;sun.position.set(-85,50,-77);sun.castShadow=true;
     Object.assign(sun.shadow.camera,{left:-65,right:65,top:65,bottom:-65,near:1,far:400});sun.shadow.camera.updateProjectionMatrix();sun.shadow.normalBias=.025;sun.shadow.bias=-.0001;
     scene.add(sun,sun.target);this.setQuality(tier);
@@ -79,6 +79,7 @@ export class WorldLighting {
   setQuality(tier:GraphicsTier,force=false){
     if(tier===this.tier&&!force)return;
     const profile=GRAPHICS_PROFILES[tier];
+    if(this.scene.fog instanceof THREE.Fog){this.scene.fog.near=profile.viewFar*.26;this.scene.fog.far=profile.viewFar*.96;}
     if(!force&&this.tier&&profile.reflectionWidth===GRAPHICS_PROFILES[this.tier].reflectionWidth){this.tier=tier;this.updateShadowSize(profile.shadowSize);return;}
     const sky=this.photograph?resizeSkyTexture(this.photograph,profile.reflectionWidth):createSkyTexture(profile.reflectionWidth),pmrem=new THREE.PMREMGenerator(this.renderer);
     let environment:THREE.WebGLRenderTarget;
