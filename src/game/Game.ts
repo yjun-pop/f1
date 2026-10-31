@@ -32,7 +32,7 @@ export class Game {
     this.renderer.shadowMap.autoUpdate=false;
     void this.lighting.loadSky(new URL('../assets/park-sky.hdr',import.meta.url).href);
     let savedCircuit:unknown;try{savedCircuit=localStorage.getItem('apex-circuit');}catch{}
-    this.track=new Track(this.scene,options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit));this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner);
+    this.track=new Track(this.scene,options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit));this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle});
     try{localStorage.setItem('apex-circuit',this.track.circuit.id);}catch{}
     try{
       const saved=localStorage.getItem('apex-motion-strength');

@@ -13,11 +13,12 @@ import {TrafficPlanner} from './TrafficPlanner';
 
 export interface TrafficSample {
   readonly car:Vehicle;readonly position:THREE.Vector3;readonly progress:number;readonly speed:number;
+  readonly distance?:number;
   readonly heading?:number;readonly velocity?:THREE.Vector3;readonly offRoad?:boolean;readonly yawRate?:number;
 }
 export interface DriverObservation {readonly elapsed:number;readonly playerPosition:number;readonly fieldSize?:number;readonly traffic:readonly TrafficSample[]}
 export function observeTraffic(cars:readonly Vehicle[]):readonly TrafficSample[]{
-  return cars.map(car=>({car,position:car.position.clone(),progress:car.progress,speed:car.speed,heading:car.heading,velocity:car.velocity,offRoad:car.offRoad,yawRate:car.yawRate}));
+  return cars.map(car=>({car,position:car.position.clone(),progress:car.progress,distance:car.distance,speed:car.speed,heading:car.heading,velocity:car.velocity,offRoad:car.offRoad,yawRate:car.yawRate}));
 }
 export type DriverIntent='race'|'follow'|'overtake'|'defend'|'yield'|'recover'|'avoid'|'merge'|'wait'|'backout';
 interface OpponentMemory {lastSeen:number;gap:number;closing:number;contacts:number;riskUntil:number;lane:number;lateralRate:number}
@@ -26,7 +27,7 @@ interface OpponentMemory {lastSeen:number;gap:number;closing:number;contacts:num
 export class DriverAgent {
   intent:DriverIntent='race';decisions=0;lastDecision=0;lastIncident=-Infinity;
   target?:Vehicle;observation?:DriverObservation;
-  private elapsed=0;private playerPosition=6;private aeroPassUntil=0;private previousDistance?:number;
+  private elapsed=0;private aeroPassUntil=0;private previousDistance?:number;
   private memory=new Map<Vehicle,OpponentMemory>();
   private passingTarget?:Vehicle;private pendingPass?:Vehicle;private passDeadline=0;
   passAttempts=0;passesCompleted=0;
@@ -80,9 +81,13 @@ export class DriverAgent {
     }
     this.previousDistance=o.car.distance;
     this.decisions++;this.lastDecision=observation.elapsed;this.observation=observation;
-    this.elapsed=observation.elapsed;this.playerPosition=observation.playerPosition;
+    this.elapsed=observation.elapsed;
     this.intent=this.elapsed-this.lastIncident<1.25?'yield':'race';
     const car=o.car,lookahead=THREE.MathUtils.clamp(7+car.speed*.3,9,26);let t=car.progress+lookahead/this.track.length;
+    const ownDistance=observation.traffic.find(sample=>sample.car===car)?.distance??car.distance;
+    const distances=observation.traffic.filter(sample=>sample.car!==car).map(sample=>sample.distance??sample.car.distance);
+    const rank=1+distances.filter(distance=>distance>ownDistance).length;
+    const leaderGap=Math.max(0,Math.max(ownDistance,...distances)-ownDistance)*this.track.length;
     const traffic=observation.traffic.filter(other=>{
       if(other.car===car||other.position.distanceToSquared(car.position)>=100*100)return false;
       const n=this.track.normal(other.progress),lane=other.position.clone().sub(this.track.point(other.progress)).dot(n);
@@ -116,7 +121,7 @@ export class DriverAgent {
     // Keep the validated launch speed envelope, but do not switch off racing
     // decisions for the whole grid until a fixed point on the map.
     const racingField=fieldSize>2;
-    const launchEnvelope=racingField&&this.elapsed<40&&meters<(this.track.circuit?.formationEnd??1300);
+    const launchEnvelope=racingField&&this.elapsed<40&&car.distance*this.track.length<(this.track.circuit?.formationEnd??1300);
     // A multi-car squeeze has no reliable independent lateral escape room.
     // Each driver reassesses its own immediate neighbours, so a clear car can
     // race before the first turn while a boxed-in car leaves space anywhere.
@@ -172,7 +177,8 @@ export class DriverAgent {
     const strategy=this.strategy.update({elapsed:this.elapsed,distance:car.distance,speed:car.speed,boost:car.boost,gripUsage:car.gripUsage,lateralSpeed:car.lateralSpeed,
       window:(!launchEnvelope||canRace&&!!aheadResource&&car.speed-aheadResource.speed>4)&&[0,40,80].every(distance=>this.speedPlanner.cornerLimit(car.progress+distance/this.track.length,pace,car.gripScale)>60),
       brakingSoon:this.speedPlanner.cornerLimit(car.progress+Math.max(80,car.speed*1.5)/this.track.length,pace,car.gripScale)<45,
-      settling:settling||car.offRoad,pressure:this.playerPosition===1&&o.rank>1,deploying:car.boosting,drsAvailable:car.aero.available,
+      settling:settling||car.offRoad,deploying:car.boosting,drsAvailable:car.aero.available,
+      race:{rank,fieldSize,leaderGap,remainingLaps:Math.max(0,3-ownDistance)},
       ahead:aheadResource?{id:aheadResource.car,gap:gapTo(aheadResource),closing:car.speed-aheadResource.speed}:undefined,
       behind:behindResource?{id:behindResource.car,gap:-gapTo(behindResource),closing:behindResource.speed-car.speed}:undefined});
     const physicalRoom=advanced>.8&&car.gripUsage<1.04&&Math.abs(Math.atan2(car.lateralSpeed,Math.max(8,car.speed)))<.1;
@@ -325,7 +331,12 @@ export class DriverAgent {
     const to=point.sub(car.position),desired=Math.atan2(to.x,to.z);
     const error=Math.atan2(Math.sin(desired-car.heading),Math.cos(desired-car.heading));
     const angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(steeringRoute?.lookahead!==undefined?2.5:5,to.length()));
-    const steer=THREE.MathUtils.clamp((angle-car.yawRate*.01)/steeringLock(car.speed,car.gripScale),-1,1);
+    // Correct a developing rear slide with the steering wheel. A pursuit
+    // angle alone keeps asking for the apex while braking unloads the rear.
+    // This spends real steering authority, without adding stability torque.
+    const slip=Math.atan2(car.lateralSpeed,Math.max(8,car.speed));
+    const countersteer=Math.sign(slip)*Math.max(0,Math.abs(slip)-.04)*.8;
+    const steer=THREE.MathUtils.clamp((angle-car.yawRate*.01+countersteer)/steeringLock(car.speed,car.gripScale),-1,1);
     if(advanced>.1&&Math.abs(currentBias-lane)>.35){
       // A car returning to its corridor may need a tighter turn than the
       // reference path. Bound the actual pursuit curvature before it drifts
@@ -355,12 +366,10 @@ export class DriverAgent {
     // Feed forward the acceleration required by the speed profile and road
     // drag. Error-only throttle used to coast below the target and brake late.
     // Front runners bank ERS; a trailing challenger can spend it on the pass.
-    const attackingLeader=this.playerPosition===1&&o.rank>1;
-    const reserve=attackingLeader?(o.attack>.7?12:22):THREE.MathUtils.lerp(48,24,o.aggression);
     const localBattle=competitive&&(passing||this.intent==='defend');
     const cleanExit=!!cornerPlan?.exiting&&Math.abs(error)<.06&&Math.abs(car.lateralAcceleration)<lateralGrip(car.speed)*car.gripScale*.65&&(!ahead||gapTo(ahead)>18);
     const acceleratingExit=(!narrow||meters>narrow.exit+24)&&plannedAcceleration>1&&target>Math.max(32,car.speed+2)&&Math.abs(car.lateralAcceleration)<lateralGrip(car.speed)*car.gripScale*.55;
-    const wantsBoost=(!localRoute||localRoute.mode==='attack')&&strategy.deploy&&(target>78||acceleratingExit)&&car.speed>20&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>Math.max(5,(localBattle||cleanExit?Math.max(8,strategy.reserve-10):Math.min(reserve,strategy.reserve))-(o.control.boost?8:0))&&(!ahead||passing||cleanExit||gapTo(ahead)>35);
+    const wantsBoost=(!localRoute||localRoute.mode==='attack')&&strategy.deploy&&(target>78||acceleratingExit)&&car.speed>20&&Math.abs(error)<.09&&plannedAcceleration>-.5&&car.boost>Math.max(5,(localBattle||cleanExit?Math.max(8,strategy.reserve-10):strategy.reserve)-(o.control.boost?8:0))&&(!ahead||passing||cleanExit||gapTo(ahead)>35);
     if(!wantsBoost)target=Math.min(target,o.speedCap*87/94);
     const feedforward=target<plannedTarget-.1?0:plannedAcceleration;
     const exitDrive=cleanExit&&!elitePursuit?Math.min(.8,Math.max(0,target-car.speed)*.12):0;

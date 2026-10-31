@@ -11,6 +11,7 @@ import {RaceTiming} from './RaceTiming';
 import {AISpeedPlanner} from './AISpeedPlanner';
 import {CornerPaceObserver} from './CornerPaceObserver';
 import {RaceAerodynamics} from './Aerodynamics';
+import {gridSlot} from './StartingGrid';
 export interface Rival {
   agent:DriverAgent;car:Vehicle;distance:number;speed:number;name:string;
   personality:string;caution:number;launch:number;collisionScore:number;collisionCount:number;avoidance:number;
@@ -35,7 +36,9 @@ export class Race {
   get fieldSize(){return this.opponents.length+1;}
   private timingSamples(player:Vehicle){return [{id:'PLAYER',name:'PLAYER',distance:player.distance},...this.opponents.map(o=>({id:o.name,name:o.name,distance:o.car.distance}))];}
   get intervals(){return this.player?this.timing.neighbours(this.timingSamples(this.player),'PLAYER',this.elapsed):{ahead:null,behind:null};}
-  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number}={}){
+  private gridPlayer?:Vehicle;
+  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number;player?:Vehicle}={}){
+    this.gridPlayer=options.player;
     this.timing=new RaceTiming(track.length);this.aerodynamics=new RaceAerodynamics(track,planner);track.details.addDRSBoards(track,this.aerodynamics.zones);
     // Rivals retain fixed steering/grip calibration, but share the player's
     // engine output, ERS and speed limits. Difficulty adjusts driving targets.
@@ -57,7 +60,10 @@ export class Race {
     try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
   }
   reset(){this.aerodynamics.reset();this.aeroPreparedAt=-Infinity;this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
-    this.opponents.forEach((o,i)=>{const progress=(15+(this.opponents.length-1-i)*12)/this.track.length;o.car.resetAt(progress,i%2?3:-3);o.distance=progress;o.speed=0;o.lane=(i%2?3:-3)-this.speedPlanner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceGripAssist=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
+    // Bind the playable car before arming the start so paint, poses and timing
+    // share one standing grid. Unbound simulations can stage their own field.
+    if(this.gridPlayer){const slot=gridSlot(this.fieldSize);this.gridPlayer.reset();this.gridPlayer.resetAt(slot.meters/this.track.length,slot.lane);this.player=this.gridPlayer;}
+    this.opponents.forEach((o,i)=>{const slot=this.gridPlayer?gridSlot(i+1):{meters:15+(this.opponents.length-1-i)*12,lane:i%2?3:-3},progress=slot.meters/this.track.length;o.car.resetAt(progress,slot.lane);o.distance=progress;o.speed=0;o.lane=slot.lane-this.speedPlanner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));o.decision=0;o.stuck=0;o.rank=i+1;o.speedCap=94;o.powerAssist=1;o.attack=0;o.passLane=undefined;o.passUntil=0;o.defendUntil=0;o.defendCooldown=0;o.defendLane=0;this.agentFor(o).reset();o.collisionScore=0;o.collisionCount=0;o.avoidance=0;o.racePace=undefined;o.car.raceGripAssist=undefined;o.car.raceLaunchScale=undefined;o.car.boost=100;o.car.boosting=false;o.car.raceSpeedCap=undefined;o.car.raceCruiseCap=undefined;o.car.racePowerAssist=undefined;o.control={throttle:0,brake:0,steer:0};});}
   start(){if(this.state==='ready'){this.startSequence.arm();this.countdown=this.startSequence.remaining;this.state='countdown';}}
   private balanceRivals(player:Vehicle,dt:number){
     const corner=this.cornerObserver.sample(player,dt);if(corner)this.pack.recordCorner(corner.speed,corner.reference);
@@ -69,11 +75,11 @@ export class Race {
     order.sort((a,b)=>b.distance-a.distance);
     this.position=order.findIndex(entry=>entry.rival===null)+1;
     order.forEach((entry,i)=>{if(entry.rival)entry.rival.rank=i+1;});
-    const contenders=this.position<=3?this.opponents.filter(o=>o.rank<=3&&o.rank>this.position).sort((a,b)=>a.rank-b.rank):[];
-    const attacker=contenders[Math.floor(this.elapsed/14)%Math.max(1,contenders.length)];
     for(const o of this.opponents){
       const gap=(o.car.distance-player.distance)*this.track.length;
-      const attack=contenders.includes(o)?(o===attacker?1:.45):0;
+      // Difficulty may follow demonstrated player skill; tactical urgency is
+      // owned by each driver's win objective, never a rotating attack slot.
+      const attack=o.agent.strategy.goal.urgency;
       o.attack=THREE.MathUtils.damp(o.attack,attack,.25,dt);
       const freePace=o.pace;
       let targetPace=freePace,targetCap=94,targetPower=1;

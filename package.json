@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node tests/game.mjs && node tests/powertrain-strategy.mjs && node tests/aerodynamics.mjs && node tests/circuits.mjs && node tests/circuit-menu.mjs && node tests/traffic-autonomy.mjs && node tests/visual-quality.mjs && node tests/wheel-input.mjs && node tests/hid-wheel.mjs && node tests/usb-wheel.mjs"
+    "test": "node tests/game.mjs && node tests/powertrain-strategy.mjs && node tests/win-grid.mjs && node tests/aerodynamics.mjs && node tests/circuits.mjs && node tests/circuit-menu.mjs && node tests/traffic-autonomy.mjs && node tests/visual-quality.mjs && node tests/wheel-input.mjs && node tests/hid-wheel.mjs && node tests/usb-wheel.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

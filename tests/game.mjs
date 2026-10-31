@@ -369,12 +369,13 @@ for(const [i,o] of rankRace.opponents.entries()){
 }
 rankPlayer.distance=1.1;rankRace.elapsed=56;
 rankRace.opponents.forEach((o,i)=>{o.car.distance=1.1-(20+i*15)/track.length;});
+rankRace.opponents.forEach((o,i)=>o.agent.strategy.update({elapsed:56,distance:o.car.distance,speed:70,boost:60,gripUsage:.8,lateralSpeed:0,window:true,brakingSoon:false,settling:false,race:{rank:i+2,fieldSize:6,leaderGap:20+i*15,remainingLaps:1.9}}));
 for(let step=0;step<120*15;step++)rankRace.balanceRivals(rankPlayer,1/120);
-assert.equal(rankRace.position,1);assert.ok(rankRace.opponents[0].attack>.95&&rankRace.opponents[1].attack<.5);
-assert.ok(rankRace.opponents.slice(2).every(o=>o.attack<.01));
+assert.equal(rankRace.position,1);assert.ok(rankRace.opponents.every(o=>o.attack>.2),'Every challenger owns a P1 objective; no appointed attacker');
+const independentUrgency=rankRace.opponents.map(o=>o.attack);
 rankRace.elapsed=70;
 for(let step=0;step<120*15;step++)rankRace.balanceRivals(rankPlayer,1/120);
-assert.ok(rankRace.opponents[1].attack>.95&&rankRace.opponents[0].attack<.5);
+assert.ok(rankRace.opponents.every((o,i)=>Math.abs(o.attack-independentUrgency[i])<.01),'A clock phase must not rotate attack permission between cars');
 assert.ok(rankRace.opponents.every(o=>o.speedCap===94&&o.powerAssist===1),'Attack priority must affect tactics rather than engine output');
 const reversing=rankRace.opponents[0],oldPace=reversing.racePace;
 rankPlayer.distance=reversing.car.distance-.1;rankRace.balanceRivals(rankPlayer,1/120);
@@ -537,17 +538,17 @@ place(tacticalPlayer,defenseMeters-35,.6,70);tacticalRace.elapsed=31.5;tacticalR
 assert.equal(tactical.defendCooldown,defenseCooldown,'A continuous threat must not bypass the defensive cooldown');
 assert.ok(tactical.defendUntil<=tacticalRace.elapsed);
 
-// A designated challenger may spend a partial battery on a clear straight.
+// A win-oriented challenger may spend a partial battery regardless of the human ranking label.
 place(tactical.car,200,0,75);tactical.lane=0;tactical.car.boost=25;tactical.control.boost=false;
 tactical.speedCap=94;tactical.rank=2;tacticalRace.position=1;tactical.attack=1;
 tacticalPlayer.position.set(1e6,0,1e6);tacticalRace.decide(tactical,tacticalPlayer);
-assert.equal(tactical.control.boost,true,'The designated attacker must use a partial ERS battery when a pass is available');
+assert.equal(tactical.control.boost,true,'A challenger must use a partial ERS battery when a pass is available');
 tactical.control.boost=false;tactical.attack=0;tacticalRace.decide(tactical,tacticalPlayer);
-assert.equal(tactical.control.boost,true,'Other challengers must also spend ERS to pressure a leading player');
-tactical.control.boost=false;tactical.car.boost=21;tacticalRace.decide(tactical,tacticalPlayer);
-assert.equal(tactical.control.boost,false,'A secondary challenger must retain its lower but bounded ERS reserve');
-tactical.car.boost=25;tactical.rank=3;tacticalRace.position=2;tacticalRace.decide(tactical,tacticalPlayer);
-assert.equal(tactical.control.boost,false,'Outside the player-leader contest the normal ERS reserve must remain');
+assert.equal(tactical.control.boost,true,'Attack permission must not depend on a centrally assigned attack flag');
+tactical.control.boost=false;tactical.rank=3;tacticalRace.position=2;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.control.boost,true,'Changing the human ranking label must not cancel an independently useful deployment');
+tactical.control.boost=false;tactical.car.boost=7;tacticalRace.decide(tactical,tacticalPlayer);
+assert.equal(tactical.control.boost,false,'A challenger cannot deploy an exhausted battery');
 tacticalRace.reset();assert.ok(tacticalRace.opponents.every(o=>o.passLane===undefined&&o.passUntil===0&&o.defendUntil===0&&o.defendCooldown===0),'Restart must clear tactical memory');
 console.log('PASS: stable passing side, blocked-lane escape, closing-speed braking, single defensive move, cooldown, alongside clearance and tactical ERS');
 
