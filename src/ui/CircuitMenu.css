@@ -31,3 +31,5 @@
 @media(prefers-reduced-motion:reduce){.circuit-card,.outline-line,.menu-start{transition:none}.circuit-card:hover,.menu-start:hover{transform:none}}
 
 .pause-panel .change-circuit-hint{font-size:10px;line-height:1.8;color:#91a6b7;margin:0 0 14px}
+
+.menu-wheel-button{width:100%;padding:9px;margin-bottom:10px;background:#ffffff05;border:1px solid #40566a;border-radius:4px;color:#bcd1df;font:11px 'Noto Sans KR',sans-serif}.menu-wheel-button:focus-visible{outline:2px solid #a6e6c3;outline-offset:2px}

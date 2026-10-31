@@ -41,8 +41,9 @@ export class Vehicle {
     if(input.consume?.('KeyF'))this.drsRequested=this.aero.available&&!this.aero.active;
     const down=input.consume?.('KeyQ'),up=input.consume?.('KeyE');
     if(down!==up){if(down)this.shiftGear(-1);else if(up)this.shiftGear(1);}
-    const brake=input.down('KeyS','ArrowDown')?1:0;
-    this.drive(dt,{throttle:!brake&&input.down('KeyW','ArrowUp')?1:0,brake,steer:(input.down('KeyA','ArrowLeft')?1:0)-(input.down('KeyD','ArrowRight')?1:0),boost:!brake&&input.down('ShiftLeft','ShiftRight'),keyboard:true});
+    const analog=input.analog?.(),keyBrake=input.down('KeyS','ArrowDown'),keySteer=input.down('KeyA','ArrowLeft','KeyD','ArrowRight');
+    const brake=keyBrake?1:analog?.brake??0,steer=keySteer?(input.down('KeyA','ArrowLeft')?1:0)-(input.down('KeyD','ArrowRight')?1:0):analog?.steer??0;
+    this.drive(dt,{throttle:keyBrake?0:Math.max(analog?.throttle??0,input.down('KeyW','ArrowUp')?1:0),brake,steer,boost:brake===0&&input.down('ShiftLeft','ShiftRight'),keyboard:!analog||keySteer});
   }
   drive(dt:number,control:Controls){
     if(!this.aero.available||control.brake>0)this.drsRequested=false;

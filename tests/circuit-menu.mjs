@@ -15,7 +15,7 @@ const {CIRCUITS}=await import(moduleURL('game/Circuits'));
 
 function environment(href='https://example.test/f1/',saved={}){
   const nodes=new Map(),listeners=new Map(),frames=[],storage=new Map(Object.entries(saved)),launches=[],contexts=[];
-  let locationURL=new URL(href),reloads=0;
+  let locationURL=new URL(href),reloads=0,wheelViews=0;
   const node=(id,tag='div')=>{
     const classes=new Set(),events=new Map();let html='';
     const element={id,tag,events,value:'',textContent:'',checked:false,disabled:false,hidden:false,removed:false,
@@ -45,13 +45,15 @@ function environment(href='https://example.test/f1/',saved={}){
   globalThis.AudioContext=class {constructor(){contexts.push(this);}resume(){this.resumed=true;return Promise.resolve();}close(){this.closed=true;return Promise.resolve();}};
   globalThis.requestAnimationFrame=fn=>frames.push(fn);
   globalThis.__loadMenuTestGame=async()=>({Game:class {constructor(viewport,hud,options){launches.push({viewport,hud,options});}}});
-  return {root,app,nodes,storage,launches,contexts,frames,listeners,get reloads(){return reloads;},get href(){return locationURL.href;},
+  globalThis.__loadMenuTestWheel=async()=>({openWheelSetup:()=>wheelViews++});
+  return {root,app,nodes,storage,launches,contexts,frames,listeners,get reloads(){return reloads;},get wheelViews(){return wheelViews;},get href(){return locationURL.href;},
     async paint(){while(frames.length)await frames.shift()(0);},
     key(code,target={matches:()=>false},repeat=false){for(const fn of listeners.get('keydown')??[])fn({code,target,repeat,preventDefault(){}});}};
 }
 
-let env=environment(undefined,{'apex-best-spa-v3':'114.49'}),starts=[],modes=[];
-const menu=new CircuitMenu(env.root,{selected:'monza',mode:'auto',keyboard:true,start:(...args)=>starts.push(args),transmission:mode=>modes.push(mode)});
+let env=environment(undefined,{'apex-best-spa-v3':'114.49'}),starts=[],modes=[],wheelOpens=0;
+const menu=new CircuitMenu(env.root,{selected:'monza',mode:'auto',keyboard:true,start:(...args)=>starts.push(args),wheel:()=>wheelOpens++,transmission:mode=>modes.push(mode)});
+env.nodes.get('wheel-settings').emit('click');assert.equal(wheelOpens,1);assert.deepEqual(starts,[]);
 assert.equal((env.root.innerHTML.match(/type="radio"/g)??[]).length,3);
 assert.equal((env.root.innerHTML.match(/class="circuit-outline"/g)??[]).length,3);
 const previews=CIRCUITS.map(c=>circuitPreview(c));assert.equal(new Set(previews).size,3);assert.ok(previews.every(p=>!p.includes('NaN')&&!p.includes('Infinity')));
@@ -68,12 +70,14 @@ console.log('PASS: three distinct geographic map cards, selected state, per-circ
 env.key('ArrowRight');assert.equal(env.nodes.get('circuit-monza').checked,true,'Circuit arrows wrap around');
 assert.equal(document.activeElement,env.nodes.get('circuit-monza'));
 env.key('Enter',env.nodes.get('start-transmission'));assert.equal(starts.length,1,'Enter in the gearbox dropdown must retain native behavior');
+env.key('Enter',{matches:()=>false,closest:()=>({})});assert.equal(starts.length,1,'Wheel setup input must not start the underlying race');
 env.key('Enter',{matches:()=>false},true);assert.equal(starts.length,1,'Held Enter must not launch repeatedly');
 env.nodes.get('menu-shell').emit('keydown',{code:'Enter',repeat:false,target:env.nodes.get('circuit-monza')});
 assert.deepEqual(starts.at(-1),['monza','manual']);
 menu.setLoading('몬자');menu.select('spa');menu.start();
 assert.equal(starts.length,2);assert.equal(env.nodes.get('circuit-monza').checked,true);
 assert.ok(env.nodes.get('start').disabled&&env.nodes.get('start-transmission').disabled&&CIRCUITS.every(c=>env.nodes.get('circuit-'+c.id).disabled));
+assert.equal(env.nodes.get('wheel-settings').disabled,true);env.nodes.get('wheel-settings').emit('click');assert.equal(wheelOpens,1);
 assert.equal(env.nodes.get('menu-status').hidden,false);menu.dispose();assert.equal(env.listeners.get('keydown').size,0);
 console.log('PASS: keyboard circuit navigation, Enter on a radio, native gearbox controls, loading lock and keyboard-listener cleanup');
 
@@ -84,12 +88,15 @@ async function bootstrap(unique){
   let js=ts.transpileModule(fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   js=js.replace(/import '\.\/[^']+\.css';/g,'').replace(/from '\.\/((?:ui|game)\/\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
   js=js.replace("import('./game/Game')",'globalThis.__loadMenuTestGame()');
+  js=js.replace("import('./ui/WheelSetup')",'globalThis.__loadMenuTestWheel()');
   await import(`data:text/javascript;base64,${Buffer.from(js+'\n// '+unique).toString('base64')}`);
 }
 env=environment('https://example.test/f1/?circuit=silverstone',{'apex-circuit':'spa','apex-transmission-mode':'manual'});
 await bootstrap('initial-menu');
 assert.equal(env.launches.length,0);assert.equal(env.contexts.length,0);assert.equal(env.frames.length,0,'Opening selection must not schedule a renderer or create audio');
 assert.equal(env.nodes.get('front-circuit-silverstone').checked,true,'A circuit link still opens selection at the requested map');
+env.nodes.get('front-wheel-settings').emit('click');await Promise.resolve();assert.equal(env.wheelViews,1);assert.equal(env.launches.length,0);assert.equal(env.contexts.length,0);assert.equal(env.frames.length,0);
+console.log('PASS: wheel settings opens lazily from the real start screen without creating the racing world or starting its timer');
 env.nodes.get('front-circuit-spa').emit('change');env.nodes.get('front-circuit-monza').emit('change');
 assert.equal(env.launches.length,0);assert.equal(env.frames.length,0);
 env.nodes.get('front-start').emit('click');env.nodes.get('front-start').emit('click');
