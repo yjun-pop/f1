@@ -170,3 +170,13 @@ const rawInput=new Input(rawWheel),rawCar=new Vehicle(track,new THREE.Scene());r
 const rawDiagnostic=JSON.parse(wheelDiagnosticReport(rawWheel,context));assert.equal(rawDiagnostic.webUSB.selected.vendorId,'0079');assert.equal(rawDiagnostic.webUSB.selected.productId,'189c');assert.equal(rawDiagnostic.webUSB.devices[0].ready,true);assert.equal(rawDiagnostic.webUSB.selected.configurations[0].interfaces[0].alternates[0].endpoints[0].number,1);
 const rawSession={input:rawInput,race:{state:'racing',elapsed:10},paused:false,accumulator:.01,audio:{silence(){}},pause(){Game.prototype.pause.call(this);}};await rawTransport.disconnect();Game.prototype.pollWheel.call(rawSession);assert.equal(rawSession.paused,true);assert.equal(rawInput.analog(),null);assert.equal(frames.size,0);
 console.log('PASS: Wired Wheel WebUSB button opens target chooser synchronously, completes actual seven-step trigger calibration, drives Vehicle and pauses on USB loss');
+
+const vibrationEvents=[];
+const vibrationDevice=pad();vibrationDevice.vibrationActuator={type:'dual-rumble',async playEffect(type,effect){vibrationEvents.push({type,...effect});return 'complete';},async reset(){vibrationEvents.push('stop');return 'complete';}};
+const vibrationUI=wizard(vibrationDevice);pump();assert.equal(vibrationUI.n('wheel-rumble-test').disabled,false);assert.ok(vibrationUI.n('wheel-rumble-status').textContent.includes('사용 가능'));
+vibrationUI.n('wheel-rumble').value='40';vibrationUI.n('wheel-rumble').emit('input');assert.equal(vibrationUI.wheel.haptics.strength,.4);
+vibrationUI.n('wheel-rumble-test').click();await settle();assert.equal(vibrationEvents[0].type,'dual-rumble');assert.ok(vibrationEvents[0].strongMagnitude>0&&vibrationEvents[0].strongMagnitude<.4);
+pump();await settle();assert.notEqual(vibrationEvents.at(-1),'stop','Polling the calibration dialog must not immediately cancel its test effect');
+vibrationUI.n('wheel-close').click();await settle();assert.equal(vibrationEvents.at(-1),'stop');assert.equal(frames.size,0);
+const noVibration=wizard();pump();assert.equal(noVibration.n('wheel-rumble-test').disabled,true);assert.ok(noVibration.n('wheel-rumble-status').textContent.includes('찾지 못했습니다'));noVibration.n('wheel-close').click();
+console.log('PASS: real vibration settings show capability, apply independent strength, test only the selected wheel, preserve preview during configuration and stop on dialog close');

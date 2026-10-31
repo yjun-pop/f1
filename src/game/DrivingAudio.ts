@@ -1,5 +1,5 @@
 import type {Vehicle} from './Vehicle';
-import {windLevel,type DrivingFeedbackFrame} from './DrivingFeedback';
+import type {DrivingFeedbackFrame} from './DrivingFeedback';
 import {EngineSoundState,ENGINE_TIMBRES,soundTelemetry} from './EngineSound';
 import type {StartSignal} from './StartSequence';
 export {soundTelemetry} from './EngineSound';
@@ -12,7 +12,7 @@ interface Voice {
 }
 export class DrivingAudio {
   private context?:AudioContext;private master?:GainNode;private voices:Voice[]=[];
-  private brake?:GainNode;private tire?:GainNode;private road?:GainNode;private wind?:GainNode;private kerb?:GainNode;
+  private brake?:GainNode;private tire?:GainNode;private road?:GainNode;private kerb?:GainNode;
   private volume=.65;private muted=false;private active=false;private lastUpdate=0;
   private cueBus?:GainNode;private cueGain?:GainNode;private cue?:OscillatorNode;private cueActive=false;private cueKey='';
   constructor(){try{const saved=localStorage.getItem('apex-audio-volume');if(saved!==null&&Number.isFinite(Number(saved)))this.volume=Math.max(0,Math.min(1,Number(saved)));}catch{}}
@@ -64,13 +64,13 @@ export class DrivingAudio {
           low.start();high.start();turbo.start();body.start();pulse.start();
           this.voices.push({car,state:new EngineSoundState(),low,high,lowGain,highGain,turbo,turboGain,body,bodyGain,bodyFilter,bodyShelf,pulse,pulseDepth,previousLoad:0,previousCut:1,thump:0,texture,filter,shelf,gain,pan});
         });
-        this.brake=noise(2300,3,master);this.tire=noise(1100,.8,master);this.road=noise(320,.5,master);this.wind=noise(900,.45,master);this.kerb=noise(430,.8,master);
+        this.brake=noise(2300,3,master);this.tire=noise(1100,.8,master);this.road=noise(320,.5,master);this.kerb=noise(430,.8,master);
       }
       void this.context.resume().catch(()=>{});this.applyGain();
     }catch{
       if(this.context)void this.context.close().catch(()=>{});
       this.context=undefined;this.master=undefined;this.voices=[];
-      this.brake=undefined;this.tire=undefined;this.road=undefined;this.wind=undefined;this.kerb=undefined;
+      this.brake=undefined;this.tire=undefined;this.road=undefined;this.kerb=undefined;
       this.cueBus=this.cueGain=undefined;this.cue=undefined;
     }
   }
@@ -113,7 +113,6 @@ export class DrivingAudio {
       voice.pan.pan.setTargetAtTime(self?0:Math.max(-1,Math.min(1,(-dx*Math.cos(player.heading)+dz*Math.sin(player.heading))/Math.max(8,distance))),now,.06);
     }
     const sample=soundTelemetry(player);
-    this.wind!.gain.setTargetAtTime(feedback?.wind??windLevel(player.speed),now,.14);
     this.kerb!.gain.setTargetAtTime((feedback?.kerb??0)*Math.min(1,player.speed/25)*.045,now,.025);
     this.brake!.gain.setTargetAtTime(sample.brake,now,.04);this.tire!.gain.setTargetAtTime(sample.tire,now,.04);this.road!.gain.setTargetAtTime(sample.road,now,.07);
   }

@@ -154,7 +154,7 @@ assert.ok(Math.abs(dry.lateralAcceleration)>Math.abs(grass.lateralAcceleration),
 const braking=body();for(let i=0;i<120;i++)integrateBody(braking,{throttle:0,brake:1,steer:0},1/120);assert.ok(braking.speed<20,'Tire-limited braking should slow the car');
 const inertia=body();inertia.lateralSpeed=6;integrateBody(inertia,{throttle:0,brake:0,steer:0},1/120);assert.ok(inertia.lateralSpeed>0,'Side-slip must persist instead of snapping to heading');
 const {resolveCollision}=await import(moduleURL('Vehicle'));
-const a=new Vehicle(track,scene),b=new Vehicle(track,scene);a.resetAt(0);b.resetAt(0);b.position.copy(a.position).addScaledVector(track.tangent(0),4);a.speed=40;b.speed=10;assert.ok(resolveCollision(a,b));assert.ok(a.speed<40&&b.speed>10,'Collision must exchange momentum');
+const a=new Vehicle(track,scene),b=new Vehicle(track,scene);a.resetAt(0);b.resetAt(0);b.position.copy(a.position).addScaledVector(track.tangent(0),4);a.speed=40;b.speed=10;assert.ok(resolveCollision(a,b));assert.ok(a.speed<40&&b.speed>10,'Collision must exchange momentum');assert.ok(a.impactSerial>0&&b.impactSerial>0&&a.impactStrength>0,'Physical contact must publish a measured haptic impact');
 console.log('PASS: physics-based advice, surface grip, braking, persistent side-slip and collision momentum');
 // Reproduce full digital steering after braking, trail braking, and release.
 for(const [speed,brakingTime,turnTime,trail,maxSlip,minYaw] of [[60,1.7,1.5,false,6.2,.95],[40,0,1,true,26,1],[60,0,1,false,3,.45]]){
@@ -1159,7 +1159,7 @@ console.log('PASS: low exhaust body, load-linked roughness, transient decay, gea
 
 // Presentation must read real wheel/kerb overlap, leave physics untouched,
 // and keep the road readable even under maximum braking and camera strength.
-const {DrivingFeedback,windLevel}=await import(moduleURL('DrivingFeedback'));
+const {DrivingFeedback}=await import(moduleURL('DrivingFeedback'));
 const feelCar=new Vehicle(track,new THREE.Scene()),feel=new DrivingFeedback();feel.strength=1;
 const kerbProgress=planner.apices[0].progress,kerbHeading=Math.atan2(track.tangent(kerbProgress).x,track.tangent(kerbProgress).z);
 assert.equal(track.kerbContact(track.point(kerbProgress),kerbHeading,kerbProgress),0,'Track centre must not shake as if it were a kerb');
@@ -1185,17 +1185,17 @@ assert.ok(Math.abs(visibleRoad.x)<.5&&Math.abs(visibleRoad.y)<.6,'Feedback must 
 feelCamera.mode=0;feelCamera.update(feelCar,1,feedback);assert.ok(Number.isFinite(feelCamera.camera.position.x));
 feel.strength=0;const noMotion=feel.update(feelCar,track,1/60,true);
 for(const key of ['pitch','roll','heave','sway','longitudinal','surfaceHeave','cockpitHeave','cockpitPitch','boostFov'])assert.equal(Math.abs(noMotion[key]),0,'Zero motion strength must disable added camera movement');
-assert.ok(noMotion.wind>0,'Motion preference must not silence wind audio');
+assert.equal('wind' in noMotion,false,'Wind audio has been removed from feedback');
 feel.strength=1;feelCar.resetAt(kerbProgress,9.6);feelCar.position.copy(edge);feelCar.speed=35;
 let kerbFrame,maxKerbBounce=0;for(let i=0;i<60;i++){feelCar.distance+=35/60/track.length;kerbFrame=feel.update(feelCar,track,1/60,true);maxKerbBounce=Math.max(maxKerbBounce,Math.abs(kerbFrame.surfaceHeave));}
 assert.ok(kerbFrame.kerb>.2&&maxKerbBounce>.004&&maxKerbBounce<=.019,'Low painted kerbs need small perceptible suspension travel without a raised-block bounce');
 feelCar.present(kerbFrame.surfaceHeave);assert.ok(Math.abs(feelCar.model.chassis.position.y)<=.019);
 const frozen=feel.update(feelCar,track,1/60,false);
-for(const key of ['pitch','roll','heave','sway','longitudinal','surfaceHeave','cockpitHeave','cockpitPitch','kerb','wind','boostFov'])assert.equal(frozen[key],0);
+for(const key of ['pitch','roll','heave','sway','longitudinal','surfaceHeave','cockpitHeave','cockpitPitch','kerb','boostFov'])assert.equal(frozen[key],0);
 feel.reset();assert.equal(feel.update(feelCar,track,1/60,false).longitudinal,0);
 
 // A single shared gearbox drives camera engagement, steering-wheel display
-// and engine sound, while wind and kerb audio share master mute/pause.
+// and engine sound, while kerb audio shares master mute/pause.
 feelCar.reset();feelCar.speed=0;feelCar.acceleration=0;feelCar.lateralAcceleration=0;feelCar.throttle=1;feel.reset();
 let engagementCount=0;
 for(let i=0;i<120*24;i++){
@@ -1205,12 +1205,11 @@ for(let i=0;i<120*24;i++){
   if(feedback.engine.cut<1&&feedback.longitudinal<-.005)engagementCount++;
 }
 assert.equal(feedback.engine.gear,8);assert.ok(engagementCount>0,'Upshifts must create short camera engagement pulses');
-assert.equal(windLevel(0),0);assert.ok(windLevel(90)>windLevel(40));assert.ok(windLevel(200)<=.14);
-assert.ok(windLevel(200/3.6)>.03&&windLevel(300/3.6)>.08,'Wind must retain its speed-dependent presence at the reduced volume');
+assert.equal(feedback.wind,undefined,'No speed-dependent wind gain should remain');
 globalThis.AudioContext=goodAudioContext;
 const feelAudio=new DrivingAudio();feelAudio.unlock([feelCar]);feelAudio.update(feelCar,true,feedback);
 assert.equal(feelAudio.voices[0].low.frequency.value,feedback.engine.rpm/120,'Audio must consume the same RPM as camera feedback');
-assert.equal(feelAudio.wind.gain.value,windLevel(feelCar.speed));feelAudio.update(feelCar,true,{...feedback,kerb:1});assert.ok(feelAudio.kerb.gain.value>0);
+assert.equal(feelAudio.wind,undefined,'The wind noise generator must not be created');feelAudio.update(feelCar,true,{...feedback,kerb:1});assert.ok(feelAudio.kerb.gain.value>0);
 feelAudio.toggleMute();assert.equal(feelAudio.master.gain.value,0);feelAudio.toggleMute();feelAudio.update(feelCar,false,frozen);assert.equal(feelAudio.master.gain.value,0);
 delete globalThis.AudioContext;
 // Damped motion should remain stable across common render frame rates.
@@ -1245,7 +1244,7 @@ sliderInput.clear();manualKeysCar.reset();
 console.log('PASS: actual DRS key toggle, visible rear-wing actuator, immediate brake closure, no automatic player reopening and eligibility guard');
 
 globalThis.window=savedWindow;
-console.log('PASS: real kerb overlap, brake/gear camera feedback, stable horizon, adjustable motion, frame-rate independence, shared RPM, wind/kerb audio and pause/mute');
+console.log('PASS: real kerb overlap, brake/gear camera feedback, stable horizon, adjustable motion, frame-rate independence, shared RPM, removed wind, kerb audio and pause/mute');
 
 // Exercise what is actually painted, and require a visible screen-space shift
 // at the default 60% strength rather than merely checking for nonzero values.

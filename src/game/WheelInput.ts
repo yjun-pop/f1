@@ -1,6 +1,7 @@
 import {HIDWheel} from './HIDWheel';
 import {USBWheel} from './USBWheel';
-export interface WheelDevice {id:string;displayName?:string;index:number;connected:boolean;mapping:string;axes:readonly number[];buttons:readonly {pressed:boolean;value:number;touched?:boolean}[];source?:'hid'|'usb';inputsReady?:boolean}
+import {WheelHaptics,type RumbleOutput,type NativeRumble} from './WheelRumble';
+export interface WheelDevice {id:string;displayName?:string;index:number;connected:boolean;mapping:string;axes:readonly number[];buttons:readonly {pressed:boolean;value:number;touched?:boolean}[];source?:'hid'|'usb';inputsReady?:boolean;rumble?:RumbleOutput;vibrationActuator?:NativeRumble|null}
 export const WHEEL_STORAGE_KEY='apex-wheel-profile-v1';
 export const WHEEL_ACTIONS=['shiftDown','shiftUp','boost','drs','pause','camera'] as const;
 export type WheelAction=typeof WHEEL_ACTIONS[number];
@@ -55,6 +56,8 @@ const browserStorage:WheelStorage={getItem:key=>localStorage.getItem(key),setIte
 /** Browser-local, calibrated analog input. Device identity survives slot changes;
  * a new connection must be neutral before it can supply driving controls. */
 export class WheelInput {
+  readonly haptics=new WheelHaptics();
+  get drivingDevice(){return this.profile?.enabled&&this.armed&&this.connected&&!this.configuring?findWheelDevice(this.devices,this.profile.deviceId,this.profile.deviceIndex):undefined;}
   profile?:WheelProfile;devices:readonly WheelDevice[]=[];controls:WheelControls|null=null;
   supported=true;armed=false;connected=false;configuring=false;readErrorName='';private layoutChanged=false;
   private identity='';private held=new Set<number>();private pressed=new Set<WheelAction>();private waitingUSB=false;
@@ -84,7 +87,7 @@ export class WheelInput {
     this.profile=JSON.parse(JSON.stringify(profile));this.identity='';this.suspend();
     try{this.storage.setItem(WHEEL_STORAGE_KEY,JSON.stringify(profile));return true;}catch{return false;}
   }
-  suspend(){this.controls=null;this.armed=false;this.pressed.clear();}
+  suspend(){this.controls=null;this.armed=false;this.pressed.clear();if(!this.configuring)this.haptics.stop();}
   consume(action:WheelAction){const pressed=this.pressed.has(action);this.pressed.delete(action);return pressed;}
   down(action:WheelAction){const button=this.profile?.buttons[action];return this.armed&&button!==undefined&&button!==null&&this.held.has(button);}
   poll(){

@@ -21,6 +21,8 @@ export class Vehicle {
   private farModel?:THREE.Group;private nearModel=true;
   speed=0;lateralSpeed=0;yawRate=0;heading=0;steer=0;steerAngle=0;progress=0;lap=1;offRoad=false;
   acceleration=0;lateralAcceleration=0;gripUsage=0;
+  impactSerial=0;impactStrength=0;
+  recordImpact(strength:number){if(strength>.5){this.impactSerial++;this.impactStrength=strength;}}
   distance=0;throttle=0;brake=0;boost=100;boosting=false;
   private lastProgress=0;
   constructor(private track:Track,scene:THREE.Scene,private color=0x8c969f,performance={grip:1,power:1}){
@@ -30,6 +32,7 @@ export class Vehicle {
   }
   reset(){this.resetAt(0,0);this.boost=100;}
   resetAt(progress:number,lane=0){
+    this.impactSerial=0;this.impactStrength=0;
     this.transmission.reset();this.aero.reset();this.drsRequested=false;
     this.progress=((progress%1)+1)%1;this.lastProgress=this.progress;this.distance=progress;this.lap=1+Math.max(0,Math.floor(progress));
     this.position.copy(this.track.point(progress)).addScaledVector(this.track.normal(progress),lane);
@@ -54,7 +57,7 @@ export class Vehicle {
     if(!this.aero.active)this.drsRequested=false;
     this.progress=this.track.nearestProgress(this.position,this.progress);
     const center=this.track.point(this.progress),offset=this.position.clone().sub(center);const lateral=offset.length();this.offRoad=lateral>9.7;if(this.offRoad){this.aero.clear();this.drsRequested=false;}
-    if(lateral>14.55){const normal=offset.normalize();this.position.copy(center).addScaledVector(normal,14.55);const velocity=this.velocity,closing=velocity.dot(normal);if(closing>0)this.setVelocity(velocity.addScaledVector(normal,-closing*1.22));this.yawRate*=.6;}
+    if(lateral>14.55){const normal=offset.normalize();this.position.copy(center).addScaledVector(normal,14.55);const velocity=this.velocity,closing=velocity.dot(normal);if(closing>0){this.recordImpact(closing);this.setVelocity(velocity.addScaledVector(normal,-closing*1.22));}this.yawRate*=.6;}
     let delta=this.progress-this.lastProgress;if(delta<-.5)delta+=1;if(delta>.5)delta-=1;this.distance+=delta;this.lastProgress=this.progress;this.lap=1+Math.max(0,Math.floor(this.distance+1e-6));
     this.sync(dt);
   }
@@ -92,7 +95,7 @@ export function resolveCollision(a:Vehicle,b:Vehicle){
   const normal=distance>.001?pa.clone().sub(pb).divideScalar(distance):new THREE.Vector3(1,0,0),depth=radius-distance;
   a.position.addScaledVector(normal,depth*.51);b.position.addScaledVector(normal,-depth*.51);
   const va=a.velocity,vb=b.velocity,closing=va.clone().sub(vb).dot(normal);
-  if(closing<0){const impulse=-closing*.57;va.addScaledVector(normal,impulse);vb.addScaledVector(normal,-impulse);
+  if(closing<0){a.recordImpact(-closing);b.recordImpact(-closing);const impulse=-closing*.57;va.addScaledVector(normal,impulse);vb.addScaledVector(normal,-impulse);
     const tangent=va.clone().sub(vb);tangent.addScaledVector(normal,-tangent.dot(normal));
     if(tangent.lengthSq()>.0001){tangent.normalize();const friction=THREE.MathUtils.clamp(-va.clone().sub(vb).dot(tangent)*.5,-impulse*.3,impulse*.3);va.addScaledVector(tangent,friction);vb.addScaledVector(tangent,-friction);}
     a.setVelocity(va);b.setVelocity(vb);

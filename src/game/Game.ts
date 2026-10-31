@@ -85,13 +85,14 @@ export class Game {
     this.pollWheel();
     if(this.input.consume('Escape')){if(this.paused)this.resume();else this.pause();}
     if(this.input.consume('Enter')){if(this.paused)this.resume();else if(this.race.state==='ready'||this.race.state==='finished')this.hud.startSelectedCircuit();}
-    if(this.input.consume('KeyR')&&!this.paused&&this.race.state==='racing'){this.vehicle.recover();this.feedback.reset();}
+    if(this.input.consume('KeyR')&&!this.paused&&this.race.state==='racing'){this.vehicle.recover();this.feedback.reset();this.input.wheel.haptics.stop();}
     if(this.input.consume('KeyM')){this.audio.toggleMute();this.hud.setMuted(this.audio.isMuted);}
     if(this.input.consume('KeyT'))this.selectTransmission(this.vehicle.transmission.mode==='auto'?'manual':'auto');
     if(this.paused||this.race.state!=='racing'){this.input.consume('KeyQ');this.input.consume('KeyE');this.input.consume('KeyF');}
     if(this.input.consume('KeyG'))this.line.toggle();if(this.input.consume('KeyC'))this.cockpit.toggle();
     if(!this.paused){this.accumulator+=dt;while(this.accumulator>=1/120){if(this.race.state==='racing'){this.race.prepareAerodynamics(this.vehicle);this.vehicle.update(1/120,this.input);}this.race.update(1/120,this.vehicle);this.accumulator-=1/120;}}
     const feedback=this.feedback.update(this.vehicle,this.track,dt,!this.paused&&this.race.state==='racing');
+    if(!this.input.wheel.configuring)this.input.wheel.haptics.update(this.input.wheel.drivingDevice,this.vehicle,feedback,dt,!this.paused&&this.race.state==='racing');
     this.audio.update(this.vehicle,!this.paused&&(this.race.state==='racing'||this.race.state==='countdown'),feedback);
     this.audio.updateStart(this.race.startSignal,!this.paused);this.track.setStartLights(this.race.startSignal.lights);
     this.vehicle.present(feedback.surfaceHeave);

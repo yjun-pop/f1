@@ -32,7 +32,8 @@ export class WheelSetup {
       <div class="wheel-meters"><label>조향 <output id="wheel-steer-value">0%</output><meter id="wheel-steer" min="-1" max="1" value="0"></meter></label><label>가속 <output id="wheel-throttle-value">0%</output><meter id="wheel-throttle" min="0" max="1" value="0"></meter></label><label>제동 <output id="wheel-brake-value">0%</output><meter id="wheel-brake" min="0" max="1" value="0"></meter></label></div>
       <fieldset id="wheel-bindings" hidden><legend>패들·버튼 지정 <small>선택 사항</small></legend><p>‘지정’을 누른 뒤 휠의 버튼을 한 번 누르세요.</p>${WHEEL_ACTIONS.map(action=>`<div class="wheel-binding"><span>${LABELS[action]}</span><button type="button" id="wheel-bind-${action}">지정</button><button type="button" id="wheel-clear-${action}" aria-label="${LABELS[action]} 지정 해제">해제</button></div>`).join('')}<small>패들로 직접 변속하려면 레이스의 변속 방식을 ‘수동’으로 선택하세요.</small></fieldset>
       <div class="wheel-tuning"><label for="wheel-deadzone">중앙 데드존 <output id="wheel-deadzone-value"></output></label><input id="wheel-deadzone" type="range" min="0" max="15" step="1" value="2"><label for="wheel-sensitivity">조향 감도 <output id="wheel-sensitivity-value"></output></label><input id="wheel-sensitivity" type="range" min="50" max="200" step="5" value="100"><label class="wheel-enable"><input id="wheel-enabled" type="checkbox" checked> 보정한 휠로 주행하기</label></div>
-      <details class="wheel-help"><summary>장치가 보이지 않거나 입력이 이상한가요?</summary><p>Chrome·Edge에서 휠 버튼을 한 번 누르세요. 제조사 드라이버와 PC 모드를 확인하고 필요하면 페이지를 새로고침하세요. 브라우저에 표시되는 장치만 사용할 수 있습니다.</p><p>페달을 별도 USB 장치로 연결했다면 ‘페달 장치’에서 선택하세요. 통합 페달 축도 보정할 수 있지만, 가속과 제동을 동시에 사용하려면 드라이버에서 페달을 분리하세요. 클러치·포스피드백은 지원하지 않습니다.</p><pre id="wheel-raw" aria-label="조향·페달 원시 입력"></pre></details>
+      <section class="wheel-tuning"><h3>휠 진동</h3><label for="wheel-rumble">진동 강도 <output id="wheel-rumble-value"></output></label><input id="wheel-rumble" type="range" min="0" max="100" step="5"><button type="button" id="wheel-rumble-test">진동 테스트</button><p id="wheel-rumble-status" role="status"></p><small>변속·연석·타이어 미끄러짐·충돌을 진동으로 전달합니다. 조향을 밀거나 당기는 포스피드백과는 별개입니다.</small></section>
+      <details class="wheel-help"><summary>장치가 보이지 않거나 입력이 이상한가요?</summary><p>Chrome·Edge에서 휠 버튼을 한 번 누르세요. 제조사 드라이버와 PC 모드를 확인하고 필요하면 페이지를 새로고침하세요. 브라우저에 표시되는 장치만 사용할 수 있습니다.</p><p>페달을 별도 USB 장치로 연결했다면 ‘페달 장치’에서 선택하세요. 통합 페달 축도 보정할 수 있지만, 가속과 제동을 동시에 사용하려면 드라이버에서 페달을 분리하세요. 클러치·조향 포스피드백은 지원하지 않습니다.</p><pre id="wheel-raw" aria-label="조향·페달 원시 입력"></pre></details>
       <details class="wheel-help"><summary>브라우저 입력 진단</summary><p>브라우저의 입력 기능·접근 오류·표시된 장치 정보만 포함합니다. 자동 전송하지 않습니다.</p><textarea id="wheel-diagnostic" readonly rows="7" aria-label="복사할 브라우저 입력 진단"></textarea><button type="button" id="wheel-copy-diagnostic">진단 내용 복사</button></details>
       <div class="wheel-bottom"><button type="button" id="wheel-keyboard">키보드로 사용</button><button type="button" id="wheel-save" class="wheel-primary" disabled>설정 저장</button></div>`;
     document.body.appendChild(this.element);
@@ -45,8 +46,9 @@ export class WheelSetup {
     this.node('wheel-usb-find').addEventListener('click',()=>void this.connectUSB(true));
     this.node('wheel-raw-connect').addEventListener('click',()=>void this.connectRawUSB());
     this.node('wheel-usb-disconnect').addEventListener('click',()=>{void Promise.all([this.wheel.usb?.disconnect(),this.wheel.rawUSB?.disconnect()]).then(()=>{this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;this.message('USB 직접 연결을 해제했습니다.');});});
-    this.element.addEventListener('close',()=>{this.wheel.configuring=false;this.wheel.suspend();cancelAnimationFrame(this.frame);this.learning=undefined;});
+    this.element.addEventListener('close',()=>{this.wheel.haptics.stop();this.wheel.configuring=false;this.wheel.suspend();cancelAnimationFrame(this.frame);this.learning=undefined;});
     for(const id of ['wheel-device','wheel-pedals'])this.node(id).addEventListener('change',()=>{
+      this.wheel.haptics.stop();
       if(id==='wheel-device')this.node<HTMLSelectElement>('wheel-pedals').value=this.node<HTMLSelectElement>('wheel-device').value;
       this.draft=undefined;this.step=-1;this.learning=undefined;this.showStep();this.message('장치 선택이 바뀌었습니다. 입력을 다시 보정하세요.');
     });
@@ -60,6 +62,10 @@ export class WheelSetup {
       this.node('wheel-clear-'+action).addEventListener('click',()=>{if(this.draft){this.draft.buttons[action]=null;this.learning=undefined;this.showBindings();}});
     }
     for(const id of ['wheel-deadzone','wheel-sensitivity'])this.node(id).addEventListener('input',()=>this.showTuning());
+    const rumble=this.node<HTMLInputElement>('wheel-rumble'),showRumble=()=>{this.node('wheel-rumble-value').textContent=`${Math.round(this.wheel.haptics.strength*100)}%`;};
+    rumble.value=String(this.wheel.haptics.strength*100);showRumble();
+    rumble.addEventListener('input',()=>{this.wheel.haptics.setStrength(Number(rumble.value)/100);showRumble();});
+    this.node('wheel-rumble-test').addEventListener('click',()=>{this.message('짧은 진동 테스트를 보냅니다.');void this.wheel.haptics.test(this.selected('wheel-device')).then(()=>this.message('테스트 신호를 전송했습니다. 실제 휠에서 진동이 느껴지는지 확인하세요.')).catch(error=>this.message(`진동 테스트: ${(error as Error).message}`));});
     this.node('wheel-save').addEventListener('click',()=>{
       if(!this.draft)return;
       const profile={...this.draft,enabled:this.node<HTMLInputElement>('wheel-enabled').checked,deadzone:Number(this.node<HTMLInputElement>('wheel-deadzone').value)/100,sensitivity:Number(this.node<HTMLInputElement>('wheel-sensitivity').value)/100};
@@ -154,6 +160,8 @@ export class WheelSetup {
     }
     if(now-this.lastPaint>80){
       this.lastPaint=now;this.node('wheel-detection').textContent=wheel?`${wheel.source==='usb'?'WebUSB':wheel.source==='hid'?'USB 직접':'브라우저'} 입력 연결됨 · 축 ${wheel.axes.length}개 / 버튼 ${wheel.buttons.length}개`:this.wheel.detectionStatus;
+      this.node('wheel-rumble-status').textContent=this.wheel.haptics.status(wheel);
+      this.node<HTMLButtonElement>('wheel-rumble-test').disabled=!wheel||wheel.inputsReady===false||!this.wheel.haptics.strength||!this.wheel.haptics.canRumble(wheel);
       this.node('wheel-connection-help').hidden=this.wheel.devices.length>0;
       const usb=this.wheel.usb,rawUSB=this.wheel.rawUSB,direct=[...usb?.devices??[],...rawUSB?.devices??[]],ready=direct.filter(p=>p.inputsReady).length;
       this.node<HTMLButtonElement>('wheel-usb-connect').disabled=this.usbBusy||!usb?.available;

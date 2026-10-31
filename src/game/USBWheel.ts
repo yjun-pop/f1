@@ -1,4 +1,5 @@
 import type {WheelDevice} from './WheelInput';
+import {RumbleOutput} from './WheelRumble';
 
 interface Endpoint {endpointNumber:number;direction:string;type:string;packetSize:number}
 interface Alternate {alternateSetting:number;interfaceClass:number;interfaceSubclass:number;interfaceProtocol:number;endpoints:readonly Endpoint[]}
@@ -10,6 +11,7 @@ export interface WheelUSBDevice {
   open():Promise<void>;close():Promise<void>;selectConfiguration(value:number):Promise<void>;
   claimInterface(value:number):Promise<void>;selectAlternateInterface(number:number,alternate:number):Promise<void>;
   transferIn(endpoint:number,length:number):Promise<{status:string;data?:DataView|null}>;
+  transferOut?(endpoint:number,data:Uint8Array):Promise<{status:string;bytesWritten?:number}>;
 }
 export interface WheelUSBAPI {
   requestDevice(options:{filters:object[]}):Promise<WheelUSBDevice>;
@@ -52,7 +54,8 @@ interface SetupAttempt {
 export function browserWheelUSB(){return typeof navigator==='undefined'?undefined:(navigator as Navigator&{usb?:WheelUSBAPI}).usb;}
 function describe(device:WheelUSBDevice){return {name:device.productName??'',manufacturer:device.manufacturerName??'',vendorId:hex(device.vendorId),productId:hex(device.productId),
   configurations:device.configurations.slice(0,8).map(c=>({value:c.configurationValue,interfaces:c.interfaces.slice(0,16).map(i=>({number:i.interfaceNumber,alternates:i.alternates.slice(0,16).map(a=>({setting:a.alternateSetting,class:hex(a.interfaceClass),subclass:hex(a.interfaceSubclass),protocol:hex(a.interfaceProtocol),endpoints:a.endpoints.slice(0,16).map(e=>({number:e.endpointNumber,direction:e.direction,type:e.type,packetSize:e.packetSize}))}))}))}))};}
-/** Browser-local, user-selected, read-only wired XInput transport. */
+/** Browser-local, user-selected wired XInput transport. Only the known wired
+ * wheel's matched interface may receive the standard eight-byte rumble packet. */
 export class USBWheel {
   private entries=new Map<WheelUSBDevice,Entry>();private pending=new Map<WheelUSBDevice,Promise<void>>();private reserved=new Set<number>();
   private known=new Set<string>();private epochs=new WeakMap<WheelUSBDevice,number>();private generation=0;private disabled=false;
@@ -70,7 +73,7 @@ export class USBWheel {
   private failure(device:WheelUSBDevice,error:unknown){this.lastError=error instanceof Error?`${error.name}: ${error.message}`:String(error);this.record('error',device,this.lastError);}
   get available(){return !!this.api;}
   get devices(){return [...this.entries.values()].filter(e=>e.active&&e.device.opened).map(e=>e.pad);}
-  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,setup:this.lastSetup?{...this.lastSetup}:null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route}))};}
+  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,setup:this.lastSetup?{...this.lastSetup}:null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route,rumble:{available:!!e.pad.rumble?.available,error:e.pad.rumble?.error||null}}))};}
   async request(){
     if(!this.api)throw new Error('WebUSB는 외부 데스크톱 Chrome·Edge에서 사용할 수 있습니다.');
     this.disabled=false;this.lastError='';const generation=this.generation;
@@ -114,7 +117,19 @@ export class USBWheel {
       if(device.configuration?.interfaces.find(i=>i.interfaceNumber===route.number)?.alternate.alternateSetting!==route.alternate){setup.stage='select-alternate';await device.selectAlternateInterface(route.number,route.alternate);}
       if(cancelled()){await device.close();return;}
       const pad:Pad={id:`webusb:xinput360:${key(device)}`,displayName:device.productName||'USB XInput 휠',index,connected:true,mapping:'standard',source:'usb',inputsReady:false,axes:Array(4).fill(NaN),buttons:Array.from({length:17},()=>({value:0,pressed:false}))};
-      const entry:Entry={device,pad,route,setup,active:true,packets:0,invalid:0};this.entries.set(device,entry);setup.status='waiting-input';setup.stage='receive-input';this.record('opened',device);void this.receive(entry);
+      const entry:Entry={device,pad,route,setup,active:true,packets:0,invalid:0};
+      const alternate=device.configurations.find(c=>c.configurationValue===route.config)?.interfaces.find(i=>i.interfaceNumber===route.number)?.alternates.find(a=>a.alternateSetting===route.alternate);
+      const output=alternate?.endpoints.find(e=>e.direction==='out'&&e.type==='interrupt'&&e.endpointNumber>=1&&e.endpointNumber<=15&&e.packetSize>=8);
+      if(device.vendorId===WIRED_WHEEL.vendorId&&device.productId===WIRED_WHEEL.productId&&output&&device.transferOut){
+        pad.rumble=new RumbleOutput('usb',async(strong,weak)=>{
+          // Linux xpad_play_effect, XTYPE_XBOX360. No mode, LED, firmware,
+          // feature-report or steering-force commands are sent.
+          const packet=Uint8Array.from([0,8,0,Math.round(strong*255),Math.round(weak*255),0,0,0]);
+          const result=await device.transferOut!(output.endpointNumber,packet);
+          if(result.status!=='ok'||result.bytesWritten!==undefined&&result.bytesWritten!==packet.length)throw new Error(`USB 진동 전송 실패 (${result.status})`);
+        },()=>device.opened);
+      }
+      this.entries.set(device,entry);setup.status='waiting-input';setup.stage='receive-input';this.record('opened',device);void this.receive(entry);
     }catch(error){
       setup.status='failed';setup.activeConfiguration=device.configuration?.configurationValue??null;setup.error={name:error instanceof Error?error.name:'Error',message:error instanceof Error?error.message:String(error)};
       setup.disconnectedDuringSetup=epoch!==(this.epochs.get(device)??0);
@@ -134,10 +149,16 @@ export class USBWheel {
           const state=decodeXbox360(report.data);if(!state)continue;
           const wasReady=entry.pad.inputsReady;entry.pad.axes=state.axes;entry.pad.buttons=state.buttons;entry.pad.inputsReady=true;entry.setup.status='ready';entry.packets++;
           if(!wasReady)this.record('ready',entry.device);
-        }catch(error){entry.invalid++;entry.setup.status='waiting-input';entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const button of entry.pad.buttons){button.value=0;button.pressed=false;}if(entry.invalid===1)this.failure(entry.device,error);}
-      }catch(error){if(!entry.active)return;entry.setup.status='failed';entry.setup.error={name:error instanceof Error?error.name:'Error',message:error instanceof Error?error.message:String(error)};this.failure(entry.device,error);this.drop(entry);try{await entry.device.close();}catch{}return;}
+        }catch(error){entry.invalid++;void entry.pad.rumble?.stop();entry.setup.status='waiting-input';entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const button of entry.pad.buttons){button.value=0;button.pressed=false;}if(entry.invalid===1)this.failure(entry.device,error);}
+      }catch(error){if(!entry.active)return;entry.setup.status='failed';entry.setup.error={name:error instanceof Error?error.name:'Error',message:error instanceof Error?error.message:String(error)};this.failure(entry.device,error);await this.closeEntry(entry);return;}
     }
   }
-  private drop(entry:Entry){entry.active=false;entry.pad.connected=false;entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const b of entry.pad.buttons){b.value=0;b.pressed=false;}this.entries.delete(entry.device);}
-  async disconnect(){this.disabled=true;this.generation++;const entries=[...this.entries.values()];for(const entry of entries)this.drop(entry);for(const entry of entries){this.record('closed',entry.device);try{await entry.device.close();}catch{}}}
+  private drop(entry:Entry){entry.active=false;entry.pad.connected=false;entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const b of entry.pad.buttons){b.value=0;b.pressed=false;}this.entries.delete(entry.device);return entry.pad.rumble?.stop();}
+  private async closeEntry(entry:Entry,stopping=this.drop(entry)){
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    // An OS transfer that never completes must not trap the disconnect UI.
+    try{await Promise.race([stopping,new Promise<void>(resolve=>{timer=setTimeout(resolve,250);})]);}finally{clearTimeout(timer);}
+    try{await entry.device.close();}catch{}
+  }
+  async disconnect(){this.disabled=true;this.generation++;const entries=[...this.entries.values()],stops=entries.map(entry=>this.drop(entry));for(const [i,entry] of entries.entries()){this.record('closed',entry.device);await this.closeEntry(entry,stops[i]);}}
 }

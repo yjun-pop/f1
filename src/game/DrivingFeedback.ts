@@ -2,11 +2,10 @@ import {EngineSoundState} from './EngineSound';
 import type {Vehicle} from './Vehicle';
 import type {Track} from './Track';
 const clamp=(n:number,a:number,b:number)=>Math.max(a,Math.min(b,n));
-export function windLevel(speed:number){return Math.min(.14,Math.max(0,(speed-8)/96)**2*.135);}
 export interface DrivingFeedbackFrame {
   pitch:number;roll:number;heave:number;sway:number;longitudinal:number;surfaceHeave:number;
   cockpitHeave:number;cockpitPitch:number;
-  kerb:number;wind:number;boostFov:number;engine:ReturnType<EngineSoundState['advance']>;
+  kerb:number;boostFov:number;engine:ReturnType<EngineSoundState['advance']>;
 }
 /** Presentation only. It reads telemetry and never writes into the vehicle. */
 export class DrivingFeedback {
@@ -20,7 +19,7 @@ export class DrivingFeedback {
     if(!this.engine)this.engine=this.engineState.advance(vehicle,0);
     if(!active){
       this.pitch=this.roll=this.dive=this.sway=this.kerb=0;this.shiftAge=1;this.shiftDirection=0;this.previousDistance=undefined;
-      return {pitch:0,roll:0,heave:0,sway:0,longitudinal:0,surfaceHeave:0,cockpitHeave:0,cockpitPitch:0,kerb:0,wind:0,boostFov:0,engine:this.engine};
+      return {pitch:0,roll:0,heave:0,sway:0,longitudinal:0,surfaceHeave:0,cockpitHeave:0,cockpitPitch:0,kerb:0,boostFov:0,engine:this.engine};
     }
     this.engine=this.engineState.advance(vehicle,dt);
     const teleported=this.previousDistance===undefined||Math.abs(vehicle.distance-this.previousDistance)*track.length>20;
@@ -44,7 +43,7 @@ export class DrivingFeedback {
       heave:(this.dive+bump+road)*strength,sway:this.sway*strength,
       longitudinal:(clamp(-vehicle.acceleration*.002,-.05,.08)+kick)*moving*strength,
       surfaceHeave:(bump+road)*strength,cockpitHeave:(bump*.65+road+kick*.2)*strength,cockpitPitch:kick*.35*strength,
-      kerb:this.kerb,wind:windLevel(vehicle.speed),
+      kerb:this.kerb,
       boostFov:vehicle.boosting?1.5*strength:0,engine:this.engine};
   }
 }
