@@ -12,6 +12,7 @@ export interface WheelUSBDevice {
   claimInterface(value:number):Promise<void>;selectAlternateInterface(number:number,alternate:number):Promise<void>;
   transferIn(endpoint:number,length:number):Promise<{status:string;data?:DataView|null}>;
   transferOut?(endpoint:number,data:Uint8Array):Promise<{status:string;bytesWritten?:number}>;
+  controlTransferIn?(setup:{requestType:'vendor';recipient:'interface';request:number;value:number;index:number},length:number):Promise<{status:string;data?:DataView|null}>;
 }
 export interface WheelUSBAPI {
   requestDevice(options:{filters:object[]}):Promise<WheelUSBDevice>;
@@ -45,7 +46,8 @@ export function decodeXbox360(data:DataView){
   return {axes,buttons};
 }
 type Pad=WheelDevice&{axes:number[];buttons:{value:number;pressed:boolean}[]};
-interface Entry {device:WheelUSBDevice;pad:Pad;route:ReturnType<typeof xbox360Interface>;setup:SetupAttempt;active:boolean;packets:number;invalid:number;rumbleEndpoint?:number}
+export interface RumbleCapabilities {state:'not-queried'|'reading'|'reported'|'unavailable'|'timeout'|'invalid'|'error';message:string;strong?:number;weak?:number;advertised?:boolean}
+interface Entry {device:WheelUSBDevice;pad:Pad;route:ReturnType<typeof xbox360Interface>;setup:SetupAttempt;active:boolean;packets:number;invalid:number;rumbleEndpoint?:number;capabilities?:RumbleCapabilities;capabilityWork?:Promise<RumbleCapabilities>}
 interface SetupAttempt {
   name:string;vendorId:string;productId:string;stage:string;status:'connecting'|'waiting-input'|'ready'|'failed'|'cancelled';
   configurationBeforeOpen:number|null;configurationAfterOpen:number|null;activeConfiguration:number|null;
@@ -73,7 +75,41 @@ export class USBWheel {
   private failure(device:WheelUSBDevice,error:unknown){this.lastError=error instanceof Error?`${error.name}: ${error.message}`:String(error);this.record('error',device,this.lastError);}
   get available(){return !!this.api;}
   get devices(){return [...this.entries.values()].filter(e=>e.active&&e.device.opened).map(e=>e.pad);}
-  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,setup:this.lastSetup?{...this.lastSetup}:null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route,rumble:{available:!!e.pad.rumble?.available,error:e.pad.rumble?.error||null,endpoint:e.rumbleEndpoint??null,output:e.pad.rumble?.diagnostics??null}}))};}
+  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,setup:this.lastSetup?{...this.lastSetup}:null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route,rumble:{available:!!e.pad.rumble?.available,error:e.pad.rumble?.error||null,endpoint:e.rumbleEndpoint??null,output:e.pad.rumble?.diagnostics??null,capabilities:e.capabilities??{state:'not-queried',message:'모터 지원 정보 조회 전'}}}))};}
+  rumbleCapabilities(id:string){const cap=[...this.entries.values()].find(e=>e.pad.id===id)?.capabilities;return cap?{...cap}:undefined;}
+  checkRumbleCapabilities(id:string):Promise<RumbleCapabilities>{
+    const entry=[...this.entries.values()].find(e=>e.pad.id===id&&e.active&&e.pad.inputsReady&&e.pad.rumble);
+    if(!entry)return Promise.resolve({state:'unavailable',message:'진동 정보를 조회할 Wired Wheel 입력이 준비되지 않았습니다.'});
+    if(entry.capabilityWork)return entry.capabilityWork;
+    // Capabilities are static for this connection. Do not queue more endpoint-0
+    // requests after a firmware timeout; reconnecting creates a fresh entry.
+    if(entry.capabilities&&entry.capabilities.state!=='reading')return Promise.resolve({...entry.capabilities});
+    entry.capabilities={state:'reading',message:'장치의 모터 지원 정보를 읽고 있습니다.'};
+    const work=this.readRumbleCapabilities(entry).then(result=>{
+      if(!entry.active||!entry.device.opened)return {state:'unavailable' as const,message:'지원 정보 조회 중 장치 연결이 해제됐습니다.'};
+      entry.capabilities=result;return {...result};
+    }).finally(()=>{entry.capabilityWork=undefined;});entry.capabilityWork=work;return work;
+  }
+  private async readRumbleCapabilities(entry:Entry):Promise<RumbleCapabilities>{
+    const device=entry.device;
+    if(!device.controlTransferIn)return {state:'unavailable',message:'브라우저에서 모터 지원 정보를 읽을 수 없습니다.'};
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try{
+      // SDL FetchXInputCapabilities: vendor/interface IN, request 01,
+      // value 0000, 8 bytes. This reads advertised motor ranges; no device
+      // mode, feature, enable or firmware command is written.
+      const reply=await Promise.race([
+        device.controlTransferIn({requestType:'vendor',recipient:'interface',request:1,value:0,index:entry.route.number},8),
+        new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),300);})
+      ]);
+      if(!reply)return {state:'timeout',message:'장치가 모터 지원 정보 조회에 응답하지 않았습니다. 지원 여부는 미확인입니다.'};
+      if(reply.status!=='ok')return {state:'unavailable',message:`모터 지원 정보 조회 응답: ${reply.status}. 지원 여부는 미확인입니다.`};
+      if(!reply.data||reply.data.byteLength!==8)return {state:'invalid',message:'모터 지원 정보 응답의 길이가 맞지 않아 지원 여부를 판정할 수 없습니다.'};
+      const strong=reply.data.getUint8(3),weak=reply.data.getUint8(4),advertised=strong>0||weak>0;
+      return {state:'reported',strong,weak,advertised,message:advertised?'장치가 모터 출력을 보고했습니다. 실제 반응은 테스트로 확인하세요.':'장치 응답에서 모터 지원이 확인되지 않았습니다. 이 값만으로 실제 미지원을 단정할 수는 없습니다.'};
+    }catch(error){return {state:'error',message:`모터 지원 정보 조회 실패: ${error instanceof Error?error.message:String(error)}. 입력 연결은 유지합니다.`};}
+    finally{clearTimeout(timer);}
+  }
   async request(){
     if(!this.api)throw new Error('WebUSB는 외부 데스크톱 Chrome·Edge에서 사용할 수 있습니다.');
     this.disabled=false;this.lastError='';const generation=this.generation;

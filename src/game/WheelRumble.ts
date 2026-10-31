@@ -91,13 +91,14 @@ export class WheelHaptics {
   status(device:WheelDevice|undefined){const output=rumbleFor(device);return output?.error?`진동 출력 오류: ${output.error}`:output?.available?`${output.kind==='usb'?'Wired Wheel':'브라우저'} 진동 명령 경로 감지 · 모터 동작은 테스트로 확인`:'선택한 장치에서 지원되는 진동 출력을 찾지 못했습니다.';}
   stop(reason='주행 또는 테스트 중단'){this.preview++;this.cancelWait?.();this.cancelWait=undefined;void this.output?.stop(reason);this.output=undefined;this.gear=this.impactSerial=undefined;this.shift=this.impact=0;this.sentAt=-Infinity;}
   private wait(milliseconds:number){return new Promise<void>(resolve=>{const timer=setTimeout(()=>{this.cancelWait=undefined;resolve();},milliseconds);this.cancelWait=()=>{clearTimeout(timer);resolve();};});}
-  async test(device:WheelDevice|undefined){
+  async test(device:WheelDevice|undefined,beforeTest?:()=>Promise<unknown>){
     this.stop();const output=rumbleFor(device);if(!output?.available)throw new Error(this.status(device));
     if(!this.strength)throw new Error('진동 강도를 먼저 올려주세요.');
     const run=this.preview,strength=this.strength;
     let completed=false;
     this.output=output;
     try{
+      if(beforeTest)await beforeTest();
       for(let pulse=0;pulse<2;pulse++){
         if(run!==this.preview||this.output!==output||!output.available)return false;
         await output.play(.95*strength,.95*strength,250);

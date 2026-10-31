@@ -66,7 +66,11 @@ export class WheelSetup {
     const rumble=this.node<HTMLInputElement>('wheel-rumble'),showRumble=()=>{this.node('wheel-rumble-value').textContent=`${Math.round(this.wheel.haptics.strength*100)}%`;};
     rumble.value=String(this.wheel.haptics.strength*100);showRumble();
     rumble.addEventListener('input',()=>{this.wheel.haptics.setStrength(Number(rumble.value)/100);showRumble();});
-    this.node('wheel-rumble-test').addEventListener('click',()=>{this.message('설정한 강도로 진동 테스트를 두 번 보냅니다.');void this.wheel.haptics.test(this.selected('wheel-device')).then(completed=>this.message(completed?'두 번의 테스트 명령을 전송했습니다. 진동이 없으면 아래 브라우저 입력 진단을 복사해 알려주세요.':'진동 테스트가 중단됐습니다. 창을 활성화한 상태에서 다시 시도하세요.')).catch(error=>this.message(`진동 테스트: ${(error as Error).message}`));});
+    this.node('wheel-rumble-test').addEventListener('click',()=>{
+      const device=this.selected('wheel-device');this.message('장치 지원 정보를 확인하고 진동 테스트를 두 번 보냅니다.');
+      const query=device?.source==='usb'?async()=>{await this.wheel.rawUSB?.checkRumbleCapabilities(device.id);}:undefined;
+      void this.wheel.haptics.test(device,query).then(completed=>this.message(completed?'두 번의 테스트 명령을 전송했습니다. 모터 지원 정보는 진동 상태와 브라우저 입력 진단에 표시됩니다.':'진동 테스트가 중단됐습니다. 창을 활성화한 상태에서 다시 시도하세요.')).catch(error=>this.message(`진동 테스트: ${(error as Error).message}`));
+    });
     this.node('wheel-save').addEventListener('click',()=>{
       if(!this.draft)return;
       const profile={...this.draft,enabled:this.node<HTMLInputElement>('wheel-enabled').checked,deadzone:Number(this.node<HTMLInputElement>('wheel-deadzone').value)/100,sensitivity:Number(this.node<HTMLInputElement>('wheel-sensitivity').value)/100};
@@ -166,7 +170,8 @@ export class WheelSetup {
     }
     if(now-this.lastPaint>80){
       this.lastPaint=now;this.node('wheel-detection').textContent=wheel?`${wheel.source==='usb'?'WebUSB':wheel.source==='hid'?'USB 직접':'브라우저'} 입력 연결됨 · 축 ${wheel.axes.length}개 / 버튼 ${wheel.buttons.length}개`:this.wheel.detectionStatus;
-      this.node('wheel-rumble-status').textContent=this.wheel.haptics.status(wheel);
+      const capability=wheel?.source==='usb'?this.wheel.rawUSB?.rumbleCapabilities(wheel.id):undefined;
+      this.node('wheel-rumble-status').textContent=this.wheel.haptics.status(wheel)+(capability?` · ${capability.message}`:'');
       this.node('wheel-rumble-test').textContent=wheel?`${wheel.displayName??wheel.id} 진동 테스트 · 2회`:'진동 테스트 · 장치 선택';
       this.node<HTMLButtonElement>('wheel-rumble-test').disabled=!wheel||wheel.inputsReady===false||!this.wheel.haptics.strength||!this.wheel.haptics.canRumble(wheel);
       this.node('wheel-connection-help').hidden=this.wheel.devices.length>0;
