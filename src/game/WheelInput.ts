@@ -44,24 +44,33 @@ export function changedPedal(restAxes:readonly number[],fullAxes:readonly number
   if(button>=0)return {source:'button',index:button,rest:restButtons[button],full:fullButtons[button]};
 }
 export function findWheelDevice(devices:readonly Gamepad[],id:string,index?:number){const matches=devices.filter(p=>p.id===id);return matches.length>1?matches.find(p=>p.index===index):matches[0];}
-const readBrowserPads=()=>{if(typeof navigator==='undefined'||!navigator.getGamepads)throw new Error('Gamepad unavailable');return Array.from(navigator.getGamepads());};
+const readBrowserPads=()=>{
+  if(typeof navigator==='undefined'||!navigator.getGamepads){const error=new Error('Gamepad unavailable');error.name=globalThis.isSecureContext===false?'InsecureContextError':'NotSupportedError';throw error;}
+  return Array.from(navigator.getGamepads());
+};
 const browserStorage:WheelStorage={getItem:key=>localStorage.getItem(key),setItem:(key,value)=>localStorage.setItem(key,value)};
 /** Browser-local, calibrated analog input. Device identity survives slot changes;
  * a new connection must be neutral before it can supply driving controls. */
 export class WheelInput {
   profile?:WheelProfile;devices:readonly Gamepad[]=[];controls:WheelControls|null=null;
-  supported=true;armed=false;connected=false;configuring=false;private layoutChanged=false;
+  supported=true;armed=false;connected=false;configuring=false;readErrorName='';private layoutChanged=false;
   private identity='';private held=new Set<number>();private pressed=new Set<WheelAction>();
   constructor(private readPads:()=>readonly(Gamepad|null)[]=readBrowserPads,private storage:WheelStorage=browserStorage){
     try{const saved=JSON.parse(storage.getItem(WHEEL_STORAGE_KEY)??'null');if(validWheelProfile(saved))this.profile=saved;}catch{}
   }
   get status(){
-    if(!this.supported)return '휠 입력을 사용할 수 없습니다. Chrome·Edge와 장치 드라이버를 확인하세요.';
+    if(!this.supported)return this.detectionStatus;
     if(!this.profile?.enabled)return this.devices.length?'휠 설정에서 장치를 선택하고 입력을 보정하세요.':'키보드 주행 · 휠을 연결하고 장치 버튼을 한 번 눌러주세요.';
     if(this.layoutChanged)return '장치의 입력 구성이 바뀌었습니다. 휠 설정에서 다시 보정하세요.';
     if(!this.connected)return '휠 또는 페달 연결 해제 · 장치를 다시 연결하거나 키보드로 계속할 수 있습니다.';
     if(!this.armed)return '휠을 중앙에 놓고 페달·버튼을 모두 놓으면 입력이 활성화됩니다.';
     return `휠 주행 · ${this.profile.deviceId}`;
+  }
+  get detectionStatus(){
+    if(this.readErrorName==='SecurityError')return '브라우저가 게임패드 접근을 차단했습니다. 게임 주소를 Chrome·Edge의 일반 탭에서 직접 열어주세요.';
+    if(this.readErrorName==='InsecureContextError')return '보안 연결이 필요합니다. HTTPS 게임 주소에서 다시 열어주세요.';
+    if(!this.supported)return '이 브라우저에서 게임패드 입력을 읽을 수 없습니다. 외부 Chrome·Edge에서 게임 주소를 직접 열어주세요.';
+    return this.devices.length?`브라우저가 인식한 입력 장치 ${this.devices.length}개`:'브라우저의 게임패드 목록이 비어 있습니다. 이 창을 클릭한 뒤 휠 버튼을 눌러주세요.';
   }
   save(profile:WheelProfile){
     if(!validWheelProfile(profile))throw new Error('조향·페달 범위 또는 버튼 중복을 확인하세요.');
@@ -73,7 +82,7 @@ export class WheelInput {
   down(action:WheelAction){const button=this.profile?.buttons[action];return this.armed&&button!==undefined&&button!==null&&this.held.has(button);}
   poll(){
     const previouslyConnected=this.connected;this.connected=false;this.controls=null;this.layoutChanged=false;
-    try{this.devices=this.readPads().filter((pad):pad is Gamepad=>!!pad&&pad.connected!==false);this.supported=true;}catch{this.devices=[];this.supported=false;}
+    try{this.devices=this.readPads().filter((pad):pad is Gamepad=>!!pad&&pad.connected!==false);this.supported=true;this.readErrorName='';}catch(error){this.devices=[];this.supported=false;const name=(error as {name?:unknown}|null)?.name;this.readErrorName=typeof name==='string'?name:'Error';}
     const profile=this.profile,wheel=profile&&findWheelDevice(this.devices,profile.deviceId,profile.deviceIndex),pedals=profile&&findWheelDevice(this.devices,profile.pedalDeviceId,profile.pedalIndex);
     if(!profile?.enabled||!wheel||!pedals||this.configuring){this.identity='';this.held.clear();this.suspend();return previouslyConnected&&!this.configuring;}
     const rawSteer=wheel.axes[profile.steering.axis],rawThrottle=pedalRaw(pedals,profile.throttle),rawBrake=pedalRaw(pedals,profile.brake);

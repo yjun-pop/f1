@@ -65,6 +65,15 @@ const volatile=fixture(),blocked=new WheelInput(()=>[volatile.device],{getItem:(
 const restored=new WheelInput(()=>[volatile.device],volatile.storage);restored.poll();assert.equal(restored.profile.deviceId,'USB Racing Wheel');restored.save({...restored.profile,enabled:false});restored.poll();assert.equal(restored.controls,null);
 console.log('PASS: combined-pedal axis, calibration isolation, unsupported/blocked APIs, durable profiles and session-only storage fallback');
 
+const {wheelDiagnosticReport}=await import(moduleURL('ui/WheelDiagnostics'));
+const policy=new WheelInput(()=>{const error=new Error('blocked');error.name='SecurityError';throw error;},cleanStorage);policy.poll();assert.equal(policy.readErrorName,'SecurityError');assert.ok(policy.detectionStatus.includes('차단'));
+const context={secure:true,api:true,focused:true,embedded:true},policyReport=JSON.parse(wheelDiagnosticReport(policy,context));assert.equal(policyReport.result,'read-error');assert.equal(policyReport.error,'SecurityError');assert.equal(policyReport.embeddedFrame,true);
+const empty=new WheelInput(()=>[],cleanStorage);empty.poll();assert.equal(empty.supported,true);assert.equal(JSON.parse(wheelDiagnosticReport(empty,context)).result,'empty-gamepad-list');assert.ok(empty.detectionStatus.includes('목록이 비어'));
+const missing=new WheelInput(()=>{const error=new Error('unavailable');error.name='NotSupportedError';throw error;},cleanStorage);missing.poll();assert.ok(missing.detectionStatus.includes('외부 Chrome'));
+const insecure=new WheelInput(()=>{const error=new Error('insecure');error.name='InsecureContextError';throw error;},cleanStorage);insecure.poll();assert.ok(insecure.detectionStatus.includes('HTTPS'));
+const visible=JSON.parse(wheelDiagnosticReport(f.wheel,context));assert.equal(visible.result,'devices-visible');assert.deepEqual(visible.devices[0],{id:'USB Racing Wheel',index:0,mapping:'none',axes:3,buttons:12});assert.equal(visible.devices[0].axisValues,undefined);
+console.log('PASS: empty browser lists, blocked access and unsupported/insecure APIs produce distinct local diagnostic reports without raw input/history');
+
 globalThis.window={innerWidth:1280,innerHeight:720,addEventListener:()=>{}};
 globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
 const {Input}=await import(moduleURL('game/Input')),{Track}=await import(moduleURL('game/Track')),{Vehicle}=await import(moduleURL('game/Vehicle'));
@@ -94,7 +103,7 @@ let now=performance.now(),rafId=0;const frames=new Map();globalThis.requestAnima
 function node(tag='div'){
  const events=new Map(),nodes=new Map();let html='';const el={tagName:tag.toUpperCase(),value:'',checked:false,disabled:false,hidden:false,open:false,textContent:'',children:[],attributes:{},
   setAttribute:(key,value)=>el.attributes[key]=value,addEventListener:(type,fn)=>{const list=events.get(type)??[];list.push(fn);events.set(type,list);},
-  querySelector:selector=>nodes.get(selector.slice(1)),appendChild:child=>el.children.push(child),replaceChildren:(...children)=>el.children=children,focus:()=>{},
+  querySelector:selector=>nodes.get(selector.slice(1)),appendChild:child=>el.children.push(child),replaceChildren:(...children)=>el.children=children,focus:()=>{},closest:()=>null,select:()=>{el.selected=true;},
   emit(type){for(const fn of events.get(type)??[])fn({target:el,stopPropagation(){}});},click(){if(!el.disabled)el.emit('click');},showModal(){el.open=true;},close(){el.open=false;el.emit('close');},
   get innerHTML(){return html;},set innerHTML(value){html=value;for(const match of value.matchAll(/<([a-z][\w-]*)\b([^>]*\bid="([^"]+)"[^>]*)>/g)){const child=node(match[1]),attrs=match[2];child.value=/\bvalue="([^"]+)"/.exec(attrs)?.[1]??'';child.checked=/\bchecked\b/.test(attrs);child.hidden=/\bhidden\b/.test(attrs);child.disabled=/\bdisabled\b/.test(attrs);nodes.set(match[3],child);}}
  };return el;
@@ -102,7 +111,7 @@ function node(tag='div'){
 globalThis.document={createElement:node,body:node('body')};
 const {WheelSetup}=await import(moduleURL('ui/WheelSetup'));
 const pump=()=>{now+=100;const batch=[...frames.values()];frames.clear();for(const fn of batch)fn(now);};
-function wizard(device=pad()){const saved=new Map(),wheel=new WheelInput(()=>[device],{getItem:key=>saved.get(key)??null,setItem:(key,value)=>saved.set(key,value)}),ui=new WheelSetup(wheel);ui.open();return {device,wheel,ui,saved,n:id=>ui.element.querySelector('#'+id)};}
+function wizard(device=pad()){let devices=[device];const saved=new Map(),wheel=new WheelInput(()=>devices,{getItem:key=>saved.get(key)??null,setItem:(key,value)=>saved.set(key,value)}),ui=new WheelSetup(wheel);ui.open();return {device,wheel,ui,saved,setDevices:value=>devices=value,n:id=>ui.element.querySelector('#'+id)};}
 function calibrate(w){
  w.n('wheel-calibrate').click();w.device.axes=[0,1,1];w.n('wheel-next').click();w.device.axes[0]=-.8;w.n('wheel-next').click();w.device.axes[0]=.9;w.n('wheel-next').click();w.device.axes=[0,1,1];w.n('wheel-next').click();w.device.axes[1]=-1;w.n('wheel-next').click();w.device.axes=[0,1,1];w.n('wheel-next').click();w.device.axes[2]=-1;w.n('wheel-next').click();w.device.axes=[0,1,1];pump();
 }
@@ -118,3 +127,8 @@ console.log('PASS: complete seven-step settings workflow, live device selection,
 const trigger=wizard(pad('USB Racing Wheel',0,[0]));trigger.n('wheel-calibrate').click();trigger.n('wheel-next').click();trigger.device.axes[0]=-1;trigger.n('wheel-next').click();trigger.device.axes[0]=1;trigger.n('wheel-next').click();trigger.device.axes[0]=0;trigger.n('wheel-next').click();trigger.device.buttons[7].value=1;trigger.n('wheel-next').click();trigger.device.buttons[7].value=0;trigger.n('wheel-next').click();trigger.device.buttons[6].value=1;trigger.n('wheel-next').click();trigger.device.buttons[6].value=0;pump();trigger.n('wheel-save').click();
 assert.equal(trigger.wheel.profile.throttle.source,'button');assert.equal(trigger.wheel.profile.throttle.index,7);assert.equal(trigger.wheel.profile.brake.index,6);
 console.log('PASS: the real setup wizard detects analog-button pedals without assuming fixed wheel axis numbers');
+
+trigger.ui.open();trigger.setDevices([]);pump();assert.equal(trigger.n('wheel-connection-help').hidden,false);assert.ok(trigger.n('wheel-detection').textContent.includes('목록이 비어'));assert.equal(trigger.n('wheel-save').disabled,true);
+trigger.n('wheel-copy-diagnostic').click();await Promise.resolve();assert.equal(trigger.n('wheel-diagnostic').selected,true,'Blocked clipboard access must offer manual selection');assert.equal(JSON.parse(trigger.n('wheel-diagnostic').value).result,'empty-gamepad-list');
+trigger.setDevices([trigger.device]);trigger.n('wheel-rescan').click();pump();assert.equal(trigger.n('wheel-connection-help').hidden,true);assert.equal(trigger.n('wheel-device').children.length,1);trigger.n('wheel-close').click();assert.equal(frames.size,0);
+console.log('PASS: empty-list connection help, user-triggered rescanning, local report copy fallback and restored device visibility');

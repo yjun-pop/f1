@@ -1,4 +1,5 @@
 import './WheelSetup.css';
+import {currentWheelDiagnostic} from './WheelDiagnostics';
 import {wheelInput,changedAxis,changedPedal,validWheelProfile,steeringValue,pedalValue,pedalRaw,findWheelDevice,WHEEL_ACTIONS,type WheelAction,type WheelInput,type WheelProfile} from '../game/WheelInput';
 
 const LABELS:Record<WheelAction,string>={shiftDown:'기어 내리기',shiftUp:'기어 올리기',boost:'ERS · 누르는 동안',drs:'DRS',pause:'일시정지 · 계속',camera:'시점 변경'};
@@ -23,6 +24,7 @@ export class WheelSetup {
     this.element.innerHTML=`<div class="wheel-top"><div><span>APEX FORMULA / CONTROLS</span><h2 id="wheel-title">레이싱 휠 설정</h2></div><button type="button" id="wheel-close" aria-label="휠 설정 닫기">닫기 ✕</button></div>
       <p class="wheel-intro">휠 버튼을 한 번 눌러 장치를 표시한 뒤 조향과 페달을 보정하세요. 설정은 이 브라우저에 저장됩니다.</p>
       <p id="wheel-detection" class="wheel-notice" role="status"></p>
+      <section id="wheel-connection-help" class="wheel-connection-help"><p>Mac의 USB 인식과 브라우저의 게임패드 인식은 별개입니다. 연결 허용 알림이 없었다는 이유만으로 연결 실패는 아닙니다.</p><ol><li>이 설정 창을 클릭한 뒤 휠의 패들·일반 버튼을 눌러주세요.</li><li>내장 브라우저에서 열었다면 게임 주소를 외부 Chrome·Edge의 주소창에 직접 붙여 넣어 확인하세요.</li><li>그래도 목록이 비면 진단 내용을 복사해 알려주세요. 목록이 비었다는 것만으로 드라이버가 없다고 판단할 수는 없습니다.</li></ol><button type="button" id="wheel-rescan">입력 장치 다시 확인</button><button type="button" id="wheel-copy-url">게임 주소 복사</button></section>
       <div class="wheel-devices"><label>조향·버튼 장치<select id="wheel-device"></select></label><label>페달 장치<select id="wheel-pedals"></select></label></div>
       <section class="wheel-calibration" aria-labelledby="wheel-step-title"><span id="wheel-step-count">입력 보정</span><h3 id="wheel-step-title">장치를 선택해 주세요</h3><p id="wheel-step-description">처음 연결한 휠은 보정을 마쳐야 차량을 움직일 수 있습니다.</p><div class="wheel-step-buttons"><button type="button" id="wheel-calibrate">보정 시작</button><button type="button" id="wheel-next" hidden>현재 위치 기록 →</button></div></section>
       <p id="wheel-message" class="wheel-message" role="status" aria-live="polite"></p>
@@ -30,10 +32,14 @@ export class WheelSetup {
       <fieldset id="wheel-bindings" hidden><legend>패들·버튼 지정 <small>선택 사항</small></legend><p>‘지정’을 누른 뒤 휠의 버튼을 한 번 누르세요.</p>${WHEEL_ACTIONS.map(action=>`<div class="wheel-binding"><span>${LABELS[action]}</span><button type="button" id="wheel-bind-${action}">지정</button><button type="button" id="wheel-clear-${action}" aria-label="${LABELS[action]} 지정 해제">해제</button></div>`).join('')}<small>패들로 직접 변속하려면 레이스의 변속 방식을 ‘수동’으로 선택하세요.</small></fieldset>
       <div class="wheel-tuning"><label for="wheel-deadzone">중앙 데드존 <output id="wheel-deadzone-value"></output></label><input id="wheel-deadzone" type="range" min="0" max="15" step="1" value="2"><label for="wheel-sensitivity">조향 감도 <output id="wheel-sensitivity-value"></output></label><input id="wheel-sensitivity" type="range" min="50" max="200" step="5" value="100"><label class="wheel-enable"><input id="wheel-enabled" type="checkbox" checked> 보정한 휠로 주행하기</label></div>
       <details class="wheel-help"><summary>장치가 보이지 않거나 입력이 이상한가요?</summary><p>Chrome·Edge에서 휠 버튼을 한 번 누르세요. 제조사 드라이버와 PC 모드를 확인하고 필요하면 페이지를 새로고침하세요. 브라우저에 표시되는 장치만 사용할 수 있습니다.</p><p>페달을 별도 USB 장치로 연결했다면 ‘페달 장치’에서 선택하세요. 통합 페달 축도 보정할 수 있지만, 가속과 제동을 동시에 사용하려면 드라이버에서 페달을 분리하세요. 클러치·포스피드백은 지원하지 않습니다.</p><pre id="wheel-raw" aria-label="조향·페달 원시 입력"></pre></details>
+      <details class="wheel-help"><summary>브라우저 입력 진단</summary><p>브라우저의 입력 기능·접근 오류·표시된 장치 정보만 포함합니다. 자동 전송하지 않습니다.</p><textarea id="wheel-diagnostic" readonly rows="7" aria-label="복사할 브라우저 입력 진단"></textarea><button type="button" id="wheel-copy-diagnostic">진단 내용 복사</button></details>
       <div class="wheel-bottom"><button type="button" id="wheel-keyboard">키보드로 사용</button><button type="button" id="wheel-save" class="wheel-primary" disabled>설정 저장</button></div>`;
     document.body.appendChild(this.element);
     this.element.addEventListener('keydown',event=>event.stopPropagation());
     this.node('wheel-close').addEventListener('click',()=>this.element.close());
+    this.node('wheel-rescan').addEventListener('click',()=>{this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;this.message(this.wheel.detectionStatus);});
+    this.node('wheel-copy-diagnostic').addEventListener('click',()=>void this.copyText(currentWheelDiagnostic(this.wheel),this.node<HTMLTextAreaElement>('wheel-diagnostic')));
+    this.node('wheel-copy-url').addEventListener('click',()=>void this.copyText(window.location.href));
     this.element.addEventListener('close',()=>{this.wheel.configuring=false;this.wheel.suspend();cancelAnimationFrame(this.frame);this.learning=undefined;});
     for(const id of ['wheel-device','wheel-pedals'])this.node(id).addEventListener('change',()=>{
       if(id==='wheel-device')this.node<HTMLSelectElement>('wheel-pedals').value=this.node<HTMLSelectElement>('wheel-device').value;
@@ -59,6 +65,10 @@ export class WheelSetup {
   private node<T extends HTMLElement=HTMLElement>(id:string){return this.element.querySelector<T>('#'+id)!;}
   private selected(id:string){const index=Number(this.node<HTMLSelectElement>(id).value);return this.wheel.devices.find(p=>p.index===index);}
   private message(text:string){this.node('wheel-message').textContent=text;}
+  private async copyText(text:string,field?:HTMLTextAreaElement){
+    try{if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(text);this.message('복사했습니다.');}
+    catch{if(field){field.value=text;field.closest('details')?.setAttribute('open','');field.focus();field.select();this.message('진단 내용을 선택했습니다. ⌘C 또는 Ctrl+C로 복사하세요.');}else this.message(`게임 주소를 직접 복사해 외부 브라우저에서 열어주세요: ${text}`);}
+  }
   private buttons(pad:Gamepad){return new Set(pad.buttons.flatMap((b,i)=>b.pressed||b.value>.55?[i]:[]));}
   open(){
     if(this.element.open){this.node('wheel-close').focus();return;}
@@ -121,7 +131,9 @@ export class WheelSetup {
       }else if(now>this.learning.until){this.message('버튼 지정 시간이 지났습니다. ‘지정’을 눌러 다시 시도하세요.');this.learning=undefined;}else this.learning.held=held;
     }
     if(now-this.lastPaint>80){
-      this.lastPaint=now;this.node('wheel-detection').textContent=!this.wheel.supported?this.wheel.status:wheel?`연결됨 · 축 ${wheel.axes.length}개 / 버튼 ${wheel.buttons.length}개`:'연결된 장치가 없습니다. 휠 버튼을 한 번 눌러주세요.';
+      this.lastPaint=now;this.node('wheel-detection').textContent=wheel?`브라우저 입력 연결됨 · 축 ${wheel.axes.length}개 / 버튼 ${wheel.buttons.length}개`:this.wheel.detectionStatus;
+      this.node('wheel-connection-help').hidden=this.wheel.devices.length>0;
+      const diagnostic=this.node<HTMLTextAreaElement>('wheel-diagnostic'),report=currentWheelDiagnostic(this.wheel);if(diagnostic.value!==report&&document.activeElement!==diagnostic)diagnostic.value=report;
       this.node<HTMLButtonElement>('wheel-calibrate').disabled=!wheel||!pedals;
       this.node<HTMLButtonElement>('wheel-next').disabled=!wheel||!pedals;
       this.node<HTMLButtonElement>('wheel-save').disabled=!wheel||!pedals||!this.draft||!validWheelProfile(this.draft)||!!STEPS[this.step];
