@@ -43,7 +43,12 @@ export function decodeXbox360(data:DataView){
   return {axes,buttons};
 }
 type Pad=WheelDevice&{axes:number[];buttons:{value:number;pressed:boolean}[]};
-interface Entry {device:WheelUSBDevice;pad:Pad;route:ReturnType<typeof xbox360Interface>;active:boolean;packets:number;invalid:number}
+interface Entry {device:WheelUSBDevice;pad:Pad;route:ReturnType<typeof xbox360Interface>;setup:SetupAttempt;active:boolean;packets:number;invalid:number}
+interface SetupAttempt {
+  name:string;vendorId:string;productId:string;stage:string;status:'connecting'|'waiting-input'|'ready'|'failed'|'cancelled';
+  configurationBeforeOpen:number|null;configurationAfterOpen:number|null;activeConfiguration:number|null;
+  route?:ReturnType<typeof xbox360Interface>;disconnectedDuringSetup?:boolean;error?:{name:string;message:string};
+}
 export function browserWheelUSB(){return typeof navigator==='undefined'?undefined:(navigator as Navigator&{usb?:WheelUSBAPI}).usb;}
 function describe(device:WheelUSBDevice){return {name:device.productName??'',manufacturer:device.manufacturerName??'',vendorId:hex(device.vendorId),productId:hex(device.productId),
   configurations:device.configurations.slice(0,8).map(c=>({value:c.configurationValue,interfaces:c.interfaces.slice(0,16).map(i=>({number:i.interfaceNumber,alternates:i.alternates.slice(0,16).map(a=>({setting:a.alternateSetting,class:hex(a.interfaceClass),subclass:hex(a.interfaceSubclass),protocol:hex(a.interfaceProtocol),endpoints:a.endpoints.slice(0,16).map(e=>({number:e.endpointNumber,direction:e.direction,type:e.type,packetSize:e.packetSize}))}))}))}))};}
@@ -52,9 +57,9 @@ export class USBWheel {
   private entries=new Map<WheelUSBDevice,Entry>();private pending=new Map<WheelUSBDevice,Promise<void>>();private reserved=new Set<number>();
   private known=new Set<string>();private epochs=new WeakMap<WheelUSBDevice,number>();private generation=0;private disabled=false;
   private events:{at:number;type:string;name:string;detail?:string}[]=[];
-  lastError='';lastSelected?:ReturnType<typeof describe>;
+  lastError='';lastSelected?:ReturnType<typeof describe>;private lastSetup?:SetupAttempt;
   constructor(private api:WheelUSBAPI|undefined=browserWheelUSB()){
-    api?.addEventListener?.('disconnect',({device})=>{this.epochs.set(device,(this.epochs.get(device)??0)+1);const entry=this.entries.get(device);if(entry){this.drop(entry);this.record('disconnected',device);}});
+    api?.addEventListener?.('disconnect',({device})=>{this.epochs.set(device,(this.epochs.get(device)??0)+1);const entry=this.entries.get(device);if(entry||this.pending.has(device))this.record('disconnected',device);if(entry)this.drop(entry);});
     api?.addEventListener?.('connect',({device})=>{
       if(this.disabled||!this.known.has(key(device)))return;
       const epoch=(this.epochs.get(device)??0)+1;this.epochs.set(device,epoch);const generation=this.generation;this.record('reconnected',device);
@@ -65,7 +70,7 @@ export class USBWheel {
   private failure(device:WheelUSBDevice,error:unknown){this.lastError=error instanceof Error?`${error.name}: ${error.message}`:String(error);this.record('error',device,this.lastError);}
   get available(){return !!this.api;}
   get devices(){return [...this.entries.values()].filter(e=>e.active&&e.device.opened).map(e=>e.pad);}
-  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route}))};}
+  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,setup:this.lastSetup?{...this.lastSetup}:null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route}))};}
   async request(){
     if(!this.api)throw new Error('WebUSB는 외부 데스크톱 Chrome·Edge에서 사용할 수 있습니다.');
     this.disabled=false;this.lastError='';const generation=this.generation;
@@ -88,19 +93,37 @@ export class USBWheel {
     const index=Array.from({length:16},(_,i)=>i+16).find(i=>!this.reserved.has(i)&&![...this.entries.values()].some(e=>e.pad.index===i));
     if(index===undefined)throw new Error('사용할 수 있는 USB 입력 슬롯이 없습니다.');
     this.known.add(key(device));this.reserved.add(index);let openedHere=false;
+    const setup:SetupAttempt={name:device.productName??'',vendorId:hex(device.vendorId),productId:hex(device.productId),stage:'open-device',status:'connecting',configurationBeforeOpen:device.configuration?.configurationValue??null,configurationAfterOpen:null,activeConfiguration:device.configuration?.configurationValue??null,route};this.lastSetup=setup;
     const cancelled=()=>this.disabled||generation!==this.generation||epoch!==(this.epochs.get(device)??0);
     try{
       if(!device.opened){await device.open();openedHere=true;}
       if(cancelled()){await device.close();return;}
-      if(device.configuration?.configurationValue!==route.config)await device.selectConfiguration(route.config);
+      setup.configurationAfterOpen=device.configuration?.configurationValue??null;
+      // open() may expose a different active configuration. Prefer its supported
+      // input interface rather than resetting the entire device unnecessarily.
+      Object.assign(route,xbox360Interface(device));setup.activeConfiguration=setup.configurationAfterOpen;
+      if(device.configuration?.configurationValue!==route.config){
+        setup.stage='select-configuration';this.record('select-configuration',device,`active=${setup.activeConfiguration??'none'}, requested=${route.config}`);
+        await device.selectConfiguration(route.config);
+        if(device.configuration?.configurationValue!==route.config)throw new Error('브라우저가 요청한 USB 구성을 활성화하지 않았습니다.');
+      }
       if(cancelled()){await device.close();return;}
+      setup.activeConfiguration=device.configuration?.configurationValue??null;setup.stage='claim-interface';
       await device.claimInterface(route.number);
       if(cancelled()){await device.close();return;}
-      if(device.configuration?.interfaces.find(i=>i.interfaceNumber===route.number)?.alternate.alternateSetting!==route.alternate)await device.selectAlternateInterface(route.number,route.alternate);
+      if(device.configuration?.interfaces.find(i=>i.interfaceNumber===route.number)?.alternate.alternateSetting!==route.alternate){setup.stage='select-alternate';await device.selectAlternateInterface(route.number,route.alternate);}
       if(cancelled()){await device.close();return;}
       const pad:Pad={id:`webusb:xinput360:${key(device)}`,displayName:device.productName||'USB XInput 휠',index,connected:true,mapping:'standard',source:'usb',inputsReady:false,axes:Array(4).fill(NaN),buttons:Array.from({length:17},()=>({value:0,pressed:false}))};
-      const entry:Entry={device,pad,route,active:true,packets:0,invalid:0};this.entries.set(device,entry);this.record('opened',device);void this.receive(entry);
-    }catch(error){if(openedHere)try{await device.close();}catch{}throw error;}finally{this.reserved.delete(index);}
+      const entry:Entry={device,pad,route,setup,active:true,packets:0,invalid:0};this.entries.set(device,entry);setup.status='waiting-input';setup.stage='receive-input';this.record('opened',device);void this.receive(entry);
+    }catch(error){
+      setup.status='failed';setup.activeConfiguration=device.configuration?.configurationValue??null;setup.error={name:error instanceof Error?error.name:'Error',message:error instanceof Error?error.message:String(error)};
+      setup.disconnectedDuringSetup=epoch!==(this.epochs.get(device)??0);
+      if(openedHere)try{await device.close();}catch{}
+      if(this.disabled||generation!==this.generation){setup.status='cancelled';return;}
+      if(setup.disconnectedDuringSetup)throw new Error(`USB 연결 준비 중 장치가 분리되거나 다시 인식되었습니다. 휠 USB를 다시 연결한 뒤 재시도하세요. 원문: ${setup.error.message}`,{cause:error});
+      if(setup.stage==='select-configuration')throw new Error(`장치는 찾았지만 USB 구성 ${route.config}을 활성화하지 못했습니다. 휠 USB를 다시 연결하고 가능하면 허브 대신 단일 어댑터로 연결하세요. 계속 실패하면 chrome://device-log의 USB 오류를 확인해주세요. 원문: ${setup.error.message}`,{cause:error});
+      throw error;
+    }finally{this.reserved.delete(index);}
   }
   private async receive(entry:Entry){
     while(entry.active){
@@ -109,10 +132,10 @@ export class USBWheel {
         if(report.status!=='ok'||!report.data)throw new Error(`USB 입력 전송 실패 (${report.status})`);
         try{
           const state=decodeXbox360(report.data);if(!state)continue;
-          const wasReady=entry.pad.inputsReady;entry.pad.axes=state.axes;entry.pad.buttons=state.buttons;entry.pad.inputsReady=true;entry.packets++;
+          const wasReady=entry.pad.inputsReady;entry.pad.axes=state.axes;entry.pad.buttons=state.buttons;entry.pad.inputsReady=true;entry.setup.status='ready';entry.packets++;
           if(!wasReady)this.record('ready',entry.device);
-        }catch(error){entry.invalid++;entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const button of entry.pad.buttons){button.value=0;button.pressed=false;}if(entry.invalid===1)this.failure(entry.device,error);}
-      }catch(error){if(!entry.active)return;this.failure(entry.device,error);this.drop(entry);try{await entry.device.close();}catch{}return;}
+        }catch(error){entry.invalid++;entry.setup.status='waiting-input';entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const button of entry.pad.buttons){button.value=0;button.pressed=false;}if(entry.invalid===1)this.failure(entry.device,error);}
+      }catch(error){if(!entry.active)return;entry.setup.status='failed';entry.setup.error={name:error instanceof Error?error.name:'Error',message:error instanceof Error?error.message:String(error)};this.failure(entry.device,error);this.drop(entry);try{await entry.device.close();}catch{}return;}
     }
   }
   private drop(entry:Entry){entry.active=false;entry.pad.connected=false;entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const b of entry.pad.buttons){b.value=0;b.pressed=false;}this.entries.delete(entry.device);}
