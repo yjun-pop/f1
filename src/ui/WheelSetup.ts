@@ -24,7 +24,7 @@ export class WheelSetup {
     this.element.innerHTML=`<div class="wheel-top"><div><span>APEX FORMULA / CONTROLS</span><h2 id="wheel-title">레이싱 휠 설정</h2></div><button type="button" id="wheel-close" aria-label="휠 설정 닫기">닫기 ✕</button></div>
       <p class="wheel-intro">휠 버튼을 한 번 눌러 장치를 표시한 뒤 조향과 페달을 보정하세요. 설정은 이 브라우저에 저장됩니다.</p>
       <p id="wheel-detection" class="wheel-notice" role="status"></p>
-      <section class="wheel-direct-usb"><h3>일반 목록에 없는 USB 휠</h3><p>Chrome·Edge에서 ‘USB 휠 직접 연결’을 누르고 권한 창에서 휠을 선택하세요. 연결 후 휠·페달을 움직이고 패들을 한 번 눌러 입력을 확인하세요.</p><button type="button" id="wheel-usb-connect">USB 휠 직접 연결</button><button type="button" id="wheel-usb-disconnect" disabled>USB 연결 해제</button><p id="wheel-usb-status" role="status"></p><small>목록에 휠이 없으면 현재 모드가 USB HID로 노출되지 않는 경우도 있습니다. 표준 조향·버튼 정보를 읽을 수 있는 장치가 대상입니다.</small></section>
+      <section class="wheel-direct-usb"><h3>USB 휠 연결</h3><p>USB 확인 사이트에 표시되는 Wired Wheel은 ‘Wired Wheel USB 연결’에서 선택하세요. 일반 HID 휠은 ‘USB 휠 직접 연결’을 사용하세요. 연결 후 휠·페달·패들을 움직이고 보정을 시작하세요.</p><button type="button" id="wheel-raw-connect">Wired Wheel USB 연결</button><button type="button" id="wheel-usb-connect">USB 휠 직접 연결</button><button type="button" id="wheel-usb-find">HID 전체 목록</button><button type="button" id="wheel-usb-disconnect" disabled>USB 연결 해제</button><p id="wheel-usb-status" role="status"></p><small>WebUSB는 유선 Xbox 360/XInput 형식의 휠을, WebHID는 표준 축·버튼을 제공하는 휠을 지원합니다. 선택한 기기의 입력 형식이 다르면 진단에 표시합니다.</small></section>
       <section id="wheel-connection-help" class="wheel-connection-help"><p>Mac의 USB 인식과 브라우저의 게임패드 인식은 별개입니다. 연결 허용 알림이 없었다는 이유만으로 연결 실패는 아닙니다.</p><ol><li>이 설정 창을 클릭한 뒤 휠의 패들·일반 버튼을 눌러주세요.</li><li>내장 브라우저에서 열었다면 게임 주소를 외부 Chrome·Edge의 주소창에 직접 붙여 넣어 확인하세요.</li><li>그래도 목록이 비면 진단 내용을 복사해 알려주세요. 목록이 비었다는 것만으로 드라이버가 없다고 판단할 수는 없습니다.</li></ol><button type="button" id="wheel-rescan">입력 장치 다시 확인</button><button type="button" id="wheel-copy-url">게임 주소 복사</button></section>
       <div class="wheel-devices"><label>조향·버튼 장치<select id="wheel-device"></select></label><label>페달 장치<select id="wheel-pedals"></select></label></div>
       <section class="wheel-calibration" aria-labelledby="wheel-step-title"><span id="wheel-step-count">입력 보정</span><h3 id="wheel-step-title">장치를 선택해 주세요</h3><p id="wheel-step-description">처음 연결한 휠은 보정을 마쳐야 차량을 움직일 수 있습니다.</p><div class="wheel-step-buttons"><button type="button" id="wheel-calibrate">보정 시작</button><button type="button" id="wheel-next" hidden>현재 위치 기록 →</button></div></section>
@@ -38,11 +38,13 @@ export class WheelSetup {
     document.body.appendChild(this.element);
     this.element.addEventListener('keydown',event=>event.stopPropagation());
     this.node('wheel-close').addEventListener('click',()=>this.element.close());
-    this.node('wheel-rescan').addEventListener('click',()=>{this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;this.message(this.wheel.detectionStatus);});
+    this.node('wheel-rescan').addEventListener('click',()=>{this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;this.message(this.wheel.detectionStatus);void this.restoreUSB();});
     this.node('wheel-copy-diagnostic').addEventListener('click',()=>void this.copyText(currentWheelDiagnostic(this.wheel),this.node<HTMLTextAreaElement>('wheel-diagnostic')));
     this.node('wheel-copy-url').addEventListener('click',()=>void this.copyText(window.location.href));
     this.node('wheel-usb-connect').addEventListener('click',()=>void this.connectUSB());
-    this.node('wheel-usb-disconnect').addEventListener('click',()=>{void this.wheel.usb?.disconnect().then(()=>{this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;this.message('USB 직접 연결을 해제했습니다.');});});
+    this.node('wheel-usb-find').addEventListener('click',()=>void this.connectUSB(true));
+    this.node('wheel-raw-connect').addEventListener('click',()=>void this.connectRawUSB());
+    this.node('wheel-usb-disconnect').addEventListener('click',()=>{void Promise.all([this.wheel.usb?.disconnect(),this.wheel.rawUSB?.disconnect()]).then(()=>{this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;this.message('USB 직접 연결을 해제했습니다.');});});
     this.element.addEventListener('close',()=>{this.wheel.configuring=false;this.wheel.suspend();cancelAnimationFrame(this.frame);this.learning=undefined;});
     for(const id of ['wheel-device','wheel-pedals'])this.node(id).addEventListener('change',()=>{
       if(id==='wheel-device')this.node<HTMLSelectElement>('wheel-pedals').value=this.node<HTMLSelectElement>('wheel-device').value;
@@ -73,11 +75,19 @@ export class WheelSetup {
     catch{if(field){field.value=text;field.closest('details')?.setAttribute('open','');field.focus();field.select();this.message('진단 내용을 선택했습니다. ⌘C 또는 Ctrl+C로 복사하세요.');}else this.message(`게임 주소를 직접 복사해 외부 브라우저에서 열어주세요: ${text}`);}
   }
   private buttons(pad:WheelDevice){return new Set(pad.buttons.flatMap((b,i)=>b.pressed||b.value>.55?[i]:[]));}
-  private async connectUSB(){
-    if(this.usbBusy||!this.wheel.usb?.available)return;this.usbBusy=true;this.node<HTMLButtonElement>('wheel-usb-connect').disabled=true;
-    this.message('브라우저의 장치 선택 창에서 휠을 선택하세요.');
-    try{const count=await this.wheel.usb.request();this.message(count?'USB 입력 연결을 열었습니다. 휠·페달을 움직이고 패들을 눌러주세요.':'선택된 장치가 없습니다. 목록에 휠이 없다면 스팀을 종료하고 장치의 HID·PC 모드를 확인하세요.');}
+  private async restoreUSB(){await Promise.all([this.wheel.usb?.restore(),this.wheel.rawUSB?.restore()]);if(this.element.open){this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;}}
+  private busyUSB(){this.usbBusy=true;for(const id of ['wheel-usb-connect','wheel-usb-find','wheel-raw-connect','wheel-usb-disconnect'])this.node<HTMLButtonElement>(id).disabled=true;}
+  private async connectUSB(allDevices=false){
+    if(this.usbBusy||!this.wheel.usb?.available)return;this.busyUSB();
+    this.message(allDevices?'전체 HID 입력 목록에서 휠을 선택하세요.':'브라우저의 장치 선택 창에서 휠을 선택하세요.');
+    try{const count=await this.wheel.usb.request(allDevices);this.message(count?'USB 입력 연결을 열었습니다. 휠·페달을 움직이고 패들을 눌러주세요.':'선택된 장치가 없습니다. 목록에 휠이 없다면 스팀을 종료하고 장치의 HID·PC 모드를 확인하세요.');}
     catch(error){this.message(`USB 직접 연결: ${(error as Error).message}`);}
+    finally{this.usbBusy=false;this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;}
+  }
+  private async connectRawUSB(){
+    if(this.usbBusy||!this.wheel.rawUSB?.available)return;this.busyUSB();this.message('USB 장치 선택 창에서 Wired Wheel을 선택하세요.');
+    try{const count=await this.wheel.rawUSB.request();this.message(count?'USB 입력 연결을 열었습니다. 휠·페달·패들을 움직인 뒤 보정을 시작하세요.':'선택된 USB 장치가 없습니다.');}
+    catch(error){this.message(`Wired Wheel USB 연결: ${(error as Error).message}`);}
     finally{this.usbBusy=false;this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;}
   }
   open(){
@@ -85,14 +95,14 @@ export class WheelSetup {
     this.wheel.configuring=true;this.wheel.suspend();this.wheel.poll();this.deviceStamp=undefined;this.step=-1;this.draft=this.wheel.profile?JSON.parse(JSON.stringify(this.wheel.profile)):undefined;
     this.node<HTMLInputElement>('wheel-deadzone').value=String(Math.round((this.draft?.deadzone??.02)*100));this.node<HTMLInputElement>('wheel-sensitivity').value=String(Math.round((this.draft?.sensitivity??1)*100));this.node<HTMLInputElement>('wheel-enabled').checked=this.draft?.enabled??true;
     this.message('');this.refreshDevices();this.showStep();this.showTuning();this.element.showModal();this.lastPaint=-Infinity;this.tick(performance.now());
-    void this.wheel.usb?.restore().then(()=>{if(this.element.open){this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;}});
+    void this.restoreUSB();
   }
   private refreshDevices(){
     const stamp=this.wheel.devices.map(p=>`${p.index}/${p.id}/${p.axes.length}/${p.buttons.length}`).join('|');if(stamp===this.deviceStamp)return;
     const changed=this.deviceStamp!==undefined;this.deviceStamp=stamp;
     if(this.draft&&this.wheel.devices.length&&(!findWheelDevice(this.wheel.devices,this.draft.deviceId,this.draft.deviceIndex)||!findWheelDevice(this.wheel.devices,this.draft.pedalDeviceId,this.draft.pedalIndex)))this.draft=undefined;
     for(const [id,saved,hint] of [['wheel-device',this.draft?.deviceId,this.draft?.deviceIndex],['wheel-pedals',this.draft?.pedalDeviceId,this.draft?.pedalIndex]] as const){
-      const select=this.node<HTMLSelectElement>(id),previous=select.value,options=this.wheel.devices.map(p=>{const option=document.createElement('option');option.value=String(p.index);option.textContent=`${p.source==='hid'?'USB 직접 · ':''}${p.id} · 장치 ${p.index+1}`;return option;});
+      const select=this.node<HTMLSelectElement>(id),previous=select.value,options=this.wheel.devices.map(p=>{const option=document.createElement('option');option.value=String(p.index);option.textContent=`${p.source==='usb'?'WebUSB · ':p.source==='hid'?'USB 직접 · ':''}${p.displayName??p.id} · 장치 ${p.index+1}`;return option;});
       select.replaceChildren(...options);select.disabled=!options.length;
       const match=saved?findWheelDevice(this.wheel.devices,saved,hint):undefined,old=this.wheel.devices.find(p=>String(p.index)===previous);
       select.value=String((match??old??this.wheel.devices[0])?.index??'');
@@ -143,12 +153,14 @@ export class WheelSetup {
       }else if(now>this.learning.until){this.message('버튼 지정 시간이 지났습니다. ‘지정’을 눌러 다시 시도하세요.');this.learning=undefined;}else this.learning.held=held;
     }
     if(now-this.lastPaint>80){
-      this.lastPaint=now;this.node('wheel-detection').textContent=wheel?`${wheel.source==='hid'?'USB 직접':'브라우저'} 입력 연결됨 · 축 ${wheel.axes.length}개 / 버튼 ${wheel.buttons.length}개`:this.wheel.detectionStatus;
+      this.lastPaint=now;this.node('wheel-detection').textContent=wheel?`${wheel.source==='usb'?'WebUSB':wheel.source==='hid'?'USB 직접':'브라우저'} 입력 연결됨 · 축 ${wheel.axes.length}개 / 버튼 ${wheel.buttons.length}개`:this.wheel.detectionStatus;
       this.node('wheel-connection-help').hidden=this.wheel.devices.length>0;
-      const usb=this.wheel.usb,direct=usb?.devices??[],ready=direct.filter(p=>p.inputsReady).length;
+      const usb=this.wheel.usb,rawUSB=this.wheel.rawUSB,direct=[...usb?.devices??[],...rawUSB?.devices??[]],ready=direct.filter(p=>p.inputsReady).length;
       this.node<HTMLButtonElement>('wheel-usb-connect').disabled=this.usbBusy||!usb?.available;
+      this.node<HTMLButtonElement>('wheel-usb-find').disabled=this.usbBusy||!usb?.available;
+      this.node<HTMLButtonElement>('wheel-raw-connect').disabled=this.usbBusy||!rawUSB?.available;
       this.node<HTMLButtonElement>('wheel-usb-disconnect').disabled=this.usbBusy||!direct.length;
-      this.node('wheel-usb-status').textContent=!usb?.available?'USB 직접 연결 기능이 없습니다. 외부 Chrome·Edge에서 열어주세요.':direct.length?`USB ${direct.length}개 연결 · 입력 준비 ${ready}개${ready<direct.length?' · 휠·페달·패들을 움직여주세요.':''}`:'권한 창에서 선택한 USB 휠만 입력을 읽습니다.';
+      this.node('wheel-usb-status').textContent=!usb?.available&&!rawUSB?.available?'USB 직접 연결 기능이 없습니다. 외부 Chrome·Edge에서 열어주세요.':direct.length?`USB ${direct.length}개 연결 · 입력 준비 ${ready}개${ready<direct.length?' · 휠·페달·패들을 움직여주세요.':''}`:usb?.connectionNotice||'권한 창에서 선택한 USB 휠만 입력을 읽습니다.';
       const diagnostic=this.node<HTMLTextAreaElement>('wheel-diagnostic'),report=currentWheelDiagnostic(this.wheel);if(diagnostic.value!==report&&document.activeElement!==diagnostic)diagnostic.value=report;
       const waiting=wheel?.inputsReady===false||pedals?.inputsReady===false;
       this.node<HTMLButtonElement>('wheel-calibrate').disabled=!wheel||!pedals||waiting;

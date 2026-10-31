@@ -136,15 +136,15 @@ console.log('PASS: empty-list connection help, user-triggered rescanning, local 
 // Exercise the production click handler and wizard through simulated WebHID
 // events, including the user activation boundary before the first await.
 const {HIDWheel}=await import(moduleURL('game/HIDWheel'));
-let hidListener,chooserCalls=0;
-const usbDevice={vendorId:0x1234,productId:0x5678,productName:'USB test wheel',opened:false,
- collections:[{usagePage:1,usage:4,inputReports:[{reportId:0,items:[{reportSize:8,reportCount:3,logicalMinimum:0,logicalMaximum:255,isAbsolute:true,usages:[0x10030,0x10032,0x10035]}]}]}],
+let hidListener,chooserCalls=0,chooserFilters;
+const usbDevice={vendorId:0x1234,productId:0x5678,productName:'Wired Wheel',opened:false,
+ collections:[{usagePage:0xff00,usage:1,inputReports:[{reportId:0,items:[{reportSize:8,reportCount:3,logicalMinimum:0,logicalMaximum:255,isAbsolute:true,usages:[0x10030,0x10032,0x10035]}]}]}],
  async open(){this.opened=true;},async close(){this.opened=false;},addEventListener(type,fn){hidListener=fn;},removeEventListener(){hidListener=undefined;}};
-const usb=new HIDWheel({requestDevice(){chooserCalls++;return Promise.resolve([usbDevice]);},getDevices:async()=>[]});
+const usb=new HIDWheel({requestDevice(options){chooserCalls++;chooserFilters=options.filters;return Promise.resolve([usbDevice]);},getDevices:async()=>[]});
 const usbWheel=new WheelInput(()=>[],{getItem:()=>null,setItem:()=>{}},usb),usbUI=new WheelSetup(usbWheel),un=id=>usbUI.element.querySelector('#'+id);
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-usbUI.open();assert.equal(un('wheel-calibrate').disabled,true);un('wheel-usb-connect').click();assert.equal(chooserCalls,1,'Native device chooser must run synchronously from the click');
-await settle();pump();assert.equal(un('wheel-device').children.length,1);assert.equal(un('wheel-calibrate').disabled,true,'An open handle alone must not enable calibration');
+usbUI.open();assert.equal(un('wheel-calibrate').disabled,true);un('wheel-usb-find').click();assert.equal(chooserCalls,1,'Native device chooser must run synchronously from the click');assert.deepEqual(chooserFilters,[]);assert.equal(un('wheel-usb-connect').disabled,true);
+await settle();pump();assert.equal(un('wheel-device').children.length,1);assert.ok(un('wheel-device').children[0].textContent.includes('USB 직접 · Wired Wheel'));assert.equal(un('wheel-calibrate').disabled,true,'An open handle alone must not enable calibration');
 const usbPacket=axes=>{hidListener({reportId:0,data:new DataView(Uint8Array.from(axes).buffer)});};
 usbPacket([128,255,255]);pump();assert.equal(un('wheel-calibrate').disabled,false);un('wheel-calibrate').click();un('wheel-next').click();
 usbPacket([0,255,255]);un('wheel-next').click();usbPacket([255,255,255]);un('wheel-next').click();usbPacket([128,255,255]);un('wheel-next').click();
@@ -153,3 +153,20 @@ assert.equal(un('wheel-save').disabled,false);un('wheel-save').click();assert.eq
 assert.equal(JSON.parse(wheelDiagnosticReport(usbWheel,context)).directUSB.devices[0].ready,true);
 usbUI.open();un('wheel-usb-disconnect').click();await settle();pump();assert.equal(usbDevice.opened,false);assert.equal(usbWheel.devices.length,0);assert.equal(hidListener,undefined);assert.equal(un('wheel-save').disabled,true);un('wheel-close').click();assert.equal(frames.size,0);
 console.log('PASS: production USB chooser click, first-report gating, seven-step HID calibration, diagnostics, persistent driving handle and explicit disconnect');
+
+const {USBWheel}=await import(moduleURL('game/USBWheel'));
+const rawAlt={alternateSetting:0,interfaceClass:255,interfaceSubclass:93,interfaceProtocol:1,endpoints:[{endpointNumber:1,direction:'in',type:'interrupt',packetSize:32}]};
+let rawRead,rawRequests=0;
+const rawDevice={vendorId:0x0079,productId:0x189c,productName:'Wired Wheel',opened:false,configuration:null,configurations:[{configurationValue:1,interfaces:[{interfaceNumber:0,alternate:rawAlt,alternates:[rawAlt]}]}],
+ async open(){this.opened=true;},async close(){this.opened=false;rawRead?.reject(new Error('closed'));rawRead=undefined;},async selectConfiguration(){this.configuration=this.configurations[0];},async claimInterface(){},async selectAlternateInterface(){},
+ transferIn(endpoint,bytes){assert.equal(endpoint,1);assert.equal(bytes,32);assert.equal(rawRead,undefined);return new Promise((resolve,reject)=>rawRead={resolve,reject});}};
+const rawTransport=new USBWheel({requestDevice(options){rawRequests++;assert.deepEqual(options.filters,[{vendorId:0x0079,productId:0x189c}]);return Promise.resolve(rawDevice);},getDevices:async()=>[]});
+const rawWheel=new WheelInput(()=>[],{getItem:()=>null,setItem:()=>{}},undefined,rawTransport),rawUI=new WheelSetup(rawWheel),rn=id=>rawUI.element.querySelector('#'+id);
+async function rawPacket(x=0,gas=0,brake=0,flags=0){const data=new DataView(new ArrayBuffer(20));data.setUint8(1,20);data.setUint16(2,flags,true);data.setUint8(4,brake);data.setUint8(5,gas);data.setInt16(6,x,true);const pending=rawRead;rawRead=undefined;pending.resolve({status:'ok',data});await settle();}
+rawUI.open();rn('wheel-raw-connect').click();assert.equal(rawRequests,1);await settle();pump();assert.ok(rn('wheel-device').children[0].textContent.includes('WebUSB · Wired Wheel'));assert.equal(rn('wheel-calibrate').disabled,true);
+await rawPacket();pump();rn('wheel-calibrate').click();rn('wheel-next').click();await rawPacket(-32768);rn('wheel-next').click();await rawPacket(32767);rn('wheel-next').click();await rawPacket();rn('wheel-next').click();await rawPacket(0,255);rn('wheel-next').click();await rawPacket();rn('wheel-next').click();await rawPacket(0,0,255);rn('wheel-next').click();await rawPacket();pump();
+rn('wheel-bind-shiftUp').click();await rawPacket(0,0,0,1<<9);pump();assert.equal(rn('wheel-bind-shiftUp').textContent,'버튼 6');await rawPacket();pump();rn('wheel-save').click();assert.equal(rawUI.element.open,false);assert.equal(rawDevice.opened,true);assert.equal(rawWheel.profile.throttle.source,'button');assert.equal(rawWheel.profile.throttle.index,7);assert.equal(rawWheel.profile.brake.index,6);
+const rawInput=new Input(rawWheel),rawCar=new Vehicle(track,new THREE.Scene());rawCar.resetAt(400/track.length);rawInput.poll();await rawPacket(0,255);rawInput.poll();for(let i=0;i<120;i++)rawCar.update(1/120,rawInput);assert.ok(rawCar.speed>8);assert.equal(rawCar.offRoad,false);
+const rawDiagnostic=JSON.parse(wheelDiagnosticReport(rawWheel,context));assert.equal(rawDiagnostic.webUSB.selected.vendorId,'0079');assert.equal(rawDiagnostic.webUSB.selected.productId,'189c');assert.equal(rawDiagnostic.webUSB.devices[0].ready,true);assert.equal(rawDiagnostic.webUSB.selected.configurations[0].interfaces[0].alternates[0].endpoints[0].number,1);
+const rawSession={input:rawInput,race:{state:'racing',elapsed:10},paused:false,accumulator:.01,audio:{silence(){}},pause(){Game.prototype.pause.call(this);}};await rawTransport.disconnect();Game.prototype.pollWheel.call(rawSession);assert.equal(rawSession.paused,true);assert.equal(rawInput.analog(),null);assert.equal(frames.size,0);
+console.log('PASS: Wired Wheel WebUSB button opens target chooser synchronously, completes actual seven-step trigger calibration, drives Vehicle and pauses on USB loss');

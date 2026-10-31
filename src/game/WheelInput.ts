@@ -1,5 +1,6 @@
 import {HIDWheel} from './HIDWheel';
-export interface WheelDevice {id:string;index:number;connected:boolean;mapping:string;axes:readonly number[];buttons:readonly {pressed:boolean;value:number;touched?:boolean}[];source?:'hid';inputsReady?:boolean}
+import {USBWheel} from './USBWheel';
+export interface WheelDevice {id:string;displayName?:string;index:number;connected:boolean;mapping:string;axes:readonly number[];buttons:readonly {pressed:boolean;value:number;touched?:boolean}[];source?:'hid'|'usb';inputsReady?:boolean}
 export const WHEEL_STORAGE_KEY='apex-wheel-profile-v1';
 export const WHEEL_ACTIONS=['shiftDown','shiftUp','boost','drs','pause','camera'] as const;
 export type WheelAction=typeof WHEEL_ACTIONS[number];
@@ -57,9 +58,10 @@ export class WheelInput {
   profile?:WheelProfile;devices:readonly WheelDevice[]=[];controls:WheelControls|null=null;
   supported=true;armed=false;connected=false;configuring=false;readErrorName='';private layoutChanged=false;
   private identity='';private held=new Set<number>();private pressed=new Set<WheelAction>();private waitingUSB=false;
-  constructor(private readPads:()=>readonly(WheelDevice|null)[]=readBrowserPads,private storage:WheelStorage=browserStorage,readonly usb:HIDWheel|undefined=readPads===readBrowserPads?new HIDWheel():undefined){
+  constructor(private readPads:()=>readonly(WheelDevice|null)[]=readBrowserPads,private storage:WheelStorage=browserStorage,readonly usb:HIDWheel|undefined=readPads===readBrowserPads?new HIDWheel():undefined,readonly rawUSB:USBWheel|undefined=readPads===readBrowserPads?new USBWheel():undefined){
     try{const saved=JSON.parse(storage.getItem(WHEEL_STORAGE_KEY)??'null');if(validWheelProfile(saved))this.profile=saved;}catch{}
     if(this.profile?.enabled&&(this.profile.deviceId.startsWith('webhid:')||this.profile.pedalDeviceId.startsWith('webhid:')))void this.usb?.restore();
+    if(this.profile?.enabled&&(this.profile.deviceId.startsWith('webusb:')||this.profile.pedalDeviceId.startsWith('webusb:')))void this.rawUSB?.restore();
   }
   get status(){
     if(!this.supported)return this.detectionStatus;
@@ -88,7 +90,7 @@ export class WheelInput {
   poll(){
     const previouslyConnected=this.connected;this.connected=false;this.controls=null;this.layoutChanged=false;this.waitingUSB=false;
     try{this.devices=this.readPads().filter((pad):pad is WheelDevice=>!!pad&&pad.connected!==false);this.supported=true;this.readErrorName='';}catch(error){this.devices=[];this.supported=false;const name=(error as {name?:unknown}|null)?.name;this.readErrorName=typeof name==='string'?name:'Error';}
-    const direct=this.usb?.devices??[],used=new Set(this.devices.map(p=>p.index));
+    const direct=[...this.usb?.devices??[],...this.rawUSB?.devices??[]],used=new Set(this.devices.map(p=>p.index));
     for(const pad of direct){if(used.has(pad.index)){const free=Array.from({length:32},(_,i)=>i).find(i=>!used.has(i));if(free===undefined)continue;pad.index=free;}used.add(pad.index);this.devices=[...this.devices,pad];}
     if(direct.length)this.supported=true;
     const profile=this.profile,wheel=profile&&findWheelDevice(this.devices,profile.deviceId,profile.deviceIndex),pedals=profile&&findWheelDevice(this.devices,profile.pedalDeviceId,profile.pedalIndex);

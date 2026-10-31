@@ -17,7 +17,7 @@ export interface HIDWheelDevice {
 export interface WheelHIDAPI {
   requestDevice(options:{filters:{usagePage:number;usage:number}[]}):Promise<HIDWheelDevice[]>;
   getDevices():Promise<HIDWheelDevice[]>;
-  addEventListener?(type:'disconnect',listener:(event:{device:HIDWheelDevice})=>void):void;
+  addEventListener?(type:'connect'|'disconnect',listener:(event:{device:HIDWheelDevice})=>void):void;
 }
 interface Field {kind:'axis'|'button';index:number;offset:number;size:number;min:number;max:number;usage:number}
 interface ReportLayout {bytes:number;fields:Field[]}
@@ -25,13 +25,29 @@ export interface HIDLayout {reports:Map<number,ReportLayout>;axes:number;buttons
 const AXES=new Set([0x10030,0x10031,0x10032,0x10033,0x10034,0x10035,0x10036,0x10037,0x10038,0x200ba,0x200bb,0x200c4,0x200c5,0x200c6,0x200c8]);
 const controller=(c:HIDCollection):boolean=>c.usagePage===1&&[4,5,8].includes(c.usage)||c.usagePage===2&&c.usage===2||!!c.children?.some(controller);
 const hex=(value:number)=>value.toString(16).padStart(4,'0');
+const deviceKey=(device:HIDWheelDevice)=>`${hex(device.vendorId)}:${hex(device.productId)}:${device.productName}`;
+const fieldUsage=(item:HIDItem,i:number)=>item.isRange?(item.usageMinimum??0)+Math.min(i,Math.max(0,(item.usageMaximum??0)-(item.usageMinimum??0))):item.usages?.[Math.min(i,(item.usages?.length??1)-1)]??0;
+// Some wheels declare their application collection as vendor-defined while
+// retaining standard absolute axis usages. Decode only those declared fields.
+// Keyboard/mouse application collections remain outside this input adapter.
+const readableCollection=(c:HIDCollection)=>!(c.usagePage===1&&[1,2,6,7].includes(c.usage))&&(controller(c)||!!c.inputReports?.some(r=>r.items.some(item=>
+  !item.isArray&&!item.isConstant&&!item.isBufferedBytes&&item.isAbsolute!==false&&Array.from({length:Math.min(512,Math.max(0,item.reportCount))},(_,i)=>fieldUsage(item,i)).some(usage=>AXES.has(usage)))));
+function describeDevice(device:HIDWheelDevice){
+  let budget=128;
+  return {name:device.productName,vendorId:hex(device.vendorId),productId:hex(device.productId),collections:device.collections.slice(0,16).map(c=>({
+    usagePage:hex(c.usagePage),usage:hex(c.usage),reports:(c.inputReports??[]).slice(0,32).map(r=>{
+      const items=r.items.slice(0,budget);budget-=items.length;
+      return {id:r.reportId,totalItems:r.items.length,items:items.map(i=>({bits:i.reportSize,count:i.reportCount,min:i.logicalMinimum,max:i.logicalMaximum,
+        absolute:i.isAbsolute,array:i.isArray,constant:i.isConstant,range:i.isRange,usages:i.usages?.slice(0,16).map(hex),usageMinimum:i.usageMinimum===undefined?undefined:hex(i.usageMinimum),usageMaximum:i.usageMaximum===undefined?undefined:hex(i.usageMaximum)}))};
+    })}))};
+}
 /** Top-level report lists already contain descendant items in descriptor order.
  * Never traverse children again or guess offsets in vendor-defined packets. */
 export function compileHIDLayout(collections:readonly HIDCollection[]):HIDLayout {
   const owners=new Map<number,number>();
   for(const collection of collections)for(const report of collection.inputReports??[])owners.set(report.reportId,(owners.get(report.reportId)??0)+1);
   const reports=new Map<number,ReportLayout>();let axes=0,buttons=0;
-  for(const collection of collections.filter(controller))for(const report of collection.inputReports??[]){
+  for(const collection of collections.filter(readableCollection))for(const report of collection.inputReports??[]){
     if(owners.get(report.reportId)!==1)throw new Error('여러 컬렉션이 같은 보고서를 공유하는 입력 형식은 아직 지원하지 않습니다.');
     if(!Number.isInteger(report.reportId)||report.reportId<0||report.reportId>255||reports.size>=32||report.items.length>1024)throw new Error('USB 입력 설명의 크기 또는 보고서 번호가 올바르지 않습니다.');
     const fields:Field[]=[];let offset=0;
@@ -39,7 +55,7 @@ export function compileHIDLayout(collections:readonly HIDCollection[]):HIDLayout
       const size=item.reportSize,count=item.reportCount;
       if(!Number.isInteger(size)||!Number.isInteger(count)||size<0||size>32||count<0||count>512||offset+size*count>65536)throw new Error('USB 입력 필드 크기를 해석할 수 없습니다.');
       for(let i=0;i<count;i++){
-        const usage=item.isRange?(item.usageMinimum??0)+Math.min(i,Math.max(0,(item.usageMaximum??0)-(item.usageMinimum??0))):item.usages?.[Math.min(i,(item.usages?.length??1)-1)]??0;
+        const usage=fieldUsage(item,i);
         const kind=AXES.has(usage)?'axis':usage>>>16===9&&(usage&0xffff)>0?'button':undefined;
         if(kind&&!item.isConstant&&!item.isBufferedBytes&&!item.isArray&&item.isAbsolute!==false&&size>0){
           const min=item.logicalMinimum,max=item.logicalMaximum;
@@ -82,20 +98,35 @@ export function browserWheelHID(){return typeof navigator!=='undefined'?(navigat
 /** Read-only controller input. No output, feature, motor or firmware commands. */
 export class HIDWheel {
   private entries=new Map<HIDWheelDevice,Entry>();private pending=new Map<HIDWheelDevice,Promise<void>>();private reserved=new Set<number>();private lost=new WeakSet<HIDWheelDevice>();private generation=0;private disconnected=false;
-  lastError='';lastSelected?:{name:string;vendorId:string;productId:string};
+  private known=new Set<string>();private connectionEpoch=new WeakMap<HIDWheelDevice,number>();private events:{at:number;type:string;name:string;vendorId:string;productId:string;detail?:string}[]=[];
+  lastError='';lastSelected?:ReturnType<typeof describeDevice>;
   constructor(private api:WheelHIDAPI|undefined=browserWheelHID()){
-    api?.addEventListener?.('disconnect',event=>{this.lost.add(event.device);const entry=this.entries.get(event.device);if(entry){entry.pad.connected=false;entry.device.removeEventListener('inputreport',entry.listener);this.entries.delete(event.device);}});
+    api?.addEventListener?.('disconnect',event=>{this.connectionEpoch.set(event.device,(this.connectionEpoch.get(event.device)??0)+1);this.lost.add(event.device);const entry=this.entries.get(event.device);if(entry||this.pending.has(event.device))this.record('disconnected',event.device);if(entry){entry.pad.connected=false;entry.device.removeEventListener('inputreport',entry.listener);this.entries.delete(event.device);}});
+    api?.addEventListener?.('connect',event=>{
+      if(this.disconnected||!this.known.has(deviceKey(event.device)))return;
+      const epoch=(this.connectionEpoch.get(event.device)??0)+1;this.connectionEpoch.set(event.device,epoch);const generation=this.generation;
+      this.record('reconnected',event.device);
+      // connect events concern already-granted devices; never open a chooser or
+      // send initialization bytes. A new handle must supply fresh input reports.
+      void (async()=>{
+        try{await this.pending.get(event.device);}catch{}
+        if(this.disconnected||generation!==this.generation||epoch!==this.connectionEpoch.get(event.device))return;
+        await this.attach(event.device);
+      })().catch(error=>{this.lastError=error instanceof Error?error.message:String(error);this.record('open-error',event.device,this.lastError);});
+    });
   }
+  private record(type:string,device:HIDWheelDevice,detail?:string){this.events.push({at:Date.now(),type,name:device.productName,vendorId:hex(device.vendorId),productId:hex(device.productId),...(detail?{detail}: {})});if(this.events.length>32)this.events.shift();}
+  get connectionNotice(){const last=this.events[this.events.length-1];return last?.type==='disconnected'?`${last.name||'USB 휠'}의 연결이 끊겼습니다. USB를 다시 연결하면 허용한 휠을 다시 확인합니다.`:'';}
   get available(){return !!this.api;}
   get devices(){return [...this.entries.values()].filter(e=>e.device.opened&&e.pad.connected).map(e=>e.pad);}
-  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,devices:[...this.entries.values()].map(e=>({name:e.device.productName,vendorId:hex(e.device.vendorId),productId:hex(e.device.productId),opened:e.device.opened,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,axes:e.layout.axes,buttons:e.layout.buttons,reports:[...e.layout.reports].map(([id,r])=>({id,bytes:r.bytes,fields:r.fields.map(f=>({kind:f.kind,index:f.index,bitOffset:f.offset,bits:f.size,usage:hex(f.usage),min:f.min,max:f.max}))}))}))};}
-  async request(){
+  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.device.productName,vendorId:hex(e.device.vendorId),productId:hex(e.device.productId),opened:e.device.opened,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,axes:e.layout.axes,buttons:e.layout.buttons,reports:[...e.layout.reports].map(([id,r])=>({id,bytes:r.bytes,fields:r.fields.map(f=>({kind:f.kind,index:f.index,bitOffset:f.offset,bits:f.size,usage:hex(f.usage),min:f.min,max:f.max}))}))}))};}
+  async request(allDevices=false){
     if(!this.api)throw new Error('USB 직접 연결은 외부 Chrome·Edge에서 사용할 수 있습니다.');
     this.disconnected=false;this.lastError='';const generation=this.generation;
     try{
-      const devices=await this.api.requestDevice({filters:[{usagePage:1,usage:4},{usagePage:1,usage:5},{usagePage:1,usage:8},{usagePage:2,usage:2}]});
+      const devices=await this.api.requestDevice({filters:allDevices?[]:[{usagePage:1,usage:4},{usagePage:1,usage:5},{usagePage:1,usage:8},{usagePage:2,usage:2}]});
       if(!devices.length||generation!==this.generation)return 0;
-      let count=0;for(const device of devices){if(generation!==this.generation)return 0;try{await this.attach(device);if(this.entries.has(device))count++;}catch(error){this.lastError=error instanceof Error?error.message:String(error);}}
+      let count=0;for(const device of devices){if(generation!==this.generation)return 0;this.record('selected',device);try{await this.attach(device);if(this.entries.has(device))count++;}catch(error){this.lastError=error instanceof Error?error.message:String(error);this.record('open-error',device,this.lastError);}}
       if(generation!==this.generation)return 0;
       if(!count)throw new Error(this.lastError||'USB 장치를 열지 못했습니다. 스팀 등 다른 앱을 종료하고 장치 모드를 확인하세요.');return count;
     }catch(error){this.lastError=error instanceof Error?error.message:String(error);throw error;}
@@ -109,31 +140,33 @@ export class HIDWheel {
     this.lost.delete(device);const work=this.open(device);this.pending.set(device,work);void work.finally(()=>this.pending.delete(device)).catch(()=>{});return work;
   }
   private async open(device:HIDWheelDevice){
-    this.lastSelected={name:device.productName,vendorId:hex(device.vendorId),productId:hex(device.productId)};
-    const layout=compileHIDLayout(device.collections),generation=this.generation;
+    this.lastSelected=describeDevice(device);
+    const layout=compileHIDLayout(device.collections),generation=this.generation,epoch=this.connectionEpoch.get(device)??0;
+    this.known.add(deviceKey(device));
     if(this.entries.size>=16)throw new Error('USB 입력 장치를 너무 많이 연결했습니다. 사용하지 않는 장치를 해제하세요.');
     const index=Array.from({length:16},(_,i)=>i+16).find(i=>!this.reserved.has(i)&&![...this.entries.values()].some(e=>e.pad.index===i));
     if(index===undefined)throw new Error('사용할 수 있는 USB 입력 슬롯이 없습니다.');
     this.reserved.add(index);
-    const pad:Entry['pad']={id:`webhid:${hex(device.vendorId)}:${hex(device.productId)}:${layout.signature}:${device.productName||'USB 휠'}`,index,connected:false,mapping:'',source:'hid',inputsReady:false,
+    const pad:Entry['pad']={id:`webhid:${hex(device.vendorId)}:${hex(device.productId)}:${layout.signature}:${device.productName||'USB 휠'}`,displayName:device.productName||'USB 휠',index,connected:false,mapping:'',source:'hid',inputsReady:false,
       axes:Array(layout.axes).fill(NaN),buttons:Array.from({length:layout.buttons},()=>({pressed:false,value:0,touched:false}))};
     const entry:Entry={device,layout,pad,seen:new Set(),packets:0,invalid:0,listener:event=>{
       if(!layout.reports.has(event.reportId))return;
       try{
         const fields=decodeHIDReport(layout,event.reportId,event.data)!;
         for(const field of fields)if(field.kind==='axis')pad.axes[field.index]=field.value;else pad.buttons[field.index]={value:field.value,pressed:field.value>.55,touched:field.value>0};
-        entry.seen.add(event.reportId);entry.packets++;pad.inputsReady=entry.seen.size===layout.reports.size;
-      }catch(error){entry.invalid++;entry.seen.delete(event.reportId);pad.inputsReady=false;pad.axes.fill(NaN);for(const button of pad.buttons){button.pressed=false;button.value=0;button.touched=false;}entry.seen.clear();this.lastError=error instanceof Error?error.message:String(error);}
+        const wasReady=pad.inputsReady;entry.seen.add(event.reportId);entry.packets++;pad.inputsReady=entry.seen.size===layout.reports.size;
+        if(!wasReady&&pad.inputsReady)this.record('ready',device);
+      }catch(error){entry.invalid++;if(pad.inputsReady||entry.invalid===1)this.record('report-error',device,error instanceof Error?error.message:String(error));entry.seen.delete(event.reportId);pad.inputsReady=false;pad.axes.fill(NaN);for(const button of pad.buttons){button.pressed=false;button.value=0;button.touched=false;}entry.seen.clear();this.lastError=error instanceof Error?error.message:String(error);}
     }};
     device.addEventListener('inputreport',entry.listener);
     try{
       if(!device.opened)await device.open();
-      if(generation!==this.generation||this.lost.has(device)){device.removeEventListener('inputreport',entry.listener);await device.close();return;}
-      pad.connected=true;this.entries.set(device,entry);
+      if(generation!==this.generation||this.lost.has(device)||epoch!==(this.connectionEpoch.get(device)??0)){device.removeEventListener('inputreport',entry.listener);await device.close();return;}
+      pad.connected=true;this.entries.set(device,entry);this.known.add(deviceKey(device));this.record('opened',device);
     }catch(error){device.removeEventListener('inputreport',entry.listener);throw error;}finally{this.reserved.delete(index);}
   }
   async disconnect(){
     this.disconnected=true;this.generation++;const entries=[...this.entries.values()];this.entries.clear();
-    for(const entry of entries){entry.pad.connected=false;entry.device.removeEventListener('inputreport',entry.listener);try{await entry.device.close();}catch{}}
+    for(const entry of entries){this.record('closed',entry.device);entry.pad.connected=false;entry.device.removeEventListener('inputreport',entry.listener);try{await entry.device.close();}catch{}}
   }
 }

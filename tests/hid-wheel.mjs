@@ -40,7 +40,7 @@ function device(collections=[collection],name='USB racing wheel'){
   sendReport(){this.writes++;throw new Error('Output is forbidden');},sendFeatureReport(){this.writes++;throw new Error('Feature commands are forbidden');},
   emit(id,bytes){const data=bytes instanceof DataView?bytes:new DataView(Uint8Array.from(bytes).buffer);for(const fn of listeners)fn({reportId:id,data});},get listeners(){return listeners.size;}};
 }
-function api(selected,granted=[]){let requestCalls=0,restoreCalls=0,disconnected;return {requestDevice:options=>{requestCalls++;assert.ok(options.filters.every(f=>[1,2].includes(f.usagePage)));return Promise.resolve(selected);},getDevices:async()=>{restoreCalls++;return granted;},addEventListener(type,fn){assert.equal(type,'disconnect');disconnected=fn;},disconnect(d){d.opened=false;disconnected({device:d});},get requests(){return requestCalls;},get restores(){return restoreCalls;}};}
+function api(selected,granted=[]){let requestCalls=0,restoreCalls=0,lastFilters;const listeners=new Map();return {requestDevice:options=>{requestCalls++;lastFilters=options.filters;assert.ok(options.filters.every(f=>[1,2].includes(f.usagePage)));return Promise.resolve(selected);},getDevices:async()=>{restoreCalls++;return granted;},addEventListener(type,fn){listeners.set(type,fn);},disconnect(d){d.opened=false;listeners.get('disconnect')?.({device:d});},connect(d){listeners.get('connect')?.({device:d});},get filters(){return lastFilters;},get requests(){return requestCalls;},get restores(){return restoreCalls;}};}
 const d=device(),backend=api([d]),hid=new HIDWheel(backend);
 const selecting=hid.request();assert.equal(backend.requests,1,'The permission request must run synchronously inside the button gesture');assert.equal(hid.devices.length,0);assert.equal(await selecting,1);assert.equal(d.opens,1);assert.equal(hid.devices.length,1);assert.equal(hid.devices[0].inputsReady,false);
 const pad=hid.devices[0],profile={version:1,deviceId:pad.id,pedalDeviceId:pad.id,deviceIndex:pad.index,pedalIndex:pad.index,enabled:true,steering:{axis:0,center:0,left:-1,right:1},throttle:{source:'axis',index:1,rest:1,full:-1},brake:{source:'axis',index:2,rest:1,full:-1},buttons:{shiftUp:0,shiftDown:1,boost:2,drs:3,pause:4,camera:5},deadzone:.02,sensitivity:1};
@@ -72,3 +72,28 @@ await Promise.resolve();await Promise.resolve();assert.equal(delayed.opens,1);as
 const cancel=new HIDWheel(api([]));assert.equal(await cancel.request(),0);assert.equal(cancel.devices.length,0);
 const absent=new HIDWheel(undefined);if(!absent.available)await assert.rejects(()=>absent.request());
 console.log('PASS: concurrent restore/request deduplication, cancellation during opening, chooser cancellation and unavailable API handling');
+
+const vendorCollection={...collection,usagePage:0xff00,usage:1},wired=device([vendorCollection],'Wired Wheel'),wiredAPI=api([wired]),wiredHID=new HIDWheel(wiredAPI);
+await wiredHID.request(true);assert.deepEqual(wiredAPI.filters,[],'The explicit fallback chooser must include non-gamepad application collections');
+const wiredPad=wiredHID.devices[0],wiredInput=new WheelInput(()=>[],storage,wiredHID);wiredInput.save({...profile,deviceId:wiredPad.id,pedalDeviceId:wiredPad.id,deviceIndex:wiredPad.index,pedalIndex:wiredPad.index});
+wired.emit(0,[0,0,8,128,255,255]);wiredInput.poll();assert.equal(wiredInput.armed,true);wired.emit(0,[1,0,8,0,0,255]);wiredInput.poll();assert.equal(wiredInput.controls.steer,1);assert.equal(wiredInput.controls.throttle,1);assert.equal(wiredInput.consume('shiftUp'),true);
+assert.equal(wiredHID.diagnostics.selected.name,'Wired Wheel');assert.equal(wiredHID.diagnostics.selected.collections[0].usagePage,'ff00');assert.equal(wiredHID.diagnostics.selected.collections[0].reports[0].items.length,4);
+assert.throws(()=>compileHIDLayout([{...vendorCollection,usagePage:1,usage:6}]),'Keyboard application collections must not become driving inputs');
+assert.equal(wired.writes,0);
+console.log('PASS: unfiltered user-selected Wired Wheel with vendor application collection uses declared standard axes/buttons without guessed bytes or keyboard input');
+
+const settle=()=>new Promise(resolve=>setImmediate(resolve));
+wiredAPI.disconnect(wired);assert.equal(wiredInput.poll(),true);assert.equal(wiredInput.controls,null);assert.ok(wiredHID.connectionNotice.includes('Wired Wheel'));assert.equal(wiredHID.diagnostics.events.at(-1).type,'disconnected');
+const replug=device([vendorCollection],'Wired Wheel');wiredAPI.connect(replug);await settle();assert.equal(replug.opens,1);assert.equal(wiredHID.devices[0].id,wiredPad.id);assert.equal(wiredHID.devices[0].inputsReady,false);wiredInput.poll();assert.equal(wiredInput.controls,null);
+replug.emit(0,[1,0,8,128,0,255]);wiredInput.poll();assert.equal(wiredInput.armed,false,'Reconnect must discard previous samples and wait for released inputs');replug.emit(0,[0,0,8,128,255,255]);wiredInput.poll();assert.equal(wiredInput.armed,true);assert.equal(wiredInput.consume('shiftUp'),false);
+const unrelated=device([vendorCollection],'Another controller');wiredAPI.connect(unrelated);await settle();assert.equal(unrelated.opens,0,'Unrelated granted devices must not be auto-opened');
+await wiredHID.disconnect();wiredAPI.connect(replug);await settle();assert.equal(replug.opens,1,'Explicit disconnect must suppress automatic reopening');assert.equal(wiredHID.devices.length,0);
+assert.ok(wiredHID.diagnostics.events.some(e=>e.type==='reconnected'));assert.ok(wiredHID.diagnostics.events.some(e=>e.type==='ready'));
+console.log('PASS: permitted wheel reconnects with a fresh HID handle and neutral arming, records loss after removal, and respects explicit disconnect');
+
+const racingDevice=device([vendorCollection],'Wired Wheel'),racingAPI=api([racingDevice]),racingHID=new HIDWheel(racingAPI);
+let completeOpen; racingDevice.open=function(){this.opens++;if(this.opens===1)return new Promise(resolve=>{completeOpen=()=>{this.opened=true;resolve();};});this.opened=true;return Promise.resolve();};
+const firstOpen=racingHID.request(true);await Promise.resolve();racingAPI.disconnect(racingDevice);racingAPI.connect(racingDevice);completeOpen();await assert.rejects(firstOpen);await settle();assert.equal(racingDevice.opens,2);assert.equal(racingDevice.closes,1);assert.equal(racingDevice.listeners,1);assert.equal(racingHID.devices.length,1);assert.equal(racingHID.devices[0].inputsReady,false);
+for(let i=0;i<40;i++){racingAPI.disconnect(racingDevice);racingAPI.connect(racingDevice);await settle();}assert.equal(racingHID.diagnostics.events.length,32);assert.equal(racingDevice.listeners,1);
+await racingHID.disconnect();assert.equal(racingDevice.listeners,0);
+console.log('PASS: reconnect during an unfinished HID open cancels the stale handle, retains one listener and bounds diagnostic history');

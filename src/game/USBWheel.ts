@@ -1,0 +1,120 @@
+import type {WheelDevice} from './WheelInput';
+
+interface Endpoint {endpointNumber:number;direction:string;type:string;packetSize:number}
+interface Alternate {alternateSetting:number;interfaceClass:number;interfaceSubclass:number;interfaceProtocol:number;endpoints:readonly Endpoint[]}
+interface Interface {interfaceNumber:number;alternate:Alternate;alternates:readonly Alternate[]}
+interface Configuration {configurationValue:number;interfaces:readonly Interface[]}
+export interface WheelUSBDevice {
+  vendorId:number;productId:number;productName?:string;manufacturerName?:string;opened:boolean;
+  configurations:readonly Configuration[];configuration?:Configuration|null;
+  open():Promise<void>;close():Promise<void>;selectConfiguration(value:number):Promise<void>;
+  claimInterface(value:number):Promise<void>;selectAlternateInterface(number:number,alternate:number):Promise<void>;
+  transferIn(endpoint:number,length:number):Promise<{status:string;data?:DataView|null}>;
+}
+export interface WheelUSBAPI {
+  requestDevice(options:{filters:object[]}):Promise<WheelUSBDevice>;
+  getDevices():Promise<WheelUSBDevice[]>;
+  addEventListener?(type:'connect'|'disconnect',listener:(event:{device:WheelUSBDevice})=>void):void;
+}
+const hex=(v:number)=>v.toString(16).padStart(4,'0');
+const key=(d:WheelUSBDevice)=>`${hex(d.vendorId)}:${hex(d.productId)}:${d.productName??''}`;
+const WIRED_WHEEL={vendorId:0x0079,productId:0x189c};
+export function xbox360Interface(device:WheelUSBDevice){
+  const configs=[...device.configurations].sort((a,b)=>Number(b.configurationValue===device.configuration?.configurationValue)-Number(a.configurationValue===device.configuration?.configurationValue));
+  for(const config of configs)for(const intf of config.interfaces)for(const alt of intf.alternates){
+    if(alt.interfaceClass!==0xff||alt.interfaceSubclass!==0x5d||alt.interfaceProtocol!==1)continue;
+    const endpoint=alt.endpoints.find(e=>e.direction==='in'&&e.type==='interrupt'&&e.endpointNumber>=1&&e.endpointNumber<=15&&e.packetSize>=20&&e.packetSize<=1024);
+    if(endpoint)return {config:config.configurationValue,number:intf.interfaceNumber,alternate:alt.alternateSetting,endpoint:endpoint.endpointNumber,bytes:endpoint.packetSize};
+  }
+  throw new Error('이 USB 입력 형식은 아직 지원하지 않습니다. 유선 Xbox 360/XInput 인터페이스(FF/5D/01)가 필요합니다. HID 모드는 USB 휠 직접 연결에서 확인하세요.');
+}
+/** Wired Xbox 360 input report: 00 14, flags, two 8-bit triggers,
+ * four little-endian signed 16-bit stick axes. Other Xbox protocols differ.
+ * Protocol reference: Linux drivers/input/joystick/xpad.c (xpad360_process_packet).
+ * No commands are sent to switch device modes or initialize vendor protocols. */
+export function decodeXbox360(data:DataView){
+  if(data.byteLength<2)throw new Error('USB 입력 보고서가 너무 짧습니다.');
+  if(data.getUint8(0)!==0)return null;
+  if(data.getUint8(1)!==20||data.byteLength<20)throw new Error('유선 XInput 입력 보고서의 길이가 맞지 않습니다.');
+  const flags=data.getUint16(2,true),bits=[12,13,14,15,8,9,-1,-1,5,4,6,7,0,1,2,3,10];
+  const buttons=bits.map(bit=>{const value=bit>=0?Number(!!(flags&(1<<bit))):0;return {value,pressed:!!value};});
+  for(const [button,offset] of [[6,4],[7,5]]){const value=data.getUint8(offset)/255;buttons[button]={value,pressed:value>.55};}
+  const axes=[6,8,10,12].map(offset=>{const raw=data.getInt16(offset,true);return raw/(raw<0?32768:32767);});
+  return {axes,buttons};
+}
+type Pad=WheelDevice&{axes:number[];buttons:{value:number;pressed:boolean}[]};
+interface Entry {device:WheelUSBDevice;pad:Pad;route:ReturnType<typeof xbox360Interface>;active:boolean;packets:number;invalid:number}
+export function browserWheelUSB(){return typeof navigator==='undefined'?undefined:(navigator as Navigator&{usb?:WheelUSBAPI}).usb;}
+function describe(device:WheelUSBDevice){return {name:device.productName??'',manufacturer:device.manufacturerName??'',vendorId:hex(device.vendorId),productId:hex(device.productId),
+  configurations:device.configurations.slice(0,8).map(c=>({value:c.configurationValue,interfaces:c.interfaces.slice(0,16).map(i=>({number:i.interfaceNumber,alternates:i.alternates.slice(0,16).map(a=>({setting:a.alternateSetting,class:hex(a.interfaceClass),subclass:hex(a.interfaceSubclass),protocol:hex(a.interfaceProtocol),endpoints:a.endpoints.slice(0,16).map(e=>({number:e.endpointNumber,direction:e.direction,type:e.type,packetSize:e.packetSize}))}))}))}))};}
+/** Browser-local, user-selected, read-only wired XInput transport. */
+export class USBWheel {
+  private entries=new Map<WheelUSBDevice,Entry>();private pending=new Map<WheelUSBDevice,Promise<void>>();private reserved=new Set<number>();
+  private known=new Set<string>();private epochs=new WeakMap<WheelUSBDevice,number>();private generation=0;private disabled=false;
+  private events:{at:number;type:string;name:string;detail?:string}[]=[];
+  lastError='';lastSelected?:ReturnType<typeof describe>;
+  constructor(private api:WheelUSBAPI|undefined=browserWheelUSB()){
+    api?.addEventListener?.('disconnect',({device})=>{this.epochs.set(device,(this.epochs.get(device)??0)+1);const entry=this.entries.get(device);if(entry){this.drop(entry);this.record('disconnected',device);}});
+    api?.addEventListener?.('connect',({device})=>{
+      if(this.disabled||!this.known.has(key(device)))return;
+      const epoch=(this.epochs.get(device)??0)+1;this.epochs.set(device,epoch);const generation=this.generation;this.record('reconnected',device);
+      void (async()=>{try{await this.pending.get(device);}catch{}if(!this.disabled&&generation===this.generation&&epoch===this.epochs.get(device))await this.attach(device);})().catch(error=>this.failure(device,error));
+    });
+  }
+  private record(type:string,device:WheelUSBDevice,detail?:string){this.events.push({at:Date.now(),type,name:device.productName??'',...(detail?{detail}: {})});if(this.events.length>32)this.events.shift();}
+  private failure(device:WheelUSBDevice,error:unknown){this.lastError=error instanceof Error?`${error.name}: ${error.message}`:String(error);this.record('error',device,this.lastError);}
+  get available(){return !!this.api;}
+  get devices(){return [...this.entries.values()].filter(e=>e.active&&e.device.opened).map(e=>e.pad);}
+  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route}))};}
+  async request(){
+    if(!this.api)throw new Error('WebUSB는 외부 데스크톱 Chrome·Edge에서 사용할 수 있습니다.');
+    this.disabled=false;this.lastError='';const generation=this.generation;
+    let device:WheelUSBDevice;
+    try{device=await this.api.requestDevice({filters:[WIRED_WHEEL]});}catch(error){if((error as Error).name==='NotFoundError')return 0;this.lastError=error instanceof Error?`${error.name}: ${error.message}`:String(error);throw error;}
+    if(generation!==this.generation)return 0;
+    this.record('selected',device);
+    try{await this.attach(device);return this.entries.has(device)?1:0;}catch(error){this.failure(device,error);throw error;}
+  }
+  async restore(){
+    if(!this.api||this.disabled)return;
+    try{for(const device of await this.api.getDevices())if(!this.disabled){try{await this.attach(device);}catch(error){this.failure(device,error);}}}catch(error){this.lastError=error instanceof Error?error.message:String(error);}
+  }
+  private attach(device:WheelUSBDevice){
+    if(this.entries.has(device))return Promise.resolve();const pending=this.pending.get(device);if(pending)return pending;
+    const work=this.open(device);this.pending.set(device,work);void work.finally(()=>this.pending.delete(device)).catch(()=>{});return work;
+  }
+  private async open(device:WheelUSBDevice){
+    this.lastSelected=describe(device);const route=xbox360Interface(device),generation=this.generation,epoch=this.epochs.get(device)??0;
+    const index=Array.from({length:16},(_,i)=>i+16).find(i=>!this.reserved.has(i)&&![...this.entries.values()].some(e=>e.pad.index===i));
+    if(index===undefined)throw new Error('사용할 수 있는 USB 입력 슬롯이 없습니다.');
+    this.known.add(key(device));this.reserved.add(index);let openedHere=false;
+    const cancelled=()=>this.disabled||generation!==this.generation||epoch!==(this.epochs.get(device)??0);
+    try{
+      if(!device.opened){await device.open();openedHere=true;}
+      if(cancelled()){await device.close();return;}
+      if(device.configuration?.configurationValue!==route.config)await device.selectConfiguration(route.config);
+      if(cancelled()){await device.close();return;}
+      await device.claimInterface(route.number);
+      if(cancelled()){await device.close();return;}
+      if(device.configuration?.interfaces.find(i=>i.interfaceNumber===route.number)?.alternate.alternateSetting!==route.alternate)await device.selectAlternateInterface(route.number,route.alternate);
+      if(cancelled()){await device.close();return;}
+      const pad:Pad={id:`webusb:xinput360:${key(device)}`,displayName:device.productName||'USB XInput 휠',index,connected:true,mapping:'standard',source:'usb',inputsReady:false,axes:Array(4).fill(NaN),buttons:Array.from({length:17},()=>({value:0,pressed:false}))};
+      const entry:Entry={device,pad,route,active:true,packets:0,invalid:0};this.entries.set(device,entry);this.record('opened',device);void this.receive(entry);
+    }catch(error){if(openedHere)try{await device.close();}catch{}throw error;}finally{this.reserved.delete(index);}
+  }
+  private async receive(entry:Entry){
+    while(entry.active){
+      try{
+        const report=await entry.device.transferIn(entry.route.endpoint,entry.route.bytes);if(!entry.active)return;
+        if(report.status!=='ok'||!report.data)throw new Error(`USB 입력 전송 실패 (${report.status})`);
+        try{
+          const state=decodeXbox360(report.data);if(!state)continue;
+          const wasReady=entry.pad.inputsReady;entry.pad.axes=state.axes;entry.pad.buttons=state.buttons;entry.pad.inputsReady=true;entry.packets++;
+          if(!wasReady)this.record('ready',entry.device);
+        }catch(error){entry.invalid++;entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const button of entry.pad.buttons){button.value=0;button.pressed=false;}if(entry.invalid===1)this.failure(entry.device,error);}
+      }catch(error){if(!entry.active)return;this.failure(entry.device,error);this.drop(entry);try{await entry.device.close();}catch{}return;}
+    }
+  }
+  private drop(entry:Entry){entry.active=false;entry.pad.connected=false;entry.pad.inputsReady=false;entry.pad.axes.fill(NaN);for(const b of entry.pad.buttons){b.value=0;b.pressed=false;}this.entries.delete(entry.device);}
+  async disconnect(){this.disabled=true;this.generation++;const entries=[...this.entries.values()];for(const entry of entries)this.drop(entry);for(const entry of entries){this.record('closed',entry.device);try{await entry.device.close();}catch{}}}
+}
