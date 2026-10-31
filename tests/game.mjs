@@ -865,7 +865,9 @@ place(queued.car,800,-3,70);queued.lane=-3;place(queuePlayer,830,3,35);
 queueRace.elapsed=20;queued.passLane=-3;queued.passUntil=22;
 queueRace.decide(queued,queuePlayer);
 assert.ok(queued.control.brake>.2,'A car in the other lane must still cause early queue braking');
-assert.equal(queued.passUntil,0);assert.equal(queued.defendUntil,0);
+// A predicted conflict still requires braking. The chicane itself no longer
+// erases a driver's remembered passing side merely because of its map location.
+assert.equal(queued.defendUntil,0);
 // A full-throttle sample must keep the standalone whistle below the engine
 // and attenuate the broad high end without removing the measured timbres.
 globalThis.AudioContext=goodAudioContext;

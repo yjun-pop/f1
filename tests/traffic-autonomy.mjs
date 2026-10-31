@@ -116,3 +116,23 @@ const alongsideCar={...car,speed:30,position:new THREE.Vector3(4.023,0,600)};
 const alongsideTraffic=wall(0,0,0,30),merge=mergingPlanner.update(alongsideCar,[alongsideTraffic],50,40,true,()=>40);
 assert.equal(merge.mode,'merge');assert.ok(merge.laneAt(.11)>3.8,'An occupied rejoin corridor must retain the free parallel lane');assert.ok(merge.speed>30,'A safe parallel lane must allow progress instead of mirroring the other car forever');
 console.log('PASS: occupied rejoin lane holds a free parallel corridor and continues racing without a forced stop');
+
+// Independent physical duels inside the old standing-grid formation/chicane
+// exclusion area. Measure completed passes and actual side-by-side positions.
+for(const [metres,elapsed,gap,speed,slowSpeed] of [[300,5,30,65,30],[740,8,35,50,20],[880,12,20,28,12]]){
+ const track=referenceTrack,planner=new LinePlanner(track),scene=new THREE.Scene(),race=new Race(track,scene,planner,{opponentCount:2}),ghost=new Vehicle(track,scene);
+ ghost.position.set(1e6,0,1e6);race.state='racing';race.elapsed=elapsed;race.balanceRivals=()=>{};
+ const [attacker,defender]=race.opponents;
+ for(const [driver,m,v] of [[attacker,metres,speed],[defender,metres+gap,slowSpeed]]){driver.car.resetAt(m/track.length);driver.car.position.copy(race.speedPlanner.point(driver.car.progress));driver.car.speed=v;driver.lane=0;}
+ defender.pace=.65;let offroad=0,twoWide=0,firstBattle=Infinity,completed=false;
+ for(let step=0;step<120*14;step++){
+  race.update(1/120,ghost);offroad+=race.opponents.filter(o=>o.car.offRoad).length;
+  const distance=Math.abs((attacker.car.distance-defender.car.distance)*track.length),lateral=Math.abs(defender.car.position.clone().sub(attacker.car.position).dot(track.normal(attacker.car.progress)));
+  if(distance<12&&lateral>2.7&&defender.car.position.distanceTo(attacker.car.position)<16){twoWide++;firstBattle=Math.min(firstBattle,race.elapsed);}
+  if(attacker.car.distance>defender.car.distance+12/track.length){completed=true;break;}
+ }
+ assert.equal(offroad,0);assert.equal(race.opponents.reduce((n,o)=>n+o.collisionCount,0),0);assert.ok(twoWide>60,'A free driver must choose and physically occupy a separate passing corridor');assert.ok(firstBattle<40,'Racing must not wait for a global formation timer');
+ if(metres<800){assert.equal(completed,true);assert.ok(attacker.car.distance*track.length<1300,'An early pass must finish inside the previous formation exclusion area');}
+ assert.ok(attacker.agent.passAttempts>0);assert.equal(attacker.speedCap,94);assert.equal(attacker.powerAssist,1);
+ console.log(`PASS: independent ${metres}m early/chicane duel, two-wide ${(twoWide/120).toFixed(2)}s, completed=${completed}, no contacts or departures`);
+}

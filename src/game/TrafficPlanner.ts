@@ -10,6 +10,7 @@ export interface TrafficRoute {
   mode:'avoid'|'attack'|'merge'|'wait'|'backout';target?:Vehicle;speed:number;
   lookahead?:number;
   holdLane?:boolean;
+  longitudinalOnly?:boolean;
   point:(progress:number)=>THREE.Vector3;laneAt:(progress:number)=>number;
 }
 interface Commitment {target:Vehicle;lane:number;hazard:boolean;until:number}
@@ -96,6 +97,8 @@ export class TrafficPlanner {
     }
     const transition=merging?Math.max(24,car.speed):Math.min(Math.max(16,12+car.speed*.8),Math.max(5,(target?.gap??40)-7));
     const referenceLane=(t:number)=>this.reference.point(t).sub(this.track.point(t)).dot(this.track.normal(t));
+    const progressScale=(point:(t:number)=>THREE.Vector3,t:number)=>Math.max(.25,point(t+3/length).distanceTo(point(t-3/length))/6);
+    const targetScale=target?progressScale(t=>this.track.point(t).addScaledVector(this.track.normal(t),target.lane),target.sample.progress):1;
     const makeRoute=(goal:number,merge=false)=>{
       const laneAt=(progress:number)=>THREE.MathUtils.clamp(merge?referenceLane(progress):goal,-7.1,7.1);
       const point=(progress:number)=>this.track.point(progress).addScaledVector(this.track.normal(progress),laneAt(progress));
@@ -124,7 +127,10 @@ export class TrafficPlanner {
       const pursuit=2*Math.abs(Math.sin(heading))/Math.max(5,aim.length());
       speed=Math.min(speed,cornerSpeed(pursuit/(car.gripScale*.8),94));
       // Actual curvature of the candidate, including its lateral transition.
-      const samples=[4,12,24,36,48,60,78,96,...target?[target.gap-6,target.gap,target.gap+6]:[]].filter(d=>d>0&&d<105);
+      // Extend validation toward the expected passing distance (up to 300m),
+      // rather than checking only the first 100m before a nearby corner.
+      const passHorizon=hazard||merging?105:Math.min(300,Math.max(105,speed*((target!.gap+14)/Math.max(1,speed-target!.forward)+Math.abs(goal-from)/(2+this.character.aggression*1.5))));
+      const samples=[4,12,24,36,48,60,78,96,...passHorizon>105?[120,150,190,240,300]:[],...target?[target.gap-6,target.gap,target.gap+6]:[]].filter(d=>d>0&&d<=passHorizon);
       for(const d of samples){
         const t=origin+d/length,a=route.point(t-3/length),b=route.point(t),c=route.point(t+3/length);
         const curvature=2*Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x))/Math.max(.001,a.distanceTo(b)*b.distanceTo(c)*c.distanceTo(a));
@@ -167,8 +173,12 @@ export class TrafficPlanner {
         }
         if(blocked)break;
       }
-      const passingTime=((target?.gap??0)+14)/Math.max(.1,speed-(target?.forward??0))+Math.abs(goal-from)/(2+this.character.aggression*1.5);
-      if(blocked||!hazard&&!merging&&(speed<Math.max(12,(target?.forward??0)+1.2)||!this.commitment&&passingTime>2+this.character.aggression*2))continue;
+      // On a bend an outside corridor travels farther for the same track
+      // progress. Compare progress rates, not just speed against the rival's
+      // centreline projection, or a slower outside pass can look profitable.
+      const ownRate=speed/progressScale(route.point,target?.sample.progress??origin),targetRate=(target?.forward??0)/targetScale;
+      const passingTime=((target?.gap??0)+14)/Math.max(.1,ownRate-targetRate)+Math.abs(goal-from)/(2+this.character.aggression*1.5);
+      if(blocked||!hazard&&!merging&&(speed<12||ownRate<targetRate+1.2||!this.commitment&&passingTime>2+this.character.aggression*2))continue;
       const c=this.character,sidePreference=Math.sin(c.phase*1.7+c.lineBias)*.2;
       const switchCost=this.commitment&&Math.abs(goal-this.commitment.lane)>1.5?2+c.caution*2:0;
       const score=speed*(.24+c.aggression*.12)-Math.abs(goal-from)*(.45+c.caution*.3)-switchCost+goal*sidePreference+(rejoining?3:0)+(hazard&&this.commitment&&Math.abs(goal-this.commitment.lane)<.3?10:0);
@@ -182,7 +192,10 @@ export class TrafficPlanner {
       }
       const blocker=seen.filter(s=>s.gap>-5&&Math.abs(s.lane-from)<s.halfWidth+1.5).sort((a,b)=>a.gap-b.gap)[0]??target;
       const route=makeRoute(from),gap=Math.max(0,(blocker?.gap??0)-8);
-      return {mode:'wait',holdLane:true,target:blocker?.sample.car,lookahead:tightObstacle?4:hazard?6:undefined,speed:Math.max(0,Math.min(desiredSpeed,(blocker?.forward??0)+gap*.35)),...route};
+      // With moving traffic and no viable passing corridor, preserve the
+      // driver's calibrated curved steering path. A constant road offset is
+      // useful for a stopped obstacle, but can cut through a linked apex.
+      return {mode:'wait',holdLane:hazard,longitudinalOnly:!hazard,target:blocker?.sample.car,lookahead:tightObstacle?4:hazard?6:undefined,speed:Math.max(0,Math.min(desiredSpeed,(blocker?.forward??0)+gap*.35)),...route};
     }
     this.mode=merging?'merge':hazard?'avoid':'attack';
     if(target){
