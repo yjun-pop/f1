@@ -132,3 +132,24 @@ trigger.ui.open();trigger.setDevices([]);pump();assert.equal(trigger.n('wheel-co
 trigger.n('wheel-copy-diagnostic').click();await Promise.resolve();assert.equal(trigger.n('wheel-diagnostic').selected,true,'Blocked clipboard access must offer manual selection');assert.equal(JSON.parse(trigger.n('wheel-diagnostic').value).result,'empty-gamepad-list');
 trigger.setDevices([trigger.device]);trigger.n('wheel-rescan').click();pump();assert.equal(trigger.n('wheel-connection-help').hidden,true);assert.equal(trigger.n('wheel-device').children.length,1);trigger.n('wheel-close').click();assert.equal(frames.size,0);
 console.log('PASS: empty-list connection help, user-triggered rescanning, local report copy fallback and restored device visibility');
+
+// Exercise the production click handler and wizard through simulated WebHID
+// events, including the user activation boundary before the first await.
+const {HIDWheel}=await import(moduleURL('game/HIDWheel'));
+let hidListener,chooserCalls=0;
+const usbDevice={vendorId:0x1234,productId:0x5678,productName:'USB test wheel',opened:false,
+ collections:[{usagePage:1,usage:4,inputReports:[{reportId:0,items:[{reportSize:8,reportCount:3,logicalMinimum:0,logicalMaximum:255,isAbsolute:true,usages:[0x10030,0x10032,0x10035]}]}]}],
+ async open(){this.opened=true;},async close(){this.opened=false;},addEventListener(type,fn){hidListener=fn;},removeEventListener(){hidListener=undefined;}};
+const usb=new HIDWheel({requestDevice(){chooserCalls++;return Promise.resolve([usbDevice]);},getDevices:async()=>[]});
+const usbWheel=new WheelInput(()=>[],{getItem:()=>null,setItem:()=>{}},usb),usbUI=new WheelSetup(usbWheel),un=id=>usbUI.element.querySelector('#'+id);
+const settle=()=>new Promise(resolve=>setImmediate(resolve));
+usbUI.open();assert.equal(un('wheel-calibrate').disabled,true);un('wheel-usb-connect').click();assert.equal(chooserCalls,1,'Native device chooser must run synchronously from the click');
+await settle();pump();assert.equal(un('wheel-device').children.length,1);assert.equal(un('wheel-calibrate').disabled,true,'An open handle alone must not enable calibration');
+const usbPacket=axes=>{hidListener({reportId:0,data:new DataView(Uint8Array.from(axes).buffer)});};
+usbPacket([128,255,255]);pump();assert.equal(un('wheel-calibrate').disabled,false);un('wheel-calibrate').click();un('wheel-next').click();
+usbPacket([0,255,255]);un('wheel-next').click();usbPacket([255,255,255]);un('wheel-next').click();usbPacket([128,255,255]);un('wheel-next').click();
+usbPacket([128,0,255]);un('wheel-next').click();usbPacket([128,255,255]);un('wheel-next').click();usbPacket([128,255,0]);un('wheel-next').click();usbPacket([128,255,255]);pump();
+assert.equal(un('wheel-save').disabled,false);un('wheel-save').click();assert.equal(usbUI.element.open,false);assert.equal(usbDevice.opened,true,'Closing settings must retain the driving connection');usbWheel.poll();assert.equal(usbWheel.armed,true);
+assert.equal(JSON.parse(wheelDiagnosticReport(usbWheel,context)).directUSB.devices[0].ready,true);
+usbUI.open();un('wheel-usb-disconnect').click();await settle();pump();assert.equal(usbDevice.opened,false);assert.equal(usbWheel.devices.length,0);assert.equal(hidListener,undefined);assert.equal(un('wheel-save').disabled,true);un('wheel-close').click();assert.equal(frames.size,0);
+console.log('PASS: production USB chooser click, first-report gating, seven-step HID calibration, diagnostics, persistent driving handle and explicit disconnect');
