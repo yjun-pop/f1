@@ -15,6 +15,7 @@ const STEPS=[
 export class WheelSetup {
   readonly element:HTMLDialogElement;
   private frame=0;private lastPaint=-Infinity;private deviceStamp?:string;private step=-1;private usbBusy=false;
+  private listedDevices:{id:string;index:number}[]=[];
   private center:number[]=[];private throttleRest:number[]=[];private brakeRest:number[]=[];
   private throttleButtons:number[]=[];private brakeButtons:number[]=[];
   private steering?:WheelProfile['steering'];private throttle?:WheelProfile['throttle'];
@@ -65,7 +66,7 @@ export class WheelSetup {
     const rumble=this.node<HTMLInputElement>('wheel-rumble'),showRumble=()=>{this.node('wheel-rumble-value').textContent=`${Math.round(this.wheel.haptics.strength*100)}%`;};
     rumble.value=String(this.wheel.haptics.strength*100);showRumble();
     rumble.addEventListener('input',()=>{this.wheel.haptics.setStrength(Number(rumble.value)/100);showRumble();});
-    this.node('wheel-rumble-test').addEventListener('click',()=>{this.message('짧은 진동 테스트를 보냅니다.');void this.wheel.haptics.test(this.selected('wheel-device')).then(()=>this.message('테스트 신호를 전송했습니다. 실제 휠에서 진동이 느껴지는지 확인하세요.')).catch(error=>this.message(`진동 테스트: ${(error as Error).message}`));});
+    this.node('wheel-rumble-test').addEventListener('click',()=>{this.message('설정한 강도로 진동 테스트를 두 번 보냅니다.');void this.wheel.haptics.test(this.selected('wheel-device')).then(completed=>this.message(completed?'두 번의 테스트 명령을 전송했습니다. 진동이 없으면 아래 브라우저 입력 진단을 복사해 알려주세요.':'진동 테스트가 중단됐습니다. 창을 활성화한 상태에서 다시 시도하세요.')).catch(error=>this.message(`진동 테스트: ${(error as Error).message}`));});
     this.node('wheel-save').addEventListener('click',()=>{
       if(!this.draft)return;
       const profile={...this.draft,enabled:this.node<HTMLInputElement>('wheel-enabled').checked,deadzone:Number(this.node<HTMLInputElement>('wheel-deadzone').value)/100,sensitivity:Number(this.node<HTMLInputElement>('wheel-sensitivity').value)/100};
@@ -74,7 +75,7 @@ export class WheelSetup {
     this.node('wheel-keyboard').addEventListener('click',()=>{if(this.wheel.profile)this.wheel.save({...this.wheel.profile,enabled:false});this.element.close();});
   }
   private node<T extends HTMLElement=HTMLElement>(id:string){return this.element.querySelector<T>('#'+id)!;}
-  private selected(id:string){const index=Number(this.node<HTMLSelectElement>(id).value);return this.wheel.devices.find(p=>p.index===index);}
+  private selected(id:string){const value=this.node<HTMLSelectElement>(id).value;if(value==='')return;const index=Number(value);return this.wheel.devices.find(p=>p.index===index);}
   private message(text:string){this.node('wheel-message').textContent=text;}
   private async copyText(text:string,field?:HTMLTextAreaElement){
     try{if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(text);this.message('복사했습니다.');}
@@ -106,13 +107,18 @@ export class WheelSetup {
   private refreshDevices(){
     const stamp=this.wheel.devices.map(p=>`${p.index}/${p.id}/${p.axes.length}/${p.buttons.length}`).join('|');if(stamp===this.deviceStamp)return;
     const changed=this.deviceStamp!==undefined;this.deviceStamp=stamp;
-    if(this.draft&&this.wheel.devices.length&&(!findWheelDevice(this.wheel.devices,this.draft.deviceId,this.draft.deviceIndex)||!findWheelDevice(this.wheel.devices,this.draft.pedalDeviceId,this.draft.pedalIndex)))this.draft=undefined;
     for(const [id,saved,hint] of [['wheel-device',this.draft?.deviceId,this.draft?.deviceIndex],['wheel-pedals',this.draft?.pedalDeviceId,this.draft?.pedalIndex]] as const){
       const select=this.node<HTMLSelectElement>(id),previous=select.value,options=this.wheel.devices.map(p=>{const option=document.createElement('option');option.value=String(p.index);option.textContent=`${p.source==='usb'?'WebUSB · ':p.source==='hid'?'USB 직접 · ':''}${p.displayName??p.id} · 장치 ${p.index+1}`;return option;});
+      // USB/HID restoration can finish in either order and reuse slot numbers.
+      // Keep the selected identity, including while waiting for the saved wheel;
+      // never silently substitute a Pro Controller that takes its old index.
+      const old=this.listedDevices.find(p=>String(p.index)===previous),wanted=saved?{id:saved,index:hint}:old;
+      const selected=wanted?findWheelDevice(this.wheel.devices,wanted.id,wanted.index):this.wheel.devices[0];
+      if(wanted&&!selected){const waiting=document.createElement('option');waiting.value='';waiting.textContent=`저장된 ${id==='wheel-device'?'휠':'페달'} · 연결 대기`;options.unshift(waiting);}
       select.replaceChildren(...options);select.disabled=!options.length;
-      const match=saved?findWheelDevice(this.wheel.devices,saved,hint):undefined,old=this.wheel.devices.find(p=>String(p.index)===previous);
-      select.value=String((match??old??this.wheel.devices[0])?.index??'');
+      select.value=selected?String(selected.index):'';
     }
+    this.listedDevices=this.wheel.devices.map(p=>({id:p.id,index:p.index}));
     if(changed){this.learning=undefined;if(this.step>=0){this.step=-1;this.draft=undefined;this.message('연결 장치가 바뀌었습니다. 보정을 다시 시작하세요.');}this.showStep();}
   }
   private showTuning(){for(const id of ['deadzone','sensitivity'])this.node('wheel-'+id+'-value').textContent=this.node<HTMLInputElement>('wheel-'+id).value+'%';}
@@ -161,6 +167,7 @@ export class WheelSetup {
     if(now-this.lastPaint>80){
       this.lastPaint=now;this.node('wheel-detection').textContent=wheel?`${wheel.source==='usb'?'WebUSB':wheel.source==='hid'?'USB 직접':'브라우저'} 입력 연결됨 · 축 ${wheel.axes.length}개 / 버튼 ${wheel.buttons.length}개`:this.wheel.detectionStatus;
       this.node('wheel-rumble-status').textContent=this.wheel.haptics.status(wheel);
+      this.node('wheel-rumble-test').textContent=wheel?`${wheel.displayName??wheel.id} 진동 테스트 · 2회`:'진동 테스트 · 장치 선택';
       this.node<HTMLButtonElement>('wheel-rumble-test').disabled=!wheel||wheel.inputsReady===false||!this.wheel.haptics.strength||!this.wheel.haptics.canRumble(wheel);
       this.node('wheel-connection-help').hidden=this.wheel.devices.length>0;
       const usb=this.wheel.usb,rawUSB=this.wheel.rawUSB,direct=[...usb?.devices??[],...rawUSB?.devices??[]],ready=direct.filter(p=>p.inputsReady).length;

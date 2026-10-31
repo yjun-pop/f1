@@ -173,10 +173,18 @@ console.log('PASS: Wired Wheel WebUSB button opens target chooser synchronously,
 
 const vibrationEvents=[];
 const vibrationDevice=pad();vibrationDevice.vibrationActuator={type:'dual-rumble',async playEffect(type,effect){vibrationEvents.push({type,...effect});return 'complete';},async reset(){vibrationEvents.push('stop');return 'complete';}};
-const vibrationUI=wizard(vibrationDevice);pump();assert.equal(vibrationUI.n('wheel-rumble-test').disabled,false);assert.ok(vibrationUI.n('wheel-rumble-status').textContent.includes('사용 가능'));
+const vibrationUI=wizard(vibrationDevice);pump();assert.equal(vibrationUI.n('wheel-rumble-test').disabled,false);assert.ok(vibrationUI.n('wheel-rumble-status').textContent.includes('명령 경로 감지'));
 vibrationUI.n('wheel-rumble').value='40';vibrationUI.n('wheel-rumble').emit('input');assert.equal(vibrationUI.wheel.haptics.strength,.4);
 vibrationUI.n('wheel-rumble-test').click();await settle();assert.equal(vibrationEvents[0].type,'dual-rumble');assert.ok(vibrationEvents[0].strongMagnitude>0&&vibrationEvents[0].strongMagnitude<.4);
 pump();await settle();assert.notEqual(vibrationEvents.at(-1),'stop','Polling the calibration dialog must not immediately cancel its test effect');
 vibrationUI.n('wheel-close').click();await settle();assert.equal(vibrationEvents.at(-1),'stop');assert.equal(frames.size,0);
 const noVibration=wizard();pump();assert.equal(noVibration.n('wheel-rumble-test').disabled,true);assert.ok(noVibration.n('wheel-rumble-status').textContent.includes('찾지 못했습니다'));noVibration.n('wheel-close').click();
 console.log('PASS: real vibration settings show capability, apply independent strength, test only the selected wheel, preserve preview during configuration and stop on dialog close');
+
+const savedWheel=pad(),otherController={...pad(),id:'Pro Controller',index:16};savedWheel.id='Wired Wheel';savedWheel.index=0;
+let restoredDevices=[otherController];const savedProfile={...profile(),deviceId:savedWheel.id,pedalDeviceId:savedWheel.id,deviceIndex:0,pedalIndex:0};
+const restoringWheel=new WheelInput(()=>restoredDevices,{getItem:()=>JSON.stringify(savedProfile),setItem(){}}),restoringUI=new WheelSetup(restoringWheel);restoringUI.open();const restoringNode=id=>restoringUI.element.querySelector('#'+id);
+assert.equal(restoringNode('wheel-device').value,'','A temporarily absent configured wheel must not be replaced by an unrelated controller');assert.equal(restoringNode('wheel-rumble-test').disabled,true);assert.equal(restoringUI.draft.deviceId,'Wired Wheel');otherController.index=0;pump();assert.equal(restoringNode('wheel-calibrate').disabled,true,'An empty waiting selection must not resolve to another controller at index zero');otherController.index=16;restoredDevices=[otherController,savedWheel];pump();assert.equal(restoringNode('wheel-device').value,'0');assert.equal(restoringNode('wheel-pedals').value,'0');restoringNode('wheel-close').click();
+const transient=wizard(savedWheel);pump();savedWheel.index=16;otherController.index=0;transient.setDevices([otherController,savedWheel]);pump();assert.equal(transient.n('wheel-device').value,'16','A selected wheel must follow its identity when another controller reuses index zero');transient.n('wheel-close').click();
+const selectedReport=JSON.parse(wheelDiagnosticReport(restoringWheel,context));assert.equal(selectedReport.controls.wheel.id,'Wired Wheel');assert.equal(selectedReport.controls.pedals.id,'Wired Wheel');
+console.log('PASS: saved wheel selection survives asynchronous USB/HID restoration and index reuse alongside Pro Controller, with configured identities in diagnostics');

@@ -12,16 +12,24 @@ export interface NativeRumble {
 export class RumbleOutput {
   error='';private pending?:{strong:number;weak:number;duration:number};private work?:Promise<void>;
   private timer?:ReturnType<typeof setTimeout>;private running=false;
+  private writes=0;private accepted=0;private nonzero=0;private last?:{strong:number;weak:number;duration:number};private stopped='아직 출력 없음';
   constructor(readonly kind:'usb'|'native',private write:(strong:number,weak:number,duration:number)=>Promise<unknown>,private connected=()=>true){}
   get available(){return !this.error&&this.connected();}
+  get diagnostics(){return {kind:this.kind,available:this.available,error:this.error||null,writes:this.writes,accepted:this.accepted,nonzero:this.nonzero,last:this.last?{...this.last}:null,stopReason:this.stopped};}
+  fail(error:unknown){
+    if(this.error)return;
+    this.error=error instanceof Error?error.message:String(error);void this.stop('출력 오류');
+  }
   play(strong:number,weak:number,duration=160){
     if(!this.available)return Promise.resolve();
     strong=clamp(strong);weak=clamp(weak);duration=Number.isFinite(duration)?Math.max(1,Math.min(250,duration)):160;
     if(!strong&&!weak)return this.stop();
-    clearTimeout(this.timer);this.timer=setTimeout(()=>void this.stop(),duration);
+    clearTimeout(this.timer);this.timer=setTimeout(()=>void this.stop('효과 시간 만료'),duration);
+    this.stopped='효과 실행 요청';
     this.pending={strong,weak,duration};return this.flush();
   }
-  stop(){
+  stop(reason='정지 요청'){
+    this.stopped=reason;
     clearTimeout(this.timer);this.timer=undefined;
     if(!this.running&&!this.pending)return this.work??Promise.resolve();
     this.pending={strong:0,weak:0,duration:0};return this.flush();
@@ -33,7 +41,8 @@ export class RumbleOutput {
         const effect=this.pending;this.pending=undefined;
         if(!this.connected()){this.running=false;continue;}
         this.running=!!(effect.strong||effect.weak);
-        try{const result=await this.write(effect.strong,effect.weak,effect.duration);if(result==='not-supported')throw new Error('이 장치가 진동 효과를 지원하지 않습니다.');}
+        this.writes++;this.last={...effect};if(this.running)this.nonzero++;
+        try{const result=await this.write(effect.strong,effect.weak,effect.duration);if(result==='not-supported')throw new Error('이 장치가 진동 효과를 지원하지 않습니다.');this.accepted++;}
         catch(error){
           this.error=error instanceof Error?error.message:String(error);clearTimeout(this.timer);this.timer=undefined;this.pending=undefined;
           // A previously accepted effect may still be active. One best-effort
@@ -52,7 +61,16 @@ export function rumbleFor(device:WheelDevice|undefined):RumbleOutput|undefined{
   const actuator=device.vibrationActuator;
   if(!actuator||typeof actuator.playEffect!=='function'||typeof actuator.reset!=='function'||!(actuator.effects?.includes('dual-rumble')||actuator.type==='dual-rumble'))return;
   let output=nativeOutputs.get(actuator);
-  if(!output){output=new RumbleOutput('native',(strong,weak,duration)=>strong||weak?actuator.playEffect('dual-rumble',{duration,startDelay:0,strongMagnitude:strong,weakMagnitude:weak}):actuator.reset(),()=>device.connected!==false);nativeOutputs.set(actuator,output);}
+  if(!output){
+    // Browser promises resolve when the effect ENDS. Waiting on each one
+    // delayed new pulses and stops by the full duration. The browser already
+    // preempts older effects; observe completion/errors without blocking it.
+    const native=new RumbleOutput('native',async(strong,weak,duration)=>{
+      const completion=strong||weak?actuator.playEffect('dual-rumble',{duration,startDelay:0,strongMagnitude:strong,weakMagnitude:weak}):actuator.reset();
+      void completion.then(result=>{if(result==='not-supported')native.fail(new Error('이 장치가 진동 효과를 지원하지 않습니다.'));}).catch(error=>native.fail(error));
+    },()=>device.connected!==false);
+    output=native;nativeOutputs.set(actuator,output);
+  }
   return output;
 }
 export interface HapticTelemetry {
@@ -62,19 +80,37 @@ export interface HapticTelemetry {
 export class WheelHaptics {
   strength=.6;private output?:RumbleOutput;private clock=0;private sentAt=-Infinity;
   private gear?:number;private impactSerial?:number;private shift=0;private impact=0;
+  private preview=0;private cancelWait?:()=>void;
   constructor(){
     try{const saved=localStorage.getItem('apex-wheel-rumble');if(saved!==null)this.strength=clamp(Number(saved));}catch{}
-    if(typeof window!=='undefined'){window.addEventListener?.('blur',()=>this.stop());window.addEventListener?.('pagehide',()=>this.stop());}
-    if(typeof document!=='undefined')document.addEventListener?.('visibilitychange',()=>{if(document.hidden)this.stop();});
+    if(typeof window!=='undefined'){window.addEventListener?.('blur',()=>this.stop('창 포커스 상실'));window.addEventListener?.('pagehide',()=>this.stop('페이지 종료'));}
+    if(typeof document!=='undefined')document.addEventListener?.('visibilitychange',()=>{if(document.hidden)this.stop('탭 숨김');});
   }
-  setStrength(value:number){this.strength=clamp(value);try{localStorage.setItem('apex-wheel-rumble',String(this.strength));}catch{}if(!this.strength)this.stop();}
+  setStrength(value:number){this.strength=clamp(value);try{localStorage.setItem('apex-wheel-rumble',String(this.strength));}catch{}if(this.output||!this.strength)this.stop('진동 강도 변경');}
   canRumble(device:WheelDevice|undefined){return !!rumbleFor(device)?.available;}
-  status(device:WheelDevice|undefined){const output=rumbleFor(device);return output?.error?`진동 출력 오류: ${output.error}`:output?.available?`${output.kind==='usb'?'Wired Wheel':'브라우저'} 진동 출력 사용 가능`:'선택한 장치에서 지원되는 진동 출력을 찾지 못했습니다.';}
-  stop(){void this.output?.stop();this.output=undefined;this.gear=this.impactSerial=undefined;this.shift=this.impact=0;this.sentAt=-Infinity;}
+  status(device:WheelDevice|undefined){const output=rumbleFor(device);return output?.error?`진동 출력 오류: ${output.error}`:output?.available?`${output.kind==='usb'?'Wired Wheel':'브라우저'} 진동 명령 경로 감지 · 모터 동작은 테스트로 확인`:'선택한 장치에서 지원되는 진동 출력을 찾지 못했습니다.';}
+  stop(reason='주행 또는 테스트 중단'){this.preview++;this.cancelWait?.();this.cancelWait=undefined;void this.output?.stop(reason);this.output=undefined;this.gear=this.impactSerial=undefined;this.shift=this.impact=0;this.sentAt=-Infinity;}
+  private wait(milliseconds:number){return new Promise<void>(resolve=>{const timer=setTimeout(()=>{this.cancelWait=undefined;resolve();},milliseconds);this.cancelWait=()=>{clearTimeout(timer);resolve();};});}
   async test(device:WheelDevice|undefined){
     this.stop();const output=rumbleFor(device);if(!output?.available)throw new Error(this.status(device));
     if(!this.strength)throw new Error('진동 강도를 먼저 올려주세요.');
-    this.output=output;await output.play(.65*this.strength,.45*this.strength,220);if(output.error)throw new Error(output.error);
+    const run=this.preview,strength=this.strength;
+    let completed=false;
+    this.output=output;
+    try{
+      for(let pulse=0;pulse<2;pulse++){
+        if(run!==this.preview||this.output!==output||!output.available)return false;
+        await output.play(.95*strength,.95*strength,250);
+        if(output.error)throw new Error(output.error);
+        if(run!==this.preview||this.output!==output)return false;
+        await this.wait(250);
+        if(run!==this.preview||this.output!==output)return false;
+        await output.stop('테스트 펄스 종료');
+        if(output.error)throw new Error(output.error);
+        if(pulse===0){await this.wait(150);if(run!==this.preview)return false;}
+      }
+      completed=true;return true;
+    }finally{if(run===this.preview&&this.output===output){await output.stop(completed?'테스트 완료':'테스트 중단');this.output=undefined;}}
   }
   update(device:WheelDevice|undefined,car:HapticTelemetry,feedback:DrivingFeedbackFrame,dt:number,active:boolean){
     const output=rumbleFor(device);

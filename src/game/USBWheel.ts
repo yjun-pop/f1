@@ -45,7 +45,7 @@ export function decodeXbox360(data:DataView){
   return {axes,buttons};
 }
 type Pad=WheelDevice&{axes:number[];buttons:{value:number;pressed:boolean}[]};
-interface Entry {device:WheelUSBDevice;pad:Pad;route:ReturnType<typeof xbox360Interface>;setup:SetupAttempt;active:boolean;packets:number;invalid:number}
+interface Entry {device:WheelUSBDevice;pad:Pad;route:ReturnType<typeof xbox360Interface>;setup:SetupAttempt;active:boolean;packets:number;invalid:number;rumbleEndpoint?:number}
 interface SetupAttempt {
   name:string;vendorId:string;productId:string;stage:string;status:'connecting'|'waiting-input'|'ready'|'failed'|'cancelled';
   configurationBeforeOpen:number|null;configurationAfterOpen:number|null;activeConfiguration:number|null;
@@ -73,7 +73,7 @@ export class USBWheel {
   private failure(device:WheelUSBDevice,error:unknown){this.lastError=error instanceof Error?`${error.name}: ${error.message}`:String(error);this.record('error',device,this.lastError);}
   get available(){return !!this.api;}
   get devices(){return [...this.entries.values()].filter(e=>e.active&&e.device.opened).map(e=>e.pad);}
-  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,setup:this.lastSetup?{...this.lastSetup}:null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route,rumble:{available:!!e.pad.rumble?.available,error:e.pad.rumble?.error||null}}))};}
+  get diagnostics(){return {available:this.available,lastError:this.lastError||null,selected:this.lastSelected??null,setup:this.lastSetup?{...this.lastSetup}:null,events:[...this.events],devices:[...this.entries.values()].map(e=>({name:e.pad.displayName,id:e.pad.id,ready:e.pad.inputsReady,packets:e.packets,invalidReports:e.invalid,route:e.route,rumble:{available:!!e.pad.rumble?.available,error:e.pad.rumble?.error||null,endpoint:e.rumbleEndpoint??null,output:e.pad.rumble?.diagnostics??null}}))};}
   async request(){
     if(!this.api)throw new Error('WebUSB는 외부 데스크톱 Chrome·Edge에서 사용할 수 있습니다.');
     this.disabled=false;this.lastError='';const generation=this.generation;
@@ -121,6 +121,7 @@ export class USBWheel {
       const alternate=device.configurations.find(c=>c.configurationValue===route.config)?.interfaces.find(i=>i.interfaceNumber===route.number)?.alternates.find(a=>a.alternateSetting===route.alternate);
       const output=alternate?.endpoints.find(e=>e.direction==='out'&&e.type==='interrupt'&&e.endpointNumber>=1&&e.endpointNumber<=15&&e.packetSize>=8);
       if(device.vendorId===WIRED_WHEEL.vendorId&&device.productId===WIRED_WHEEL.productId&&output&&device.transferOut){
+        entry.rumbleEndpoint=output.endpointNumber;
         pad.rumble=new RumbleOutput('usb',async(strong,weak)=>{
           // Linux xpad_play_effect, XTYPE_XBOX360. No mode, LED, firmware,
           // feature-report or steering-force commands are sent.
