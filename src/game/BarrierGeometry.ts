@@ -17,7 +17,7 @@ function removeLoops(source:THREE.Vector3[]){
           const c=points[j],d=points[(j+1)%points.length],u=b.clone().sub(a),v=d.clone().sub(c),den=cross(u,v);
           if(Math.abs(den)<1e-10)continue;
           const delta=c.clone().sub(a),t=cross(delta,v)/den,s=cross(delta,u)/den;
-          if(t>1e-7&&t<1-1e-7&&s>1e-7&&s<1-1e-7){crossing={i:j,j:i,p:a.clone().lerp(b,t)};break;}
+          if(t>1e-7&&t<1-1e-7&&s>1e-7&&s<1-1e-7){if(Math.abs(THREE.MathUtils.lerp(a.y,b.y,t)-THREE.MathUtils.lerp(c.y,d.y,s))>2.5)continue;crossing={i:j,j:i,p:a.clone().lerp(b,t)};break;}
         }
         bucket.push(i);cells.set(key,bucket);
       }
@@ -88,7 +88,7 @@ export function createBarriers(paths:readonly BarrierPath[]){
     const path=paths[side],positions:number[]=[],uv:number[]=[],progress:number[]=[],indices:number[]=[],profile=[[-.275,-.08],[-.275,1.12],[-.275,1.12],[.275,1.12],[.275,1.12],[.275,-.08],[.275,-.08],[-.275,-.08]];
     for(let i=0;i<=path.points.length;i++){
       const index=i%path.points.length,p=path.points[index],a=path.points[(index+path.points.length-1)%path.points.length],b=path.points[(index+1)%path.points.length],f=b.clone().sub(a).normalize(),n=new THREE.Vector3(-f.z,0,f.x);
-      for(const [offset,y] of profile){const q=p.clone().addScaledVector(n,offset);positions.push(q.x,y,q.z);uv.push(path.distances[i]/4.2,(y+.08)/1.2);progress.push(path.distances[i]/path.length);}
+      for(const [offset,y] of profile){const q=p.clone().addScaledVector(n,offset);positions.push(q.x,q.y+y,q.z);uv.push(path.distances[i]/4.2,(y+.08)/1.2);progress.push(path.distances[i]/path.length);}
       if(i<path.points.length)for(let face=0;face<4;face++){const k=i*8+face*2;indices.push(k,k+1,k+8,k+1,k+9,k+8);}
     }
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));geometry.setAttribute('progress',new THREE.Float32BufferAttribute(progress,1));geometry.setIndex(indices);geometry.computeVertexNormals();

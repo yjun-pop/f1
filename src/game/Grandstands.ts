@@ -19,8 +19,14 @@ export function createGrandstands(track:Track){
   const head=new THREE.IcosahedronGeometry(.125,0);head.translate(0,.75,0);
   const shirts=new THREE.MeshStandardMaterial({roughness:1}),skin=new THREE.MeshStandardMaterial({roughness:1}),stamp=new THREE.Object3D();
   const colors=[0xc83b35,0xd4d7d4,0x325794,0xe7bd4d,0x323b47,0x58a396,0x795d9c,0xbd5c42],tones=[0xe4b18b,0xb97f59,0x81543e,0xc99573];
-  return GRANDSTAND_PROGRESS.map((t,standIndex)=>{
+  // On compact and crossing layouts, another section can run behind a stand.
+  // Reserve the complete road width before allocating the crowd instances.
+  const road=track.circuit.environment?Array.from({length:Math.ceil(track.length/8)},(_,i)=>track.point(i/Math.ceil(track.length/8))):[];
+  return GRANDSTAND_PROGRESS.flatMap((t,standIndex)=>{
     const stand=new THREE.Group();stand.name='grandstand';stand.userData.progress=t;
+    stand.position.copy(track.point(t)).addScaledVector(track.normal(t),-37);stand.rotation.y=Math.atan2(track.tangent(t).x,track.tangent(t).z)+Math.PI/2;
+    stand.updateMatrix();const inverse=stand.matrix.clone().invert(),local=new THREE.Vector3();
+    if(road.some(p=>{local.copy(p).applyMatrix4(inverse);return Math.abs(local.x)<42&&local.z>-15&&local.z<26&&local.y>-2&&local.y<10;}))return [];
     const tier=new THREE.Mesh(terraces,standMaterial);tier.receiveShadow=true;
     const canopy=new THREE.Mesh(roof,roofMaterial);canopy.position.set(0,9,5);canopy.castShadow=canopy.receiveShadow=true;
     const seats=new THREE.InstancedMesh(seat,seatMaterial,360),supports=new THREE.InstancedMesh(post,steel,8),people=new THREE.InstancedMesh(body,shirts,360),heads=new THREE.InstancedMesh(head,skin,360);people.name='spectator-bodies';heads.name='spectator-heads';
@@ -30,8 +36,8 @@ export function createGrandstands(track:Track){
       const hash=((i+1)*2654435761+standIndex*1013904223)>>>0,height=.88+(hash%23)/100;stamp.position.x+=((hash>>>8)%11-5)*.012;stamp.position.y+=.09;stamp.scale.set(1,height,1);stamp.rotation.y=((hash>>>16)%15-7)*.025;stamp.updateMatrix();people.setMatrixAt(i,stamp.matrix);heads.setMatrixAt(i,stamp.matrix);people.setColorAt(i,new THREE.Color(colors[(hash>>>4)%colors.length]));heads.setColorAt(i,new THREE.Color(tones[(hash>>>12)%tones.length]));
     }
     for(let j=0;j<8;j++){stamp.scale.setScalar(1);stamp.rotation.set(0,0,0);stamp.position.set(-26+(j%4)*17.3,4.4,j<4?-.6:12);stamp.updateMatrix();supports.setMatrixAt(j,stamp.matrix);}
-    stand.add(tier,canopy,seats,supports,people,heads);stand.position.copy(track.point(t)).addScaledVector(track.normal(t),-37);stand.rotation.y=Math.atan2(track.tangent(t).x,track.tangent(t).z)+Math.PI/2;
-    return stand;
+    stand.add(tier,canopy,seats,supports,people,heads);
+    return [stand];
   });
 }
 

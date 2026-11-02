@@ -50,20 +50,30 @@ export function createSkyTexture(width:number){
   const sky=new THREE.DataTexture(half,width,height,THREE.RGBAFormat,THREE.HalfFloatType);sky.mapping=THREE.EquirectangularReflectionMapping;sky.magFilter=THREE.LinearFilter;sky.minFilter=THREE.LinearFilter;sky.needsUpdate=true;
   return sky;
 }
+export function createNightSkyTexture(width:number){
+  const height=width/2,data=new Uint16Array(width*height*4),color=new THREE.Color(),horizon=new THREE.Color('#172744'),zenith=new THREE.Color('#020611');
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const elevation=Math.cos((y+.5)/height*Math.PI);color.copy(horizon).lerp(zenith,Math.min(1,Math.abs(elevation)*1.8));
+    const star=elevation>.25&&((x*173+y*107)%6209===0)?.8:0,i=(y*width+x)*4;
+    data[i]=THREE.DataUtils.toHalfFloat(color.r+star);data[i+1]=THREE.DataUtils.toHalfFloat(color.g+star);data[i+2]=THREE.DataUtils.toHalfFloat(color.b+star);data[i+3]=THREE.DataUtils.toHalfFloat(1);
+  }
+  const texture=new THREE.DataTexture(data,width,height,THREE.RGBAFormat,THREE.HalfFloatType);texture.flipY=true;texture.mapping=THREE.EquirectangularReflectionMapping;texture.minFilter=texture.magFilter=THREE.LinearFilter;texture.needsUpdate=true;return texture;
+}
 export class WorldLighting {
   readonly sun=new THREE.DirectionalLight(0xfff1dd,2.8);
   readonly sunOffset=new THREE.Vector3(-85,50,-77);
   private sky?:THREE.DataTexture;private environment?:THREE.WebGLRenderTarget;private tier?:GraphicsTier;
   private photograph?:THREE.DataTexture;private loadVersion=0;private disposed=false;
   private backdrop?:THREE.DataTexture;
-  constructor(private scene:THREE.Scene,private renderer:THREE.WebGLRenderer,tier:GraphicsTier){
-    scene.backgroundIntensity=.85;scene.environmentIntensity=.85;scene.fog=new THREE.Fog(0xb0c0cc,300,1800);
-    scene.add(new THREE.HemisphereLight(0xbdd4e5,0x545649,.8));
-    const sun=this.sun;sun.position.set(-85,50,-77);sun.castShadow=true;
+  constructor(private scene:THREE.Scene,private renderer:THREE.WebGLRenderer,tier:GraphicsTier,private night=false){
+    scene.backgroundIntensity=.85;scene.environmentIntensity=night?.55:.85;scene.fog=new THREE.Fog(night?0x111e33:0xb0c0cc,300,1800);
+    scene.add(new THREE.HemisphereLight(night?0xc4d9f2:0xbdd4e5,night?0x344458:0x545649,night?1.2:.8));
+    const sun=this.sun;if(night){sun.color.setHex(0xd2e3ff);sun.intensity=2.1;this.sunOffset.set(-85,95,-77);}sun.position.copy(this.sunOffset);sun.castShadow=true;
     Object.assign(sun.shadow.camera,{left:-65,right:65,top:65,bottom:-65,near:1,far:400});sun.shadow.camera.updateProjectionMatrix();sun.shadow.normalBias=.025;sun.shadow.bias=-.0001;
     scene.add(sun,sun.target);this.setQuality(tier);
   }
   async loadSky(url:string){
+    if(this.night)return false;
     const version=++this.loadVersion;
     try{
       const source=await new HDRLoader().loadAsync(url);
@@ -81,10 +91,10 @@ export class WorldLighting {
     const profile=GRAPHICS_PROFILES[tier];
     if(this.scene.fog instanceof THREE.Fog){this.scene.fog.near=profile.viewFar*.26;this.scene.fog.far=profile.viewFar*.96;}
     if(!force&&this.tier&&profile.reflectionWidth===GRAPHICS_PROFILES[this.tier].reflectionWidth){this.tier=tier;this.updateShadowSize(profile.shadowSize);return;}
-    const sky=this.photograph?resizeSkyTexture(this.photograph,profile.reflectionWidth):createSkyTexture(profile.reflectionWidth),pmrem=new THREE.PMREMGenerator(this.renderer);
+    const sky=this.night?createNightSkyTexture(profile.reflectionWidth):this.photograph?resizeSkyTexture(this.photograph,profile.reflectionWidth):createSkyTexture(profile.reflectionWidth),pmrem=new THREE.PMREMGenerator(this.renderer);
     let environment:THREE.WebGLRenderTarget;
     try{environment=pmrem.fromEquirectangular(sky);}catch(error){sky.dispose();throw error;}finally{pmrem.dispose();}
-    if(!this.backdrop||force){const backdrop=createSkyBackdrop(this.photograph,this.sunOffset);this.backdrop?.dispose();this.backdrop=backdrop;this.scene.background=backdrop;}
+    if(!this.backdrop||force){const backdrop=this.night?createNightSkyTexture(512):createSkyBackdrop(this.photograph,this.sunOffset);this.backdrop?.dispose();this.backdrop=backdrop;this.scene.background=backdrop;}
     this.scene.environment=environment.texture;
     this.environment?.dispose();this.sky?.dispose();this.environment=environment;this.sky=sky;this.tier=tier;
     this.updateShadowSize(profile.shadowSize);

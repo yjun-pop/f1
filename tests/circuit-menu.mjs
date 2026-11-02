@@ -54,9 +54,9 @@ function environment(href='https://example.test/f1/',saved={}){
 let env=environment(undefined,{'apex-best-spa-v3':'114.49'}),starts=[],modes=[],wheelOpens=0;
 const menu=new CircuitMenu(env.root,{selected:'monza',mode:'auto',keyboard:true,start:(...args)=>starts.push(args),wheel:()=>wheelOpens++,transmission:mode=>modes.push(mode)});
 env.nodes.get('wheel-settings').emit('click');assert.equal(wheelOpens,1);assert.deepEqual(starts,[]);
-assert.equal((env.root.innerHTML.match(/type="radio"/g)??[]).length,3);
-assert.equal((env.root.innerHTML.match(/class="circuit-outline"/g)??[]).length,3);
-const previews=CIRCUITS.map(c=>circuitPreview(c));assert.equal(new Set(previews).size,3);assert.ok(previews.every(p=>!p.includes('NaN')&&!p.includes('Infinity')));
+assert.equal((env.root.innerHTML.match(/type="radio"/g)??[]).length,8);
+assert.equal((env.root.innerHTML.match(/class="circuit-outline"/g)??[]).length,8);
+const previews=CIRCUITS.map(c=>circuitPreview(c));assert.equal(new Set(previews).size,8);assert.ok(previews.every(p=>!p.includes('NaN')&&!p.includes('Infinity')));
 env.nodes.get('circuit-spa').emit('change');
 assert.equal(env.nodes.get('selection-title').textContent,'벨기에 · 스파');
 assert.equal(env.nodes.get('selection-record').textContent,'1:54.490');
@@ -65,9 +65,9 @@ assert.equal(env.nodes.get('circuit-spa').checked,true);assert.equal(env.nodes.g
 assert.deepEqual(starts,[]);assert.equal(env.href,'https://example.test/f1/','Previewing must not navigate or begin a race');
 env.nodes.get('start-transmission').value='manual';env.nodes.get('start-transmission').emit('change');env.nodes.get('start').emit('click');
 assert.deepEqual(modes,['manual']);assert.deepEqual(starts,[['spa','manual']]);
-console.log('PASS: three distinct geographic map cards, selected state, per-circuit record, no navigation on preview and one confirmed circuit/gearbox choice');
+console.log('PASS: eight distinct geographic map cards, selected state, per-circuit record, no navigation on preview and one confirmed circuit/gearbox choice');
 
-env.key('ArrowRight');assert.equal(env.nodes.get('circuit-monza').checked,true,'Circuit arrows wrap around');
+env.key('ArrowRight');assert.equal(env.nodes.get('circuit-monaco').checked,true,'Arrow selection must include the newly added circuits');menu.select('montreal');env.key('ArrowRight');assert.equal(env.nodes.get('circuit-monza').checked,true,'Circuit arrows wrap around');
 assert.equal(document.activeElement,env.nodes.get('circuit-monza'));
 env.key('Enter',env.nodes.get('start-transmission'));assert.equal(starts.length,1,'Enter in the gearbox dropdown must retain native behavior');
 env.key('Enter',{matches:()=>false,closest:()=>({})});assert.equal(starts.length,1,'Wheel setup input must not start the underlying race');

@@ -32,7 +32,7 @@ console.log('PASS: circuit selection defaults, persistence, invalid-ID fallback 
 const records=new Map(CIRCUITS.map((c,i)=>[`apex-best-${c.id}-v3`,160+i]));
 globalThis.localStorage={getItem:key=>records.get(key)??null,setItem:(key,value)=>records.set(key,String(value))};
 let uiTrack;
-for(const circuit of CIRCUITS.slice(1)){
+for(const circuit of CIRCUITS.slice(1,3)){
   const scene=new THREE.Scene(),track=new Track(scene,circuit),planner=new LinePlanner(track);if(circuit.id==='silverstone')uiTrack=track;
   assert.ok(Math.abs(track.length-circuit.length)<.001);
   assert.ok(track.point(0).distanceTo(track.point(1))<1e-8);

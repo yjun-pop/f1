@@ -56,6 +56,7 @@ export class Vehicle {
     let remaining=dt;while(remaining>1e-8){const step=Math.min(1/120,remaining);integrateBody(this,{...control,drs,boost:this.boosting},step);remaining-=step;}
     if(!this.aero.active)this.drsRequested=false;
     this.progress=this.track.nearestProgress(this.position,this.progress);
+    this.position.y=this.track.elevation(this.progress);
     const center=this.track.point(this.progress),offset=this.position.clone().sub(center);const lateral=offset.length();this.offRoad=lateral>9.7;if(this.offRoad){this.aero.clear();this.drsRequested=false;}
     if(lateral>14.55){const normal=offset.normalize();this.position.copy(center).addScaledVector(normal,14.55);const velocity=this.velocity,closing=velocity.dot(normal);if(closing>0){this.recordImpact(closing);this.setVelocity(velocity.addScaledVector(normal,-closing*1.22));}this.yawRate*=.6;}
     let delta=this.progress-this.lastProgress;if(delta<-.5)delta+=1;if(delta>.5)delta-=1;this.distance+=delta;this.lastProgress=this.progress;this.lap=1+Math.max(0,Math.floor(this.distance+1e-6));

@@ -28,11 +28,12 @@ export class Game {
     this.renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.7));this.renderer.setSize(window.innerWidth,window.innerHeight);this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=.95;this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;container.appendChild(this.renderer.domElement);
     let savedGraphics:unknown;try{savedGraphics=localStorage.getItem('apex-graphics-quality');}catch{}
     this.graphics=new GraphicsQuality(graphicsMode(savedGraphics),recommendedTier({memory:(navigator as Navigator&{deviceMemory?:number}).deviceMemory,cores:navigator.hardwareConcurrency,maxTextureSize:this.renderer.capabilities.maxTextureSize,width:window.innerWidth}));
-    this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier);this.sun=this.lighting.sun;
-    this.renderer.shadowMap.autoUpdate=false;
-    void this.lighting.loadSky(new URL('../assets/park-sky.hdr',import.meta.url).href);
     let savedCircuit:unknown;try{savedCircuit=localStorage.getItem('apex-circuit');}catch{}
-    this.track=new Track(this.scene,options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit));this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle});
+    const circuit=options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit);
+    this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier,!!circuit.night);this.sun=this.lighting.sun;
+    this.renderer.shadowMap.autoUpdate=false;
+    if(!circuit.night)void this.lighting.loadSky(new URL('../assets/park-sky.hdr',import.meta.url).href);
+    this.track=new Track(this.scene,circuit);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle});
     try{localStorage.setItem('apex-circuit',this.track.circuit.id);}catch{}
     try{
       const saved=localStorage.getItem('apex-motion-strength');

@@ -15,6 +15,7 @@ import {BarrierPath,createBarriers} from './BarrierGeometry';
 import {createGrandstands,updateGrandstands} from './Grandstands';
 import {DEFAULT_FIELD_SIZE} from './RaceRoster';
 import {gridSlot} from './StartingGrid';
+import {createCircuitScenery,updateCircuitScenery} from './CircuitScenery';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name:string;readonly country:string;readonly cornerCount:number;
@@ -33,6 +34,7 @@ export class Track {
   readonly surfaceGeometries=new Map<string,THREE.BufferGeometry>();
   private kerbNearby=new Uint8Array(0);
   private woodland?:THREE.Group;
+  private landmarks?:THREE.Group;
   constructor(scene:THREE.Scene,readonly circuit:CircuitDefinition=MONZA){
     this.name=circuit.name;this.country=circuit.country;this.cornerCount=circuit.cornerCount;
     let raw=circuit.points.map(([x,z])=>new THREE.Vector3(x,0,z));
@@ -71,11 +73,12 @@ export class Track {
       // Keep activation/expiry after detection, including a start-line crossing.
       this.drsZones=circuit.drs.map(zone=>{const detection=at(zone.detection),start=detection+wrap(at(zone.start)-detection),end=start+wrap(at(zone.end)-start);return {id:zone.id,detection,start,end};});
     }
-    this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
+    this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.landmarks=createCircuitScenery(this);this.group.add(this.landmarks);this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
     freezeStaticWorld(this.group);
   }
   updatePresentation(position:THREE.Vector3,tier:GraphicsTier){
     this.details.update(position,tier);updateGrandstands(this.grandstands,position,tier);
+    if(this.landmarks)updateCircuitScenery(this.landmarks,position,tier);
     const forest=this.woodland,profile=GRAPHICS_PROFILES[tier];
     if(forest)for(const child of forest.children){
       const mesh=child as THREE.InstancedMesh,bounds=mesh.userData.worldBounds as THREE.Sphere;
@@ -92,10 +95,11 @@ export class Track {
     }
     return margin;
   }
-  point(t:number){return this.curve.getPointAt(((t%1)+1)%1);}
+  elevation(t:number){const bridge=this.circuit.overpass;if(!bridge)return 0;let d=((t%1)+1)%1-bridge.progress;if(d<-.5)d++;if(d>.5)d--;const metres=Math.abs(d)*this.length;return metres>=bridge.span?0:bridge.height*(1+Math.cos(metres/bridge.span*Math.PI))*.5;}
+  point(t:number){return this.curve.getPointAt(((t%1)+1)%1).setY(this.elevation(t));}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
-  roadPoint(t:number){return this.visualRoad.point(t);}
+  roadPoint(t:number){return this.visualRoad.point(t).setY(this.elevation(t));}
   roadNormal(t:number){return this.visualRoad.normal(t);}
   kerbContact(position:THREE.Vector3,heading:number,progress:number){
     const cell=Math.round(((progress%1+1)%1)*this.kerbSegments.length)%this.kerbSegments.length;
@@ -130,14 +134,14 @@ export class Track {
     const count=Math.ceil(this.length),positions:number[]=[],uvs:number[]=[],indices:number[]=[],colors:number[]=[];
     for(let i=0;i<=count;i++){
       const t=i/count,p=this.roadPoint(t),n=this.roadNormal(t);
-      for(const side of [-1,-.55,0,.55,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH),shade=(.85+Math.abs(side)*.13)*landscapeShade(q.x*.6,q.z*.6);positions.push(q.x,.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);colors.push(shade,shade,shade);}
+      for(const side of [-1,-.55,0,.55,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH),shade=(.85+Math.abs(side)*.13)*landscapeShade(q.x*.6,q.z*.6);positions.push(q.x,q.y+.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);colors.push(shade,shade,shade);}
       if(i<count)for(let cross=0;cross<4;cross++){const k=i*5+cross;indices.push(k,k+1,k+5,k+1,k+6,k+5);}
     }
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geometry.setIndex(indices);geometry.computeVertexNormals();
     const material=new THREE.MeshStandardMaterial({...terrainMaps('asphalt'),color:0xe2e4e6,vertexColors:true,side:THREE.DoubleSide,roughness:.98,metalness:0});
     this.surfaceGeometries.set('asphalt-road',geometry);this.group.add(createTrackChunks(geometry,material,this.length,'asphalt-road'));
     this.group.add(createRoadDressing(this));
-    for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>this.roadPoint(i/count).addScaledVector(this.roadNormal(i/count),side*9.6).setY(.07));this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
+    for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>{const p=this.roadPoint(i/count).addScaledVector(this.roadNormal(i/count),side*9.6);p.y+=.07;return p;});this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
     const start=new THREE.Group();start.position.copy(this.point(0));const t=this.tangent(0);start.rotation.y=Math.atan2(t.x,t.z);
     const checkers=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.025,.7),new THREE.MeshBasicMaterial({color:0xffffff}),40),stamp=new THREE.Object3D();checkers.name='start-checkers';
     for(let row=0;row<2;row++)for(let col=0;col<20;col++){stamp.position.set(col-9.5,.1,row*.7);stamp.updateMatrix();checkers.setMatrixAt(row*20+col,stamp.matrix);checkers.setColorAt(row*20+col,new THREE.Color((row+col)%2?0x14191f:0xfaf8f0));}start.add(checkers);this.group.add(start);
@@ -155,8 +159,9 @@ export class Track {
     for(let i=0;i<points.count;i++){const shade=landscapeShade(center.x+points.getX(i),center.z-points.getY(i));colors.push(shade,shade,.94*shade);}
     ground.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
     ground.rotateX(-Math.PI/2);ground.translate(center.x,-.08,center.z);this.surfaceGeometries.set('grass-terrain',ground);
-    this.group.add(createSpatialChunks(ground,new THREE.MeshStandardMaterial({...terrainMaps('grass'),color:0xe3e6d7,vertexColors:true,roughness:1}),1000,'grass-terrain'));
-    this.woodland=createWoodland(this,p=>{for(let j=0;j<this.samples.length;j+=10)if(this.samples[j].distanceToSquared(p)<24*24)return false;return true;});this.group.add(this.woodland);
+    this.group.add(createSpatialChunks(ground,new THREE.MeshStandardMaterial({...terrainMaps(this.circuit.environment==='city'?'asphalt':'grass'),color:this.circuit.environment==='city'?(this.circuit.night?0x667385:0xa7b1b0):0xe3e6d7,vertexColors:true,roughness:1}),1000,'grass-terrain'));
+    const rivers=this.circuit.id==='montreal'?[.23,.7].map(t=>this.point(t).addScaledVector(this.normal(t),150)):[];
+    this.woodland=createWoodland(this,p=>{if(rivers.some(c=>Math.abs(p.x-c.x)<180&&Math.abs(p.z-c.z)<300))return false;for(let j=0;j<this.samples.length;j+=10)if(this.samples[j].distanceToSquared(p)<24*24)return false;return true;});this.group.add(this.woodland);
   }
   private buildCircuit(){
     const count=Math.ceil(this.length/3.1);
@@ -191,12 +196,12 @@ export class Track {
   private buildLighting(){
     const count=Math.ceil(this.length/52),dummy=new THREE.Object3D(),steel=new THREE.MeshStandardMaterial({color:0x61716e,metalness:.6,roughness:.4});
     const poles=new THREE.InstancedMesh(new THREE.CylinderGeometry(.14,.23,15,6),steel,count),lamps=new THREE.InstancedMesh(new THREE.BoxGeometry(3,.16,1.1),new THREE.MeshBasicMaterial({color:0xe8f4ff}),count);
-    for(let i=0;i<count;i++){const t=i/count,side=i%2?1:-1,p=this.point(t).addScaledVector(this.normal(t),side*19),n=this.normal(t);dummy.rotation.set(0,0,0);dummy.position.set(p.x,7.5,p.z);dummy.updateMatrix();poles.setMatrixAt(i,dummy.matrix);dummy.position.set(p.x-n.x*side*1.5,15,p.z-n.z*side*1.5);dummy.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z);dummy.updateMatrix();lamps.setMatrixAt(i,dummy.matrix);}this.group.add(poles,lamps);
+    for(let i=0;i<count;i++){const t=i/count,side=i%2?1:-1,p=this.point(t).addScaledVector(this.normal(t),side*19),n=this.normal(t);dummy.rotation.set(0,0,0);dummy.position.set(p.x,p.y+7.5,p.z);dummy.updateMatrix();poles.setMatrixAt(i,dummy.matrix);dummy.position.set(p.x-n.x*side*1.5,p.y+15,p.z-n.z*side*1.5);dummy.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z);dummy.updateMatrix();lamps.setMatrixAt(i,dummy.matrix);}this.group.add(poles,lamps);
   }
   private buildBrakeBoards(){
     for(const section of this.sections.filter(s=>s.braking))for(const distance of [150,100,50]){
       const t=section.progress-distance/this.length,p=this.point(t).addScaledVector(this.normal(t),-12.5),v=this.tangent(t),canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#eaf1e9';ctx.fillRect(0,0,128,128);ctx.fillStyle='#14231d';ctx.font='bold 64px sans-serif';ctx.textAlign='center';ctx.fillText(String(distance),64,85);
-      const board=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),side:THREE.DoubleSide}));board.position.copy(p).setY(1.9);board.rotation.y=Math.atan2(v.x,v.z)+Math.PI;this.group.add(board);
+      const board=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),side:THREE.DoubleSide}));board.position.copy(p);board.position.y+=1.9;board.rotation.y=Math.atan2(v.x,v.z)+Math.PI;this.group.add(board);
     }
   }
 }

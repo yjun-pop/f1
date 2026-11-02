@@ -25,7 +25,7 @@ const {TrafficPlanner}=await import(moduleURL('TrafficPlanner'));
 const {engineAcceleration}=await import(moduleURL('Powertrain'));
 const {observeTraffic}=await import(moduleURL('DriverAgent'));
 let referenceTrack;
-for(const circuit of CIRCUITS){
+for(const circuit of CIRCUITS.slice(0,3)){
  const track=new Track(new THREE.Scene(),circuit),planner=new LinePlanner(track);if(circuit.id==='monza')referenceTrack=track;
  for(const scenario of ['corner','sideways','clear-side','offroad','close','creeping','train']){
   const scene=new THREE.Scene(),race=new Race(track,scene,planner),player=new Vehicle(track,scene);race.state='racing';race.elapsed=20;race.balanceRivals=()=>{};

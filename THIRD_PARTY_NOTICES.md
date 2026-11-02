@@ -1,6 +1,6 @@
 # Circuit centerline data
 
-Monza, Silverstone and Spa centerlines adapted from [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits): circuits/it-1922.geojson, circuits/gb-1948.geojson and circuits/be-1925.geojson. Layouts are projected and scaled to their published lengths; Silverstone is re-anchored to the modern Hamilton start straight. These are simplified geographic recreations, not surveyed circuit assets.
+Monza, Silverstone, Spa, Monaco, Suzuka, Interlagos, Singapore and Montreal centerlines adapted from [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits): circuits/it-1922.geojson, circuits/gb-1948.geojson, circuits/be-1925.geojson, circuits/mc-1929.geojson, circuits/jp-1962.geojson, circuits/br-1940.geojson, circuits/sg-2008.geojson and circuits/ca-1978.geojson. Layouts are projected and scaled to their published lengths; Silverstone is re-anchored to the modern Hamilton start straight and Monaco to the harbour start straight. Singapore uses the modern 19-corner layout, normalized to 4,940m. These are simplified geographic recreations, not surveyed circuit assets.
 
 Copyright (c) 2019-2025 Tomislav Bacinger
 
