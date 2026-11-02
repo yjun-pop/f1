@@ -40,6 +40,7 @@ export class Vehicle {
     this.speed=0;this.lateralSpeed=0;this.yawRate=0;this.steer=0;this.steerAngle=0;this.throttle=0;this.brake=0;this.boosting=false;this.offRoad=false;this.acceleration=0;this.lateralAcceleration=0;this.gripUsage=0;this.sync();
   }
   recover(){const distance=this.distance,lap=this.lap;this.resetAt(this.progress);this.distance=distance;this.lap=lap;}
+  constrainToWalls(x:number,z:number,heading:number){return this.track.solidWalls?.resolve(this,x,z,heading)??false;}
   update(dt:number,input:Input){
     if(input.consume?.('KeyF'))this.drsRequested=this.aero.available&&!this.aero.active;
     const down=input.consume?.('KeyQ'),up=input.consume?.('KeyE');
@@ -53,12 +54,18 @@ export class Vehicle {
     const drs=control.drs??this.drsRequested;
     this.throttle=control.throttle;this.brake=control.brake;this.boosting=!!control.boost&&this.boost>1&&control.throttle>0&&control.brake===0&&!this.offRoad;
     this.boost=THREE.MathUtils.clamp(this.boost+(this.boosting?-24:8)*dt,0,100);
-    let remaining=dt;while(remaining>1e-8){const step=Math.min(1/120,remaining);integrateBody(this,{...control,drs,boost:this.boosting},step);remaining-=step;}
+    let remaining=dt;while(remaining>1e-8){
+      const step=Math.min(1/120,remaining),x=this.position.x,z=this.position.z,heading=this.heading;
+      integrateBody(this,{...control,drs,boost:this.boosting},step);this.constrainToWalls(x,z,heading);remaining-=step;
+    }
     if(!this.aero.active)this.drsRequested=false;
     this.progress=this.track.nearestProgress(this.position,this.progress);
     this.position.y=this.track.elevation(this.progress);
-    const center=this.track.point(this.progress),offset=this.position.clone().sub(center);const lateral=offset.length();this.offRoad=lateral>9.7;if(this.offRoad){this.aero.clear();this.drsRequested=false;}
-    if(lateral>14.55){const normal=offset.normalize();this.position.copy(center).addScaledVector(normal,14.55);const velocity=this.velocity,closing=velocity.dot(normal);if(closing>0){this.recordImpact(closing);this.setVelocity(velocity.addScaledVector(normal,-closing*1.22));}this.yawRate*=.6;}
+    const center=this.track.point(this.progress),offset=this.position.clone().sub(center);const lateral=offset.length();
+    const roadBias=this.track.compactBoundary?this.position.clone().sub(this.track.roadPoint(this.progress)).dot(this.track.roadNormal(this.progress)):0;
+    this.offRoad=this.track.compactBoundary?roadBias>this.track.roadHalfWidth(this.progress,1)-.3||roadBias<-this.track.roadHalfWidth(this.progress,-1)+.3:lateral>9.7;
+    if(this.offRoad){this.aero.clear();this.drsRequested=false;}
+    if(lateral>14.55&&!this.track.compactBoundary){const normal=offset.normalize();this.position.copy(center).addScaledVector(normal,14.55);const velocity=this.velocity,closing=velocity.dot(normal);if(closing>0){this.recordImpact(closing);this.setVelocity(velocity.addScaledVector(normal,-closing*1.22));}this.yawRate*=.6;}
     let delta=this.progress-this.lastProgress;if(delta<-.5)delta+=1;if(delta>.5)delta-=1;this.distance+=delta;this.lastProgress=this.progress;this.lap=1+Math.max(0,Math.floor(this.distance+1e-6));
     this.sync(dt);
   }
@@ -93,6 +100,7 @@ export function resolveCollision(a:Vehicle,b:Vehicle){
   const fa=new THREE.Vector3(Math.sin(a.heading),0,Math.cos(a.heading)),fb=new THREE.Vector3(Math.sin(b.heading),0,Math.cos(b.heading));
   for(const da of [-1.45,0,1.45])for(const db of [-1.45,0,1.45]){const x=a.position.clone().addScaledVector(fa,da),y=b.position.clone().addScaledVector(fb,db),d=x.distanceToSquared(y);if(d<closest){closest=d;pa=x;pb=y;}}
   const distance=Math.sqrt(closest),radius=2.15;if(distance>=radius)return false;
+  const oldAX=a.position.x,oldAZ=a.position.z,oldBX=b.position.x,oldBZ=b.position.z;
   const normal=distance>.001?pa.clone().sub(pb).divideScalar(distance):new THREE.Vector3(1,0,0),depth=radius-distance;
   a.position.addScaledVector(normal,depth*.51);b.position.addScaledVector(normal,-depth*.51);
   const va=a.velocity,vb=b.velocity,closing=va.clone().sub(vb).dot(normal);
@@ -101,5 +109,6 @@ export function resolveCollision(a:Vehicle,b:Vehicle){
     if(tangent.lengthSq()>.0001){tangent.normalize();const friction=THREE.MathUtils.clamp(-va.clone().sub(vb).dot(tangent)*.5,-impulse*.3,impulse*.3);va.addScaledVector(tangent,friction);vb.addScaledVector(tangent,-friction);}
     a.setVelocity(va);b.setVelocity(vb);
     const leverA=pa.clone().sub(a.position),leverB=pb.clone().sub(b.position);a.yawRate+=THREE.MathUtils.clamp((leverA.z*normal.x-leverA.x*normal.z)*impulse*.035,-.4,.4);b.yawRate-=THREE.MathUtils.clamp((leverB.z*normal.x-leverB.x*normal.z)*impulse*.035,-.4,.4);}
+  a.constrainToWalls(oldAX,oldAZ,a.heading);b.constrainToWalls(oldBX,oldBZ,b.heading);
   a.sync();b.sync();return true;
 }

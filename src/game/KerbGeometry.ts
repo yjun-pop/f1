@@ -3,7 +3,8 @@ import type {Track} from './Track';
 
 export const KERB_PROFILE=[[9.65,.035],[9.82,.043],[10.3,.055],[10.82,.044],[11.05,-.078]] as const;
 export const KERB_PAINT_LENGTH=.75;
-type KerbPath=Pick<Track,'roadPoint'|'roadNormal'|'length'>;
+type KerbPath=Pick<Track,'roadPoint'|'roadNormal'|'length'>&Partial<Pick<Track,'roadHalfWidth'>>;
+const kerbOffset=(track:KerbPath,t:number,side:number,offset:number)=>offset*(track.roadHalfWidth?.(t,side)??10)/10;
 interface Row {coordinate:number;p:THREE.Vector3;n:THREE.Vector3}
 export function connectKerbSegments(mask:Uint8Array,length:number){
   const original=mask.slice(),count=mask.length;
@@ -23,7 +24,7 @@ export function kerbRows(track:KerbPath,mask:Uint8Array){
     const split=(a:Row,b:Row,depth:number)=>{
       const mid=sample((a.coordinate+b.coordinate)/2);let refine=a.n.dot(b.n)<Math.cos(Math.PI/90);
       for(const offset of [-11.05,-9.65,9.65,11.05]){
-        const pa=a.p.clone().addScaledVector(a.n,offset),pb=b.p.clone().addScaledVector(b.n,offset),pm=mid.p.clone().addScaledVector(mid.n,offset);
+        const pa=a.p.clone().addScaledVector(a.n,Math.sign(offset)*kerbOffset(track,a.coordinate/mask.length,Math.sign(offset),Math.abs(offset))),pb=b.p.clone().addScaledVector(b.n,Math.sign(offset)*kerbOffset(track,b.coordinate/mask.length,Math.sign(offset),Math.abs(offset))),pm=mid.p.clone().addScaledVector(mid.n,Math.sign(offset)*kerbOffset(track,mid.coordinate/mask.length,Math.sign(offset),Math.abs(offset)));
         if(pa.distanceToSquared(pb)>.6*.6||pm.distanceToSquared(pa.add(pb).multiplyScalar(.5))>.001*.001)refine=true;
       }
       if(refine&&depth<7){split(a,mid,depth+1);split(mid,b,depth+1);}else rows.push(b);
@@ -36,7 +37,7 @@ export function createKerbContacts(track:KerbPath,mask:Uint8Array){
   return kerbRows(track,mask).map(rows=>{
     const segments:KerbContactSegment[]=[];
     for(const side of [-1,1])for(let j=1;j<rows.length;j++){
-      const ra=rows[j-1],rb=rows[j],a=ra.p.clone().addScaledVector(ra.n,side*10.35),b=rb.p.clone().addScaledVector(rb.n,side*10.35),n=ra.n.clone().add(rb.n).multiplyScalar(side*.5);
+      const ra=rows[j-1],rb=rows[j],a=ra.p.clone().addScaledVector(ra.n,side*kerbOffset(track,ra.coordinate/mask.length,side,10.35)),b=rb.p.clone().addScaledVector(rb.n,side*kerbOffset(track,rb.coordinate/mask.length,side,10.35)),n=ra.n.clone().add(rb.n).multiplyScalar(side*.5);
       const dx=b.x-a.x,dz=b.z-a.z;segments.push({x:a.x,z:a.z,dx,dz,nx:n.x,nz:n.z,det:dx*n.z-dz*n.x});
     }return segments;
   });
@@ -53,14 +54,14 @@ export function createKerbGeometry(track:KerbPath,mask:Uint8Array){
       if(!mask[cell]){previous=undefined;distance=0;continue;}
       const rows:number[][]=[];
       for(const sample of cells[cell]){
-        const {p,n,coordinate}=sample,center=p.clone().addScaledVector(n,side*10.35),fraction=coordinate-cell+.5;
+        const {p,n,coordinate}=sample,center=p.clone().addScaledVector(n,side*kerbOffset(track,coordinate/count,side,10.35)),fraction=coordinate-cell+.5;
         if(previous)distance+=center.distanceTo(previous);previous=center;
         const edgeDistance=Math.min(left[cell]+fraction,right[cell]+1-fraction)*track.length/count,blend=THREE.MathUtils.smoothstep(edgeDistance,0,3),row:number[]=[];
         for(let cross=0;cross<profile;cross++){
           const key=`${side}/${coordinate}/${cross}`;let index=vertices.get(key);
           if(index===undefined){
             const [offset,height]=KERB_PROFILE[cross],base=THREE.MathUtils.lerp(.035,-.078,(offset-9.65)/1.4);
-            index=positions.length/3;vertices.set(key,index);positions.push(p.x+n.x*side*offset,p.y+THREE.MathUtils.lerp(base,height,blend),p.z+n.z*side*offset);
+            index=positions.length/3;vertices.set(key,index);const lateral=side*kerbOffset(track,coordinate/count,side,offset);positions.push(p.x+n.x*lateral,p.y+THREE.MathUtils.lerp(base,height,blend),p.z+n.z*lateral);
             uvs.push(distance/(2*KERB_PAINT_LENGTH),(offset-9.65)/1.4);progress.push(coordinate/count);
           }row.push(index);
         }rows.push(row);

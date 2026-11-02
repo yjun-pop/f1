@@ -53,7 +53,8 @@ export class CornerRacecraft {
       // Do not add clipping to the already calibrated road-edge trajectory.
       for(const offset of [-220,-180,-140,-100,-60,-35,0,22,50,80,110]){
         const t=(corner.apex+offset)/length,base=this.path.point(t).sub(this.track.point(t)).dot(this.track.normal(t));
-        if(Math.abs(base+amplitude*this.weight(role,offset))>Math.max(7.2,Math.abs(base))+.01){amplitude=0;break;}
+        const lane=base+amplitude*this.weight(role,offset),bounds=this.track.drivingBounds(t);
+        if(this.track.compactBoundary?lane<bounds.min||lane>bounds.max:Math.abs(lane)>Math.max(7.2,Math.abs(base))+.01){amplitude=0;break;}
       }
       this.commitment={role,opponent:opponent.car,apex:corner.apex,amplitude,elite};this.selections++;
     }

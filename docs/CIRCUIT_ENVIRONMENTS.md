@@ -12,7 +12,7 @@ WGS84 anchors entered for this game; they are not a downloaded building survey,
 GIS shoreline dataset, photogrammetry asset, or an exact reproduction of a venue.
 Landmarks can move up to 300 m to clear the widened game road and existing stands.
 The Monza banking feature follows its own curved ribbon and trims portions near
-roads. The road layout, vehicle physics, AI targets, and lap timing are unchanged.
+roads. The geographic centreline and lap timing are unchanged. Monaco subsequently adds adaptive boundary widths and physical wall contact; see MONACO_BOUNDARIES.md.
 
 | Circuit | Location and reference features | Game interpretation |
 |---|---|---|

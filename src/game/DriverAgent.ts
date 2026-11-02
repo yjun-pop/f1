@@ -217,10 +217,11 @@ export class DriverAgent {
         // Try both passing corridors and reject ones that clip the edge at
         // either car or at the steering target. Clamping an impossible pass
         // to the same lane used to create queues and repeated contact.
-        const offsets=[offsetAt(car.progress),offsetAt(ahead.progress),offsetAt(t)];
-        if(competitive)for(let distance=30;distance<=Math.max(160,car.speed*2.5);distance+=30)offsets.push(offsetAt(car.progress+distance/this.track.length));
-        const low=Math.max(...offsets.map(offset=>-7.4-offset),competitive?-4.2:-Infinity);
-        const high=Math.min(...offsets.map(offset=>7.4-offset),competitive?4.2:Infinity);
+        const corridor=[car.progress,ahead.progress,t];
+        if(competitive)for(let distance=30;distance<=Math.max(160,car.speed*2.5);distance+=30)corridor.push(car.progress+distance/this.track.length);
+        const corridors=corridor.map(progress=>({bounds:this.track.drivingBounds(progress,7.4),offset:offsetAt(progress)}));
+        const low=Math.max(...corridors.map(c=>c.bounds.min-c.offset),competitive?-4.2:-Infinity);
+        const high=Math.min(...corridors.map(c=>c.bounds.max-c.offset),competitive?4.2:Infinity);
         const lanes=[otherBias-3.5,otherBias+3.5].filter(lane=>lane>=low&&lane<=high&&traffic.every(other=>{
           const predicted=biasAt(other)+(competitive?(this.memory.get(other.car)?.lateralRate??0)*.6:0);
           if(other===ahead||Math.min(Math.abs(biasAt(other)-lane),Math.abs(predicted-lane))>clearance)return true;
@@ -319,14 +320,14 @@ export class DriverAgent {
       if(localRoute.mode==='backout'||car.speed<0){o.control={steer:0,throttle:localRoute.mode==='backout'?.2:0,brake:localRoute.mode==='backout'?0:1,reverse:localRoute.mode==='backout'};return;}
     }
     const baseOffset=this.speedPlanner.point(t).sub(this.track.point(t)).dot(this.track.normal(t));
-    desiredLane=THREE.MathUtils.clamp(desiredLane,-7.2-baseOffset,7.2-baseOffset);
+    const bounds=this.track.drivingBounds(t);desiredLane=THREE.MathUtils.clamp(desiredLane,bounds.min-baseOffset,bounds.max-baseOffset);
     // Slow obstacle manoeuvres can use their short steering preview directly.
     // Racing-speed lane changes retain a gradual steering target so braking
     // and an instantaneous lateral demand cannot spend the same tire grip.
     // Cancelling a merge must also cancel its old lateral steering target;
     // damping toward an occupied lane would keep drifting into the next car.
     o.lane=steeringRoute?.lookahead!==undefined||steeringRoute?.holdLane?desiredLane:THREE.MathUtils.damp(o.lane,desiredLane,1.2+o.aggression,o.reaction);
-    const lane=THREE.MathUtils.clamp(o.lane,-7.2-baseOffset,7.2-baseOffset);
+    const lane=THREE.MathUtils.clamp(o.lane,bounds.min-baseOffset,bounds.max-baseOffset);
     const point=this.speedPlanner.point(t).addScaledVector(this.track.normal(t),lane);
     const to=point.sub(car.position),desired=Math.atan2(to.x,to.z);
     const error=Math.atan2(Math.sin(desired-car.heading),Math.cos(desired-car.heading));
@@ -349,7 +350,11 @@ export class DriverAgent {
       // A passing corridor can have a tighter radius than the racing line.
       // Anticipate its corners instead of carrying the ideal line's speed
       // into the grass while racing side by side.
-      const lanePoint=(progress:number)=>steeringRoute?steeringRoute.point(progress):this.speedPlanner.point(progress).addScaledVector(this.track.normal(progress),THREE.MathUtils.clamp(cornerPlan&&this.intent!=='yield'?cornerPlan.laneAt(progress):lane,-7.2-offsetAt(progress),7.2-offsetAt(progress)));
+      const lanePoint=(progress:number)=>{
+        if(steeringRoute)return steeringRoute.point(progress);
+        const limits=this.track.drivingBounds(progress),offset=offsetAt(progress),desired=cornerPlan&&this.intent!=='yield'?cornerPlan.laneAt(progress):lane;
+        return this.speedPlanner.point(progress).addScaledVector(this.track.normal(progress),THREE.MathUtils.clamp(desired,limits.min-offset,limits.max-offset));
+      };
       for(const distance of advanced>.1?[0,12,24,40,60,90,120,160,200]:[0,12,24,40,60,90]){
         const progress=car.progress+distance/this.track.length;
         const a=lanePoint(progress-4/this.track.length),b=lanePoint(progress),c=lanePoint(progress+4/this.track.length);

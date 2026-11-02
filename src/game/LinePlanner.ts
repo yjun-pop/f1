@@ -23,7 +23,7 @@ export class LinePlanner {
     const normals=centers.map((_,i)=>track.normal(i/this.count));
     const apexWidths:number[]=[];
     const halfWidth=options.halfWidth??ROAD_HALF_WIDTH-2.2;
-    const lower=new Float64Array(this.count).fill(-halfWidth),upper=new Float64Array(this.count).fill(halfWidth);
+    const lower=Float64Array.from({length:this.count},(_,i)=>track.drivingBounds(i/this.count,halfWidth).min),upper=Float64Array.from({length:this.count},(_,i)=>track.drivingBounds(i/this.count,halfWidth).max);
     // Signed heading changes distinguish inside from outside. Join small
     // straight gaps in polygonal source data, but never merge opposite turns.
     const angles=centers.map((_,i)=>{
@@ -51,7 +51,7 @@ export class LinePlanner {
             // One apex gate only: a flat run of fixed inner offsets forces
             // the car to trace a tight inner radius instead of cutting a
             // smooth tangent through the apex. Tight chicanes need more room.
-            lower[apex]=upper[apex]=direction*insideOffset;
+            lower[apex]=upper[apex]=THREE.MathUtils.clamp(direction*insideOffset,lower[apex],upper[apex]);
           }
         }
         from=index;direction=label;

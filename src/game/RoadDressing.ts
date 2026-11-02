@@ -23,7 +23,7 @@ export function createRoadDressing(track:Track){
     const base=gravelPositions.length/3;
     for(let i=0;i<=64;i++){
       const progress=t+(i-32)*2/track.length,p=track.roadPoint(progress),n=track.roadNormal(progress),edge=Math.sin(i/64*Math.PI)**.55;
-      for(const outer of [false,true]){const offset=11.08+(outer?4.7*edge:0),shade=.91+.06*Math.sin(p.x*.039+p.z*.027);gravelPositions.push(p.x+n.x*turn*offset,p.y-.074,p.z+n.z*turn*offset);gravelUV.push((outer?4.7*edge:0)/2,i);gravelProgress.push(progress);gravelColors.push(shade,shade,shade);}
+      for(const outer of [false,true]){const offset=track.roadHalfWidth(progress,turn)+1.08+(outer?4.7*edge:0),shade=.91+.06*Math.sin(p.x*.039+p.z*.027);gravelPositions.push(p.x+n.x*turn*offset,p.y-.074,p.z+n.z*turn*offset);gravelUV.push((outer?4.7*edge:0)/2,i);gravelProgress.push(progress);gravelColors.push(shade,shade,shade);}
       if(i<64){const k=base+i*2;gravelIndices.push(k,k+1,k+2,k+1,k+3,k+2);}
     }
   }

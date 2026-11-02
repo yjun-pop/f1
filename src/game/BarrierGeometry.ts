@@ -44,7 +44,7 @@ function simplify(points:THREE.Vector3[],tolerance:number):THREE.Vector3[]{
 export class BarrierPath {
   readonly points:THREE.Vector3[];readonly distances:number[]=[0];readonly length:number;
   constructor(track:Track,side:number){
-    const count=Math.ceil(track.length),raw=Array.from({length:count},(_,i)=>track.roadPoint(i/count).addScaledVector(track.roadNormal(i/count),side*16.2));
+    const count=Math.ceil(track.length),raw=Array.from({length:count},(_,i)=>track.roadPoint(i/count).addScaledVector(track.roadNormal(i/count),side*(track.compactBoundary?.offset(i/count,side)??16.2)));
     const clean=removeLoops(raw),arc=[0];
     for(let i=0;i<clean.length;i++)arc.push(arc[i]+clean[i].distanceTo(clean[(i+1)%clean.length]));
     const total=arc[arc.length-1],spacing=total/Math.ceil(total),uniform:THREE.Vector3[]=[];let segment=0;

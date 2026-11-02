@@ -19,6 +19,9 @@ import {createCircuitScenery,updateCircuitScenery} from './CircuitScenery';
 import {environmentFor,regionalHeight,type GeoPoint} from './CircuitEnvironment';
 import {ScenerySpace,sceneryFootprint} from './ScenerySpace';
 import {regionalWaters,containsWater,type WaterArea} from './RegionalWaters';
+import {CompactTrackBoundary} from './CompactTrackBoundary';
+import {createTunnelLayout,type TunnelLayout} from './TunnelGeometry';
+import {TrackWallCollision} from './TrackWallCollision';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name:string;readonly country:string;readonly cornerCount:number;
@@ -35,6 +38,8 @@ export class Track {
   private visualRoad:VisualRoadCurve;
   readonly barrierPaths:readonly BarrierPath[];private grandstands:THREE.Group[]=[];
   readonly surfaceGeometries=new Map<string,THREE.BufferGeometry>();
+  readonly compactBoundary?:CompactTrackBoundary;readonly tunnel?:TunnelLayout;
+  readonly solidWalls?:TrackWallCollision;
   readonly scenerySpace:ScenerySpace;readonly waters:readonly WaterArea[];
   private geographicScale:number;
   private kerbNearby=new Uint8Array(0);
@@ -61,6 +66,7 @@ export class Track {
     const scale=circuit.length/this.curve.getLength();this.geographicScale=scale;for(const p of points)p.multiplyScalar(scale);
     this.curve.updateArcLengths();this.length=this.curve.getLength();
     this.visualRoad=new VisualRoadCurve(this.length,t=>this.point(t));
+    if(circuit.id==='monaco')this.compactBoundary=new CompactTrackBoundary(this);
     this.barrierPaths=[new BarrierPath(this,-1),new BarrierPath(this,1)];
     this.sampleCount=Math.ceil(this.length/2);
     this.samples=Array.from({length:this.sampleCount},(_,i)=>this.point(i/this.sampleCount));
@@ -72,6 +78,8 @@ export class Track {
       this.sections.push({number:section.number,name:section.name,progress:closest/this.sampleCount,braking:section.braking});
     }
     this.sections.sort((a,b)=>a.progress-b.progress);
+    this.tunnel=createTunnelLayout(this);
+    if(this.compactBoundary||this.tunnel)this.solidWalls=new TrackWallCollision(this);
     const wrap=(m:number)=>(m%this.length+this.length)%this.length;
     const at=(gate:{section:number;offset:number})=>wrap(this.sections.find(s=>s.number===gate.section)!.progress*this.length+gate.offset);
     this.controlMargins=(circuit.aiControlMargins??[]).map(zone=>({start:at(zone.from),length:wrap(at(zone.to)-at(zone.from)),margin:zone.margin}));
@@ -111,9 +119,17 @@ export class Track {
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
   roadPoint(t:number){return this.visualRoad.point(t).setY(this.elevation(t));}
   roadNormal(t:number){return this.visualRoad.normal(t);}
+  roadHalfWidth(t:number,side:number){return this.compactBoundary?Math.min(ROAD_HALF_WIDTH,this.compactBoundary.offset(t,side)-1):ROAD_HALF_WIDTH;}
+  drivingBounds(t:number,halfWidth=7.2){
+    if(!this.compactBoundary)return {min:-halfWidth,max:halfWidth};
+    const center=this.point(t),road=this.roadPoint(t),n=this.normal(t),rn=this.roadNormal(t),bias=road.sub(center).dot(n),alignment=rn.dot(n),margin=2.9;
+    // Reserve the complete wing/tyre envelope through a narrowing curve.
+    return {min:Math.max(-halfWidth,bias-this.compactBoundary.offset(t,-1)*alignment+margin),max:Math.min(halfWidth,bias+this.compactBoundary.offset(t,1)*alignment-margin)};
+  }
   kerbContact(position:THREE.Vector3,heading:number,progress:number){
     const cell=Math.round(((progress%1+1)%1)*this.kerbSegments.length)%this.kerbSegments.length;
-    if(!this.kerbNearby[cell]||position.distanceToSquared(this.point(progress))<5.5*5.5)return 0;
+    const inner=Math.max(0,Math.min(this.roadHalfWidth(progress,-1),this.roadHalfWidth(progress,1))-4.5);
+    if(!this.kerbNearby[cell]||position.distanceToSquared(this.point(progress))<inner*inner)return 0;
     let contact=0;
     for(const axle of [-1.8,1.8])for(const side of [-1,1]){
       const wheel=position.clone().add(new THREE.Vector3(Math.sin(heading)*axle+Math.cos(heading)*side,0,Math.cos(heading)*axle-Math.sin(heading)*side));
@@ -144,14 +160,14 @@ export class Track {
     const count=Math.ceil(this.length),positions:number[]=[],uvs:number[]=[],indices:number[]=[],colors:number[]=[];
     for(let i=0;i<=count;i++){
       const t=i/count,p=this.roadPoint(t),n=this.roadNormal(t);
-      for(const side of [-1,-.55,0,.55,1]){const q=p.clone().addScaledVector(n,side*ROAD_HALF_WIDTH),shade=(.85+Math.abs(side)*.13)*landscapeShade(q.x*.6,q.z*.6);positions.push(q.x,q.y+.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);colors.push(shade,shade,shade);}
+      for(const side of [-1,-.55,0,.55,1]){const q=p.clone().addScaledVector(n,side*this.roadHalfWidth(t,side)),shade=(.85+Math.abs(side)*.13)*landscapeShade(q.x*.6,q.z*.6);positions.push(q.x,q.y+.035,q.z);uvs.push((side+1)*ROAD_HALF_WIDTH/4,t*this.length/4);colors.push(shade,shade,shade);}
       if(i<count)for(let cross=0;cross<4;cross++){const k=i*5+cross;indices.push(k,k+1,k+5,k+1,k+6,k+5);}
     }
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geometry.setIndex(indices);geometry.computeVertexNormals();
     const material=new THREE.MeshStandardMaterial({...terrainMaps('asphalt'),color:0xe2e4e6,vertexColors:true,side:THREE.DoubleSide,roughness:.98,metalness:0});
     this.surfaceGeometries.set('asphalt-road',geometry);this.group.add(createTrackChunks(geometry,material,this.length,'asphalt-road'));
     this.group.add(createRoadDressing(this));
-    for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>{const p=this.roadPoint(i/count).addScaledVector(this.roadNormal(i/count),side*9.6);p.y+=.07;return p;});this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
+    for(const side of [-1,1]){const points=Array.from({length:count+1},(_,i)=>{const p=this.roadPoint(i/count).addScaledVector(this.roadNormal(i/count),side*this.roadHalfWidth(i/count,side)*.96);p.y+=.07;return p;});this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xe4e8e9})));}
     const start=new THREE.Group();start.position.copy(this.point(0));const t=this.tangent(0);start.rotation.y=Math.atan2(t.x,t.z);
     const checkers=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.025,.7),new THREE.MeshBasicMaterial({color:0xffffff}),40),stamp=new THREE.Object3D();checkers.name='start-checkers';
     for(let row=0;row<2;row++)for(let col=0;col<20;col++){stamp.position.set(col-9.5,.1,row*.7);stamp.updateMatrix();checkers.setMatrixAt(row*20+col,stamp.matrix);checkers.setColorAt(row*20+col,new THREE.Color((row+col)%2?0x14191f:0xfaf8f0));}start.add(checkers);this.group.add(start);

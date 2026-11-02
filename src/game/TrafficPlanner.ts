@@ -58,7 +58,8 @@ export class TrafficPlanner {
     for(const car of this.sluggish.keys())if(!live.has(car))this.sluggish.delete(car);
     const rearClear=seen.every(s=>s.gap>=0||Math.abs(s.lane-from)>s.halfWidth+1.8||-s.gap>11+Math.max(0,s.forward)*1.2);
     const forward=this.track.tangent(origin),headingDifference=car.heading-Math.atan2(forward.x,forward.z);
-    const reverseSafe=rearClear&&Math.abs(from-Math.sin(headingDifference)*4.5)<7.1;
+    const bounds=this.track.drivingBounds?.(origin,7.1)??{min:-7.1,max:7.1},reverseLane=from-Math.sin(headingDifference)*4.5;
+    const reverseSafe=rearClear&&reverseLane>bounds.min&&reverseLane<bounds.max;
     const backRoute=(moving:boolean):TrafficRoute=>({mode:moving?'backout':'wait',speed:0,target:this.commitment?.target,laneAt:()=>from,point:t=>this.track.point(t).addScaledVector(this.track.normal(t),from)});
     if(this.backing){
       if(car.distance>this.backing.distance&&time<this.backing.until){this.mode=reverseSafe?'backout':'wait';return backRoute(reverseSafe);}
@@ -100,14 +101,14 @@ export class TrafficPlanner {
     const progressScale=(point:(t:number)=>THREE.Vector3,t:number)=>Math.max(.25,point(t+3/length).distanceTo(point(t-3/length))/6);
     const targetScale=target?progressScale(t=>this.track.point(t).addScaledVector(this.track.normal(t),target.lane),target.sample.progress):1;
     const makeRoute=(goal:number,merge=false)=>{
-      const laneAt=(progress:number)=>THREE.MathUtils.clamp(merge?referenceLane(progress):goal,-7.1,7.1);
+      const laneAt=(progress:number)=>{const limits=this.track.drivingBounds?.(progress,7.1)??{min:-7.1,max:7.1};return THREE.MathUtils.clamp(merge?referenceLane(progress):goal,limits.min,limits.max);};
       const point=(progress:number)=>this.track.point(progress).addScaledVector(this.track.normal(progress),laneAt(progress));
       return {laneAt,point};
     };
     const goals=merging?[referenceLane(origin+40/length),from]:[
       this.commitment?.lane??from,from,-6.8,-4.5,-2.25,0,2.25,4.5,6.8,
       target!.lane-target!.halfWidth-1.8-this.character.caution*.2,target!.lane+target!.halfWidth+1.8+this.character.caution*.2
-    ].map(n=>THREE.MathUtils.clamp(n,-7.1,7.1));
+    ].map(n=>THREE.MathUtils.clamp(n,bounds.min,bounds.max));
     let best:{lane:number;speed:number;score:number;route:ReturnType<typeof makeRoute>}|undefined;
     for(const goal of [...new Set(goals.map(n=>Math.round(n*20)/20))]){
       // Do not aim back through the vehicle being passed. A time-based sweep

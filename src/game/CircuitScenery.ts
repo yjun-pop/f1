@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type {Track} from './Track';
 import {GRAPHICS_PROFILES,type GraphicsTier} from './Graphics';
 import {createRegionalScenery} from './RegionalScenery';
+import {createTunnelGeometry} from './TunnelGeometry';
 
 /** Circuit landmarks use static meshes/local instance batches, never a light
  * or shadow map per building. They are simplified game scenery. */
@@ -29,19 +30,11 @@ export function createCircuitScenery(track:Track){
     const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=96;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#f1ede1';ctx.fillRect(0,0,1024,96);ctx.fillStyle='#b51e37';ctx.font='bold 56px sans-serif';ctx.textAlign='center';ctx.fillText('WALL OF CHAMPIONS',512,67);
     const panel=new THREE.Mesh(new THREE.PlaneGeometry(30,1.4),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),side:THREE.DoubleSide}));panel.position.y=2;panel.rotation.y=-Math.PI/2;group.add(panel);register(group);
   }
-  if(track.circuit.tunnel){
-    const start=track.sections.find(s=>s.number===track.circuit.tunnel!.from)!.progress+30/track.length;
-    const end=track.sections.find(s=>s.number===track.circuit.tunnel!.to)!.progress-65/track.length;
-    const rows=Math.max(2,Math.ceil((end-start)*track.length/5)),positions:number[]=[],indices:number[]=[];
-    for(let i=0;i<=rows;i++){
-      const t=THREE.MathUtils.lerp(start,end,i/rows),p=track.point(t),n=track.normal(t);
-      for(const [side,height]of[[-1,0],[-1,5.8],[1,5.8],[1,0]])positions.push(p.x+n.x*side*12.4,p.y+height,p.z+n.z*side*12.4);
-      if(i<rows)for(let face=0;face<3;face++){const k=i*4+face;indices.push(k,k+1,k+4,k+1,k+5,k+4);}
-    }
-    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setIndex(indices);geometry.computeVertexNormals();
+  if(track.tunnel){
+    const {start,end}=track.tunnel,geometry=createTunnelGeometry(track.tunnel);
     const group=new THREE.Group();group.name='monaco-tunnel';const shell=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0x5e6c78,roughness:.94,side:THREE.DoubleSide}));shell.castShadow=true;group.add(shell);
-    const lamps=new THREE.InstancedMesh(new THREE.BoxGeometry(.2,.12,2.8),new THREE.MeshBasicMaterial({color:0xf1f2d9}),Math.floor(rows/3)+1);
-    for(let i=0;i<lamps.count;i++){const t=THREE.MathUtils.lerp(start,end,i/Math.max(1,lamps.count-1)),p=track.point(t);stamp.position.copy(p);stamp.position.y+=5.65;stamp.rotation.set(0,Math.atan2(track.tangent(t).x,track.tangent(t).z),0);stamp.updateMatrix();lamps.setMatrixAt(i,stamp.matrix);}group.add(lamps);register(group);
+    const lamps=new THREE.InstancedMesh(new THREE.BoxGeometry(.2,.12,2.8),new THREE.MeshBasicMaterial({color:0xf1f2d9}),Math.floor((end-start)*track.length/15)+1);
+    for(let i=0;i<lamps.count;i++){const t=THREE.MathUtils.lerp(start,end,i/Math.max(1,lamps.count-1)),p=track.roadPoint(t);stamp.position.copy(p);stamp.position.y+=5.65;stamp.rotation.set(0,Math.atan2(track.tangent(t).x,track.tangent(t).z),0);stamp.updateMatrix();lamps.setMatrixAt(i,stamp.matrix);}group.add(lamps);register(group);
   }
   if(track.circuit.overpass){
     const b=track.circuit.overpass,positions:number[]=[],indices:number[]=[];
