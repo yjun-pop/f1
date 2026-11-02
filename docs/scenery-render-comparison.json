@@ -1,0 +1,64 @@
+{
+  "condition": "Chromium SwiftShader, 1280x720, medium, start/finish forward camera, track/environment only; no player or rival vehicles; excludes shadow-update frame",
+  "baseline": "f338b9f",
+  "circuits": [
+    {
+      "circuit": "monza",
+      "callsBefore": 205,
+      "callsAfter": 189,
+      "trianglesBefore": 214846,
+      "trianglesAfter": 183670
+    },
+    {
+      "circuit": "silverstone",
+      "callsBefore": 298,
+      "callsAfter": 291,
+      "trianglesBefore": 282918,
+      "trianglesAfter": 230116
+    },
+    {
+      "circuit": "spa",
+      "callsBefore": 111,
+      "callsAfter": 101,
+      "trianglesBefore": 160090,
+      "trianglesAfter": 103872
+    },
+    {
+      "circuit": "monaco",
+      "callsBefore": 244,
+      "callsAfter": 223,
+      "trianglesBefore": 270015,
+      "trianglesAfter": 241957
+    },
+    {
+      "circuit": "suzuka",
+      "callsBefore": 143,
+      "callsAfter": 133,
+      "trianglesBefore": 168014,
+      "trianglesAfter": 146216
+    },
+    {
+      "circuit": "interlagos",
+      "callsBefore": 126,
+      "callsAfter": 122,
+      "trianglesBefore": 171144,
+      "trianglesAfter": 150656
+    },
+    {
+      "circuit": "singapore",
+      "callsBefore": 118,
+      "callsAfter": 118,
+      "trianglesBefore": 123735,
+      "trianglesAfter": 104761
+    },
+    {
+      "circuit": "montreal",
+      "callsBefore": 154,
+      "callsAfter": 144,
+      "trianglesBefore": 176919,
+      "trianglesAfter": 174207
+    }
+  ],
+  "callsReductionPercent": 5.575411007862763,
+  "triangleReductionPercent": 14.813345317063863
+}

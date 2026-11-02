@@ -16,6 +16,9 @@ import {createGrandstands,updateGrandstands} from './Grandstands';
 import {DEFAULT_FIELD_SIZE} from './RaceRoster';
 import {gridSlot} from './StartingGrid';
 import {createCircuitScenery,updateCircuitScenery} from './CircuitScenery';
+import {environmentFor,regionalHeight,type GeoPoint} from './CircuitEnvironment';
+import {ScenerySpace} from './ScenerySpace';
+import {regionalWaters,containsWater,type WaterArea} from './RegionalWaters';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
   readonly name:string;readonly country:string;readonly cornerCount:number;
@@ -32,6 +35,8 @@ export class Track {
   private visualRoad:VisualRoadCurve;
   readonly barrierPaths:readonly BarrierPath[];private grandstands:THREE.Group[]=[];
   readonly surfaceGeometries=new Map<string,THREE.BufferGeometry>();
+  readonly scenerySpace:ScenerySpace;readonly waters:readonly WaterArea[];
+  private geographicScale:number;
   private kerbNearby=new Uint8Array(0);
   private woodland?:THREE.Group;
   private landmarks?:THREE.Group;
@@ -53,13 +58,14 @@ export class Track {
     }
     this.curve=new THREE.CatmullRomCurve3(points,true,'centripetal');
     this.curve.arcLengthDivisions=24000;this.curve.updateArcLengths();
-    const scale=circuit.length/this.curve.getLength();for(const p of points)p.multiplyScalar(scale);
+    const scale=circuit.length/this.curve.getLength();this.geographicScale=scale;for(const p of points)p.multiplyScalar(scale);
     this.curve.updateArcLengths();this.length=this.curve.getLength();
     this.visualRoad=new VisualRoadCurve(this.length,t=>this.point(t));
     this.barrierPaths=[new BarrierPath(this,-1),new BarrierPath(this,1)];
     this.sampleCount=Math.ceil(this.length/2);
     this.samples=Array.from({length:this.sampleCount},(_,i)=>this.point(i/this.sampleCount));
     this.bounds.setFromPoints(this.samples);
+    this.scenerySpace=new ScenerySpace(this.length,t=>this.point(t));this.waters=regionalWaters(this);
     for(const section of circuit.sections){const [lon,lat]=section.coordinate;
       const p=new THREE.Vector3((lon-circuit.origin[0])*111320*Math.cos(circuit.origin[1]*Math.PI/180)*scale,0,-(lat-circuit.origin[1])*111320*scale);
       let closest=0,best=Infinity;for(let i=0;i<this.sampleCount;i++){const d=this.samples[i].distanceToSquared(p);if(d<best){best=d;closest=i;}}
@@ -83,7 +89,9 @@ export class Track {
     if(forest)for(const child of forest.children){
       const mesh=child as THREE.InstancedMesh,bounds=mesh.userData.worldBounds as THREE.Sphere;
       if(!bounds)continue;const distance=bounds.center.distanceTo(position)-bounds.radius;mesh.visible=distance<profile.forestRange;
-      if(mesh.userData.nearGeometry){mesh.geometry=distance<profile.forestDetail?mesh.userData.nearGeometry:mesh.userData.farGeometry;mesh.castShadow=tier==='high'||distance<85;}
+      if(mesh.userData.nearGeometry){mesh.geometry=distance<profile.forestDetail?mesh.userData.nearGeometry:mesh.userData.farGeometry;}
+      if(mesh.userData.nearMaterial)mesh.material=distance<profile.forestDetail?mesh.userData.nearMaterial:mesh.userData.farMaterial;
+      mesh.castShadow=tier!=='low'&&distance<(tier==='high'?180:90);
     }
   }
   setStartLights(count:number){this.startBulbs.forEach((material,i)=>{const lit=i<count;material.color.setHex(lit?0xcc160a:0x190b0c);material.emissiveIntensity=lit?3:.015;});}
@@ -97,6 +105,8 @@ export class Track {
   }
   elevation(t:number){const bridge=this.circuit.overpass;if(!bridge)return 0;let d=((t%1)+1)%1-bridge.progress;if(d<-.5)d++;if(d>.5)d--;const metres=Math.abs(d)*this.length;return metres>=bridge.span?0:bridge.height*(1+Math.cos(metres/bridge.span*Math.PI))*.5;}
   point(t:number){return this.curve.getPointAt(((t%1)+1)%1).setY(this.elevation(t));}
+  sceneryHeight(x:number,z:number){const e=environmentFor(this.circuit.id);return !e.hillHeight||containsWater(x,z,this.waters)?0:regionalHeight(x,z,e)*THREE.MathUtils.smoothstep(Math.sqrt(this.scenerySpace.distanceSquared(x,z,260)),110,260);}
+  geographicPoint([longitude,latitude]:GeoPoint){const origin=this.circuit.origin;return new THREE.Vector3((longitude-origin[0])*111320*Math.cos(origin[1]*Math.PI/180)*this.geographicScale,0,-(latitude-origin[1])*111320*this.geographicScale);}
   tangent(t:number){return this.curve.getTangentAt(((t%1)+1)%1).normalize();}
   normal(t:number){const v=this.tangent(t);return new THREE.Vector3(-v.z,0,v.x);}
   roadPoint(t:number){return this.visualRoad.point(t).setY(this.elevation(t));}
@@ -154,14 +164,17 @@ export class Track {
     }
   }
   private buildScenery(){
+    const environment=environmentFor(this.circuit.id);
     const center=this.bounds.getCenter(new THREE.Vector3());
     const ground=new THREE.PlaneGeometry(6500,6500,96,96),points=ground.getAttribute('position'),colors:number[]=[];
-    for(let i=0;i<points.count;i++){const shade=landscapeShade(center.x+points.getX(i),center.z-points.getY(i));colors.push(shade,shade,.94*shade);}
+    for(let i=0;i<points.count;i++){
+      const x=center.x+points.getX(i),z=center.z-points.getY(i),shade=landscapeShade(x,z);colors.push(shade,shade,.94*shade);
+      if(environment.hillHeight&&!containsWater(x,z,this.waters)){const clearance=Math.sqrt(this.scenerySpace.distanceSquared(x,z,260));points.setZ(i,regionalHeight(x,z,environment)*THREE.MathUtils.smoothstep(clearance,110,260));}
+    }
     ground.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
-    ground.rotateX(-Math.PI/2);ground.translate(center.x,-.08,center.z);this.surfaceGeometries.set('grass-terrain',ground);
-    this.group.add(createSpatialChunks(ground,new THREE.MeshStandardMaterial({...terrainMaps(this.circuit.environment==='city'?'asphalt':'grass'),color:this.circuit.environment==='city'?(this.circuit.night?0x667385:0xa7b1b0):0xe3e6d7,vertexColors:true,roughness:1}),1000,'grass-terrain'));
-    const rivers=this.circuit.id==='montreal'?[.23,.7].map(t=>this.point(t).addScaledVector(this.normal(t),150)):[];
-    this.woodland=createWoodland(this,p=>{if(rivers.some(c=>Math.abs(p.x-c.x)<180&&Math.abs(p.z-c.z)<300))return false;for(let j=0;j<this.samples.length;j+=10)if(this.samples[j].distanceToSquared(p)<24*24)return false;return true;});this.group.add(this.woodland);
+    ground.rotateX(-Math.PI/2);ground.translate(center.x,-.08,center.z);ground.computeVertexNormals();this.surfaceGeometries.set('grass-terrain',ground);
+    this.group.add(createSpatialChunks(ground,new THREE.MeshStandardMaterial({...terrainMaps(this.circuit.night?'asphalt':'grass'),color:environment.ground,vertexColors:true,roughness:1}),1000,'grass-terrain'));
+    this.woodland=createWoodland(this,p=>!containsWater(p.x,p.z,this.waters)&&this.scenerySpace.clear(p,24));this.group.add(this.woodland);
   }
   private buildCircuit(){
     const count=Math.ceil(this.length/3.1);
@@ -199,9 +212,13 @@ export class Track {
     for(let i=0;i<count;i++){const t=i/count,side=i%2?1:-1,p=this.point(t).addScaledVector(this.normal(t),side*19),n=this.normal(t);dummy.rotation.set(0,0,0);dummy.position.set(p.x,p.y+7.5,p.z);dummy.updateMatrix();poles.setMatrixAt(i,dummy.matrix);dummy.position.set(p.x-n.x*side*1.5,p.y+15,p.z-n.z*side*1.5);dummy.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z);dummy.updateMatrix();lamps.setMatrixAt(i,dummy.matrix);}this.group.add(poles,lamps);
   }
   private buildBrakeBoards(){
-    for(const section of this.sections.filter(s=>s.braking))for(const distance of [150,100,50]){
-      const t=section.progress-distance/this.length,p=this.point(t).addScaledVector(this.normal(t),-12.5),v=this.tangent(t),canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#eaf1e9';ctx.fillRect(0,0,128,128);ctx.fillStyle='#14231d';ctx.font='bold 64px sans-serif';ctx.textAlign='center';ctx.fillText(String(distance),64,85);
-      const board=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),side:THREE.DoubleSide}));board.position.copy(p);board.position.y+=1.9;board.rotation.y=Math.atan2(v.x,v.z)+Math.PI;this.group.add(board);
+    const sections=this.sections.filter(s=>s.braking),stamp=new THREE.Object3D(),geometry=new THREE.PlaneGeometry(1.8,1.8);
+    for(const distance of [150,100,50]){
+      const canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;const ctx=canvas.getContext('2d')!;
+      ctx.fillStyle='#eaf1e9';ctx.fillRect(0,0,128,128);ctx.fillStyle='#14231d';ctx.font='bold 64px sans-serif';ctx.textAlign='center';ctx.fillText(String(distance),64,85);
+      const boards=new THREE.InstancedMesh(geometry,new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),side:THREE.DoubleSide}),sections.length);boards.name=`brake-boards-${distance}`;
+      sections.forEach((section,i)=>{const t=section.progress-distance/this.length,p=this.point(t).addScaledVector(this.normal(t),-12.5),v=this.tangent(t);stamp.position.copy(p);stamp.position.y+=1.9;stamp.rotation.set(0,Math.atan2(v.x,v.z)+Math.PI,0);stamp.updateMatrix();boards.setMatrixAt(i,stamp.matrix);});
+      boards.computeBoundingSphere();this.group.add(boards);
     }
   }
 }
