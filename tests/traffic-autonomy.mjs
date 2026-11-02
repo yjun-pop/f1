@@ -25,11 +25,11 @@ const {TrafficPlanner}=await import(moduleURL('TrafficPlanner'));
 const {engineAcceleration}=await import(moduleURL('Powertrain'));
 const {observeTraffic}=await import(moduleURL('DriverAgent'));
 let referenceTrack;
-for(const circuit of CIRCUITS.slice(0,3)){
+for(const circuit of CIRCUITS){
  const track=new Track(new THREE.Scene(),circuit),planner=new LinePlanner(track);if(circuit.id==='monza')referenceTrack=track;
  for(const scenario of ['corner','sideways','clear-side','offroad','close','creeping','train']){
   const scene=new THREE.Scene(),race=new Race(track,scene,planner),player=new Vehicle(track,scene);race.state='racing';race.elapsed=20;race.balanceRivals=()=>{};
-  const count=scenario==='train'?5:1,straight=circuit.id==='monza'?500:circuit.id==='silverstone'?120:650;
+  const count=scenario==='train'?5:1,straight=circuit.id==='monza'?500:circuit.id==='silverstone'?120:circuit.id==='spa'?650:track.sections[0].progress*track.length*.5;
   const where=(scenario==='close'||scenario==='creeping'||scenario==='train'?straight:track.sections[0].progress*track.length);
   player.resetAt(where/track.length,scenario==='offroad'?12:0);player.offRoad=scenario==='offroad';if(scenario==='creeping')player.speed=3;if(scenario==='sideways')player.heading+=Math.PI/2;
   for(const [i,o] of race.opponents.entries()){

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type {Rival} from './Race';
+import type {Rival} from './Opponent';
 import {Track} from './Track';
 import {Vehicle} from './Vehicle';
 import {LinePlanner} from './LinePlanner';

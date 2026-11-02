@@ -504,21 +504,21 @@ console.log('PASS: AI finds a free corridor and overtakes a slower car on asphal
 // Small target movements must not flip a pass, but a newly occupied lane
 // must override the preference immediately.
 const tacticalRace=new Race(track,new THREE.Scene(),planner),tacticalPlayer=new Vehicle(track,new THREE.Scene());
-tacticalRace.opponents.splice(1);const tactical=tacticalRace.opponents[0];tacticalRace.elapsed=20;
+const tacticalRoster=[...tacticalRace.opponents];tacticalRace.opponents.splice(1);const tactical=tacticalRace.opponents[0];tacticalRace.elapsed=20;
 const place=(car,meters,bias,speed)=>{const t=meters/track.length,offset=planner.point(t).sub(track.point(t)).dot(track.normal(t));car.resetAt(t,offset+bias);car.speed=speed;};
 place(tactical.car,300,3.5,45);tactical.lane=3.5;place(tacticalPlayer,340,3.5,30);
 tacticalRace.decide(tactical,tacticalPlayer);const chosenSide=Math.sign(tactical.passLane-3.5);
 assert.ok(chosenSide!==0&&tactical.passUntil>tacticalRace.elapsed,'A clear pass must establish a side preference');
 place(tacticalPlayer,340,3.5+chosenSide*.15,30);tacticalRace.elapsed+=.03;tacticalRace.decide(tactical,tacticalPlayer);
 assert.equal(Math.sign(tactical.passLane-3.5),chosenSide,'A slight target movement must not reverse the passing side');
-const blocker=new Vehicle(track,new THREE.Scene());place(blocker,315,tactical.passLane,30);
-tacticalRace.opponents.push({...tactical,car:blocker});tacticalRace.decide(tactical,tacticalPlayer);
+const blocker=tacticalRoster[1];place(blocker.car,315,tactical.passLane,30);
+tacticalRace.opponents.push(blocker);tacticalRace.decide(tactical,tacticalPlayer);
 assert.equal(Math.sign(tactical.passLane-3.5),-chosenSide,'A blocked corridor must override the remembered passing side');
 
 // A large closing speed requires braking earlier than the old fixed gap.
 tacticalRace.opponents.splice(1);place(tactical.car,400,0,90);tactical.lane=0;
 place(tacticalPlayer,445,0,30);
-for(const bias of [-3.5,3.5]){const car=new Vehicle(track,new THREE.Scene());place(car,420,bias,30);tacticalRace.opponents.push({...tactical,car});}
+for(const [i,bias] of [-3.5,3.5].entries()){const opponent=tacticalRoster[i+1];place(opponent.car,420,bias,30);tacticalRace.opponents.push(opponent);}
 tacticalRace.decide(tactical,tacticalPlayer);
 assert.ok(tactical.control.brake>.3,'A rapidly closing rival must brake before entering the old fixed following gap');
 assert.equal(!!tactical.control.boost,false,'Blocked traffic must not consume ERS');
@@ -701,7 +701,7 @@ assert.ok(launchRace.opponents.every(o=>o.speedCap<=94.01),'Rank assistance must
 console.log('PASS: five individual personalities and comparable five-second standing starts');
 
 const contactRace=new Race(track,new THREE.Scene(),planner),contactPlayer=new Vehicle(track,new THREE.Scene());
-const driver=contactRace.opponents[0];contactRace.elapsed=20;
+const contactRoster=[...contactRace.opponents],driver=contactRoster[0];contactRace.elapsed=20;
 contactRace.scoreContact(driver.car,contactPlayer,'0:1',4);
 const score=driver.collisionScore;
 assert.ok(score<0&&driver.collisionCount===1&&driver.avoidance>0);
@@ -713,7 +713,7 @@ assert.ok(driver.collisionScore<score&&driver.collisionCount===2,'A later separa
 // causes more conservative braking. Block both overtaking corridors.
 contactRace.opponents.splice(1);place(driver.car,400,0,40);driver.lane=0;
 place(contactPlayer,413,0,36);
-for(const bias of [-3.5,3.5]){const car=new Vehicle(track,new THREE.Scene());place(car,408,bias,36);contactRace.opponents.push({...driver,car});}
+for(const [i,bias] of [-3.5,3.5].entries()){const opponent=contactRoster[i+1];place(opponent.car,408,bias,36);contactRace.opponents.push(opponent);}
 driver.avoidance=0;contactRace.decide(driver,contactPlayer);const ordinaryThrottle=driver.control.throttle,ordinaryBrake=driver.control.brake;
 driver.avoidance=1.5;contactRace.decide(driver,contactPlayer);
 assert.ok(driver.control.brake>ordinaryBrake||driver.control.throttle<ordinaryThrottle,'Negative contact feedback must increase following margin in real control decisions');

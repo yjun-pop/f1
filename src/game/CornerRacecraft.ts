@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type {Track} from './Track';
 import type {LinePlanner} from './LinePlanner';
-import type {Rival} from './Race';
+import type {Rival} from './Opponent';
 import type {TrafficSample} from './DriverAgent';
 import type {Vehicle} from './Vehicle';
 
