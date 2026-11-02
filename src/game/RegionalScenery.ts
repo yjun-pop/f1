@@ -3,15 +3,16 @@ import type {Track} from './Track';
 import {environmentFor,type GeoPoint} from './CircuitEnvironment';
 import {containsWater} from './RegionalWaters';
 import {createSpatialChunks} from './TrackChunks';
+import {sceneryFootprint} from './ScenerySpace';
 
-type Shape='box'|'roof'|'pole'|'ball'|'hull';
-interface Part {matrix:THREE.Matrix4;shape:Shape;material:THREE.Material;detail:boolean;name:string}
+type Shape='box'|'roof'|'pole'|'ball'|'hull'|'shrub'|'paving';
+interface Part {matrix:THREE.Matrix4;shape:Shape;material:THREE.Material;detail:boolean;name:string;color?:number}
 /** Static, spatially bounded instance batches. A skyline/window never adds a
  * light, reflection pass, animation callback or object per visible window. */
 export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>void){
   const env=environmentFor(track.circuit.id),night=!!track.circuit.night,stamp=new THREE.Object3D();
   const box=new THREE.BoxGeometry(1,1,1),roof=new THREE.ConeGeometry(Math.SQRT1_2,1,4);roof.rotateY(Math.PI/4);
-  const shapes:Record<Shape,THREE.BufferGeometry>={box,roof,pole:new THREE.CylinderGeometry(1,1,1,6),ball:new THREE.IcosahedronGeometry(1,2),hull:new THREE.CylinderGeometry(.4,.55,1,6)};
+  const shapes:Record<Shape,THREE.BufferGeometry>={box,roof,pole:new THREE.CylinderGeometry(1,1,1,6),ball:new THREE.IcosahedronGeometry(1,2),hull:new THREE.CylinderGeometry(.4,.55,1,6),shrub:new THREE.IcosahedronGeometry(1,0),paving:new THREE.PlaneGeometry(1,1).rotateX(-Math.PI/2)};
   shapes.hull.rotateX(Math.PI/2);
   const landmarkAnchors=new Map<string,{source:THREE.Vector3;placed:THREE.Vector3}>();
   const materials=new Map<string,THREE.Material>(),buckets=new Map<string,{name:string;parts:Part[];anchor?:THREE.Vector3}>();
@@ -34,8 +35,8 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
   for(const o of track.group.children)if(o.name==='pit-building'||o.name==='grandstand')blockers.push(new THREE.Box3().setFromObject(o).expandByScalar(5));
   const clear=(p:THREE.Vector3,radius:number)=>track.scenerySpace.clear(p,radius+14)&&!containsWater(p.x,p.z,track.waters)&&blockers.every(b=>p.x+radius<b.min.x||p.x-radius>b.max.x||p.z+radius<b.min.z||p.z-radius>b.max.z);
   const emit=(name:string,shape:Shape,m:THREE.Material,p:THREE.Vector3,size:THREE.Vector3,rotation=0,detail=false,quaternion?:THREE.Quaternion)=>{
-    const key=`${name}/${Math.floor(p.x/300)}/${Math.floor(p.z/300)}`;let bucket=buckets.get(key);if(!bucket){bucket={name,parts:[]};buckets.set(key,bucket);}
-    stamp.position.copy(p);stamp.scale.copy(size);stamp.rotation.set(0,rotation,0);if(quaternion)stamp.quaternion.copy(quaternion);stamp.updateMatrix();bucket.parts.push({shape,material:m,matrix:stamp.matrix.clone(),detail,name:name==='regional-city'?'city-buildings':name});
+    const cellSize=name.startsWith('roadside-')||name==='trackside-service'?450:300,key=`${name}/${Math.floor(p.x/cellSize)}/${Math.floor(p.z/cellSize)}`;let bucket=buckets.get(key);if(!bucket){bucket={name,parts:[]};buckets.set(key,bucket);}
+    stamp.position.copy(p);stamp.scale.copy(size);stamp.rotation.set(0,rotation,0);if(quaternion)stamp.quaternion.copy(quaternion);stamp.updateMatrix();const item:Part={shape,material:m,matrix:stamp.matrix.clone(),detail,name:name==='regional-city'?'city-buildings':name};bucket.parts.push(item);return item;
   };
   const part=(name:string,p:THREE.Vector3,offset:number[],size:number[],m=white,shape:Shape='box',rotation=0,detail=false)=>emit(name,shape,m,p.clone().add(new THREE.Vector3(...offset)),new THREE.Vector3(...size),rotation,detail);
   const beam=(name:string,a:THREE.Vector3,b:THREE.Vector3,r:number,m=steel)=>{const direction=b.clone().sub(a),q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),direction.clone().normalize());emit(name,'pole',m,a.clone().add(b).multiplyScalar(.5),new THREE.Vector3(r,direction.length(),r),0,false,q);};
@@ -48,6 +49,13 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
     }
     p.y=track.sceneryHeight(p.x,p.z);return p;
   };
+  const landmarkPositions=new Map<string,THREE.Vector3>();
+  for(const landmark of env.landmarks){
+    if(landmark.kind==='banking')continue;
+    const radius=landmark.kind==='hotel'?(landmark.id==='marina-bay-sands'?115:45):landmark.kind==='bridge'?185:landmark.kind==='hangar'?105:landmark.height*.52;
+    const p=anchor(landmark.at,radius);if(!p)continue;
+    landmarkPositions.set(landmark.id,p);track.scenerySpace.reserveFootprint(sceneryFootprint(p,0,-radius,radius,-radius,radius));
+  }
   let seed=track.name.split('').reduce((a,c)=>a+c.charCodeAt(0),37);const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   // Rectangular neighbourhoods use geographic north/east, not offsets from
   // every section of the racing spline. Waterfronts remain open to the water.
@@ -56,6 +64,9 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
     for(let row=0;row<rows;row++)for(let col=0;col<columns;col++){
       const p=center.clone().add(new THREE.Vector3((col-(columns-1)/2)*spacing+(random()-.5)*10,0,(row-(rows-1)/2)*spacing+(random()-.5)*10));
       const w=14+random()*14,d=14+random()*13;if(!clear(p,Math.hypot(w,d)*.5))continue;p.y=track.sceneryHeight(p.x,p.z);
+      const footprint=sceneryFootprint(p,0,-w/2-1,w/2+1,-d/2-1,d/2+1);
+      if(track.scenerySpace.intersectsFootprint(footprint,17)||track.scenerySpace.intersectsReserved(footprint,1))continue;
+      track.scenerySpace.reserveFootprint(footprint);
       const h=env.city==='marina'?45+random()*140:env.city==='riviera'?12+random()*33:random()<.22?45+random()*55:7+random()*15;
       const base=p.clone();base.y+=h/2;emit('regional-city','box',cityMaterial,base,new THREE.Vector3(w,h,d));
       if(env.city!=='marina')part('regional-city',p,[0,h+1.5,0],[w+2,3,d+2],roofs,'roof');
@@ -68,6 +79,57 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
   if(env.city==='riviera'){city([7.421,43.7378],8,6,33);city([7.4258,43.7401],7,6,34);city([7.431,43.741],6,5,38);}
   if(env.city==='marina'){city([103.852,1.2814],7,5,48);city([103.855,1.294],6,4,48);city([103.8616,1.2975],5,4,45);}
   if(env.city==='paulista'){city([-46.694,-23.6975],8,5,44);city([-46.703,-23.702],8,4,42);city([-46.693,-23.707],8,5,37);city([-46.688,-23.698],5,5,55);}
+
+  // A close layer gives parallax and a continuous neighbourhood scale. The
+  // permanent Brazilian venue keeps its infield open; housing follows the
+  // outer perimeter. Street circuits can have buildings on either land side.
+  const boundary=Array.from({length:Math.ceil(track.length/20)},(_,i)=>track.point(i/Math.ceil(track.length/20)));
+  const infield=(p:THREE.Vector3)=>{let inside=false;for(let i=0,j=boundary.length-1;i<boundary.length;j=i++)if((boundary[i].z>p.z)!==(boundary[j].z>p.z)&&p.x<(boundary[j].x-boundary[i].x)*(p.z-boundary[i].z)/(boundary[j].z-boundary[i].z)+boundary[i].x)inside=!inside;return inside;};
+  if(env.city){
+    const lowCanvas=document.createElement('canvas');lowCanvas.width=128;lowCanvas.height=128;const lowContext=lowCanvas.getContext('2d')!;
+    lowContext.fillStyle=night?'#172532':'#e6dfd0';lowContext.fillRect(0,0,128,128);
+    const floors=env.city==='paulista'?4:6;
+    for(let y=0;y<floors;y++)for(let x=0;x<4;x++){lowContext.fillStyle=night?((x*17+y*23)%7<4?'#d9bd85':'#23354a'):'#526c71';lowContext.fillRect(x*32+8,(y+.18)*128/floors,16,128/floors*.6);}
+    const lowFacade=new THREE.CanvasTexture(lowCanvas);lowFacade.colorSpace=THREE.SRGBColorSpace;lowFacade.anisotropy=2;
+    const paving=material('neighbourhood-paving',0x848983);
+    const houseColors=[0xdfd3b9,0xc1cbc3,0xc3b4a1],houseMaterial=cityMaterial.clone();houseMaterial.map=lowFacade;if(night)houseMaterial.emissiveMap=lowFacade;
+    const step=env.city==='paulista'?18:23;
+    for(let metres=4;metres<track.length;metres+=step)for(const side of [-1,1])for(let row=0;row<(env.city==='paulista'?2:1);row++){
+      const t=(metres+row*8)/track.length,origin=track.point(t),normal=track.normal(t),heading=Math.atan2(track.tangent(t).x,track.tangent(t).z),yaw=heading-side*Math.PI/2;
+      const w=9+random()*8,d=8+random()*5,h=env.city==='riviera'?12+random()*18:env.city==='marina'?7+random()*16:5+random()*12;
+      let p:THREE.Vector3|undefined;
+      for(const setback of [23,29,37,47]){
+        const candidate=origin.clone().addScaledVector(normal,side*(setback+d/2+row*19)),fp=sceneryFootprint(candidate,yaw,-w/2-1,w/2+1,-d/2-3,d/2+1);
+        if(env.city==='paulista'&&infield(candidate)||containsWater(candidate.x,candidate.z,track.waters)||track.scenerySpace.intersectsFootprint(fp,19)||track.scenerySpace.intersectsReserved(fp,1.2))continue;
+        track.scenerySpace.reserveFootprint(fp);p=candidate;break;
+      }
+      if(!p)continue;p.y=track.sceneryHeight(p.x,p.z);
+      emit('roadside-houses','paving',paving,p.clone().addScaledVector(normal,-side).add(new THREE.Vector3(0,.016,0)),new THREE.Vector3(w+2,1,d+4),yaw);
+      emit('roadside-houses','box',houseMaterial,p.clone().add(new THREE.Vector3(0,h/2,0)),new THREE.Vector3(w,h,d),yaw).color=night?0xffffff:houseColors[Math.floor(random()*houseColors.length)];
+      emit('roadside-houses','roof',roofs,p.clone().add(new THREE.Vector3(0,h+1.1,0)),new THREE.Vector3(w+1.8,2.2,d+1.8),yaw);
+      const facadePoint=p.clone().addScaledVector(normal,-side*(d/2+.06));facadePoint.y+=2.2;
+      emit('roadside-houses','box',dark,facadePoint,new THREE.Vector3(w*.68,1.8,.12),yaw);
+      if((Math.floor(metres/step)+row)%4===0){facadePoint.y+=1.3;emit('roadside-houses','box',white,facadePoint,new THREE.Vector3(w*.9,.18,2),yaw);}
+    }
+  }else{
+    const hedge=material('roadside-planting',env.foliage),serviceRoof=material('service-roof',track.circuit.id==='silverstone'?0x617b96:0x84785d);
+    for(let metres=20;metres<track.length;metres+=track.circuit.id==='silverstone'?60:42)for(const side of [-1,1]){
+      const t=metres/track.length,normal=track.normal(t),yaw=Math.atan2(track.tangent(t).x,track.tangent(t).z)-side*Math.PI/2;
+      const p=track.point(t).addScaledVector(normal,side*(23+random()*6)),fp=sceneryFootprint(p,yaw,-4,4,-2.5,2.5);
+      if(containsWater(p.x,p.z,track.waters)||track.scenerySpace.intersectsFootprint(fp,18)||track.scenerySpace.intersectsReserved(fp,2))continue;
+      p.y=track.sceneryHeight(p.x,p.z);
+      for(let i=-1;i<=1;i++){const bush=p.clone().addScaledVector(track.tangent(t),i*2.4);bush.y+=.8;emit('roadside-planting','shrub',hedge,bush,new THREE.Vector3(1.8,.8,1.5),yaw);}
+    }
+    for(let metres=160;metres<track.length;metres+=320){
+      const t=metres/track.length,side=Math.floor(metres/320)%2?1:-1,normal=track.normal(t),yaw=Math.atan2(track.tangent(t).x,track.tangent(t).z)-side*Math.PI/2;
+      const p=track.point(t).addScaledVector(normal,side*29),fp=sceneryFootprint(p,yaw,-4.5,4.5,-3.5,3.5);
+      if(containsWater(p.x,p.z,track.waters)||track.scenerySpace.intersectsFootprint(fp,19)||track.scenerySpace.intersectsReserved(fp,2))continue;
+      track.scenerySpace.reserveFootprint(fp);p.y=track.sceneryHeight(p.x,p.z);
+      emit('trackside-service','box',white,p.clone().add(new THREE.Vector3(0,1.6,0)),new THREE.Vector3(6,3.2,4),yaw);
+      emit('trackside-service','roof',serviceRoof,p.clone().add(new THREE.Vector3(0,3.9,0)),new THREE.Vector3(8,1.4,6),yaw);
+      emit('trackside-service','box',dark,p.clone().add(new THREE.Vector3(0,2,0)).addScaledVector(normal,-side*2.06),new THREE.Vector3(4,1,.12),yaw);
+    }
+  }
 
   // Water uses local index tiles sharing one vertex buffer. No planar-reflection
   // camera or transparent full-screen water layer is needed in either view.
@@ -111,8 +173,7 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
       for(let i=0;i<48;i++){const k=i*2;if([k,k+1,k+2,k+3].every(v=>track.scenerySpace.distanceSquared(positions[v*3],positions[v*3+2],28)>=784))indices.push(k,k+1,k+2,k+1,k+3,k+2);}
       const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setIndex(indices);geometry.computeVertexNormals();const g=new THREE.Group();g.name=landmark.id;g.add(new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0x8f938b,roughness:1,side:THREE.DoubleSide})));register(g);continue;
     }
-    const radius=landmark.kind==='hotel'?(landmark.id==='marina-bay-sands'?115:45):landmark.kind==='bridge'?185:landmark.kind==='hangar'?105:landmark.height*.52;
-    const p=anchor(landmark.at,radius);if(!p)continue;const name=landmark.id,h=landmark.height;landmarkAnchors.set(name,{source:track.geographicPoint(landmark.at),placed:p.clone()});
+    const p=landmarkPositions.get(landmark.id);if(!p)continue;const name=landmark.id,h=landmark.height;landmarkAnchors.set(name,{source:track.geographicPoint(landmark.at),placed:p.clone()});
     if(landmark.kind==='wheel'){
       const r=h*.45,cy=h*.53,count=48,point=(angle:number,z=0)=>p.clone().add(new THREE.Vector3(Math.cos(angle)*r,cy+Math.sin(angle)*r,z));
       for(let i=0;i<count;i++)for(const z of [-1.2,1.2])beam(name,point(i/count*Math.PI*2,z),point((i+1)/count*Math.PI*2,z),h*.005,steel);
@@ -143,7 +204,7 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
     for(const p of bucket.parts){const key=`${p.shape}/${p.material.uuid}/${p.detail}`;const list=grouped.get(key);if(list)list.push(p);else grouped.set(key,[p]);}
     for(const parts of grouped.values()){
       const first=parts[0],mesh=new THREE.InstancedMesh(shapes[first.shape],first.material,parts.length);mesh.name=first.name;mesh.userData.nearDetail=first.detail;
-      parts.forEach((part,i)=>mesh.setMatrixAt(i,part.matrix));mesh.computeBoundingSphere();mesh.receiveShadow=!night;group.add(mesh);
+      const tinted=parts.some(p=>p.color!==undefined),color=new THREE.Color();parts.forEach((part,i)=>{mesh.setMatrixAt(i,part.matrix);if(tinted)mesh.setColorAt(i,color.setHex(part.color??0xffffff));});mesh.computeBoundingSphere();mesh.receiveShadow=!night;group.add(mesh);
     }
     register(group);
   }

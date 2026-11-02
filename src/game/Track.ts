@@ -17,7 +17,7 @@ import {DEFAULT_FIELD_SIZE} from './RaceRoster';
 import {gridSlot} from './StartingGrid';
 import {createCircuitScenery,updateCircuitScenery} from './CircuitScenery';
 import {environmentFor,regionalHeight,type GeoPoint} from './CircuitEnvironment';
-import {ScenerySpace} from './ScenerySpace';
+import {ScenerySpace,sceneryFootprint} from './ScenerySpace';
 import {regionalWaters,containsWater,type WaterArea} from './RegionalWaters';
 export const ROAD_HALF_WIDTH=10;
 export class Track {
@@ -79,7 +79,7 @@ export class Track {
       // Keep activation/expiry after detection, including a start-line crossing.
       this.drsZones=circuit.drs.map(zone=>{const detection=at(zone.detection),start=detection+wrap(at(zone.start)-detection),end=start+wrap(at(zone.end)-start);return {id:zone.id,detection,start,end};});
     }
-    this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.landmarks=createCircuitScenery(this);this.group.add(this.landmarks);this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
+    this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.landmarks=createCircuitScenery(this);this.group.add(this.landmarks);this.buildWoodland();this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
     freezeStaticWorld(this.group);
   }
   updatePresentation(position:THREE.Vector3,tier:GraphicsTier){
@@ -174,6 +174,8 @@ export class Track {
     ground.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
     ground.rotateX(-Math.PI/2);ground.translate(center.x,-.08,center.z);ground.computeVertexNormals();this.surfaceGeometries.set('grass-terrain',ground);
     this.group.add(createSpatialChunks(ground,new THREE.MeshStandardMaterial({...terrainMaps(this.circuit.night?'asphalt':'grass'),color:environment.ground,vertexColors:true,roughness:1}),1000,'grass-terrain'));
+  }
+  private buildWoodland(){
     this.woodland=createWoodland(this,p=>!containsWater(p.x,p.z,this.waters)&&this.scenerySpace.clear(p,24));this.group.add(this.woodland);
   }
   private buildCircuit(){
@@ -185,10 +187,22 @@ export class Track {
     const kerbGeometry=createKerbGeometry(this,this.kerbSegments);this.surfaceGeometries.set('continuous-kerbs',kerbGeometry);
     const kerbSurface=terrainMaps('asphalt'),kerbs=createTrackChunks(kerbGeometry,new THREE.MeshStandardMaterial({map:kerbPaintMap(),normalMap:kerbSurface.normalMap,normalScale:new THREE.Vector2(.32,.32),roughnessMap:kerbSurface.roughnessMap,roughness:.95,metalness:0}),this.length,'continuous-kerbs');
     this.group.add(kerbs,createBarriers(this.barrierPaths));
-    this.grandstands=createGrandstands(this);this.group.add(...this.grandstands);
     const steel=new THREE.MeshStandardMaterial({color:0x263b36});
-    const pit=new THREE.Group(),pitProgress=this.circuit.pitProgress;pit.name='pit-building';pit.position.copy(this.point(pitProgress)).addScaledVector(this.normal(pitProgress),31);pit.rotation.y=Math.atan2(this.tangent(pitProgress).x,this.tangent(pitProgress).z);
+    const pit=new THREE.Group(),pitProgress=this.circuit.pitProgress;pit.name='pit-building';pit.rotation.y=Math.atan2(this.tangent(pitProgress).x,this.tangent(pitProgress).z);
+    let pitFootprint;
+    for(const side of [1,-1]){
+      for(let offset=31;offset<=157;offset+=6){
+        pit.position.copy(this.point(pitProgress)).addScaledVector(this.normal(pitProgress),side*offset);pit.position.y=this.sceneryHeight(pit.position.x,pit.position.z);
+        const box=sceneryFootprint(pit.position,pit.rotation.y,-12,12,-120,120);
+        if(this.scenerySpace.intersectsFootprint(box,17)||containsWater(box.x,box.z,this.waters))continue;
+        pitFootprint=box;pit.userData.offset=side*offset;break;
+      }
+      if(pitFootprint)break;
+    }
+    if(!pitFootprint)throw new Error(`No safe pit-building site for ${this.name}`);
+    this.scenerySpace.reserveFootprint(pitFootprint);pit.userData.footprint=pitFootprint;
     const building=new THREE.Mesh(new THREE.BoxGeometry(17,7,240),new THREE.MeshStandardMaterial({color:0xa1b0b0,roughness:.75}));building.position.y=3.5;pit.add(building);const windows=new THREE.Mesh(new THREE.BoxGeometry(17.2,1.5,225),new THREE.MeshStandardMaterial({color:0x233d4b,metalness:.5,roughness:.3}));windows.position.y=5.4;pit.add(windows);this.group.add(pit);
+    this.grandstands=createGrandstands(this);this.group.add(...this.grandstands);
     const start=this.point(24/this.length),forward=this.tangent(24/this.length),gantry=new THREE.Group();gantry.name='start-gantry';
     for(const side of [-1,1]){const post=new THREE.Mesh(new THREE.BoxGeometry(.5,8,.5),steel);post.position.set(side*12,4,0);gantry.add(post);}const board=new THREE.Mesh(new THREE.BoxGeometry(25,2,.65),steel);board.position.y=7;gantry.add(board);
     const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=96;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#143d2e';ctx.fillRect(0,0,1024,96);ctx.fillStyle='#fff';ctx.font='bold italic 44px sans-serif';ctx.textAlign='center';ctx.fillText(`${this.name}  /  ${this.circuit.tagline}`,512,66);
@@ -209,7 +223,8 @@ export class Track {
   private buildLighting(){
     const count=Math.ceil(this.length/52),dummy=new THREE.Object3D(),steel=new THREE.MeshStandardMaterial({color:0x61716e,metalness:.6,roughness:.4});
     const poles=new THREE.InstancedMesh(new THREE.CylinderGeometry(.14,.23,15,6),steel,count),lamps=new THREE.InstancedMesh(new THREE.BoxGeometry(3,.16,1.1),new THREE.MeshBasicMaterial({color:0xe8f4ff}),count);
-    for(let i=0;i<count;i++){const t=i/count,side=i%2?1:-1,p=this.point(t).addScaledVector(this.normal(t),side*19),n=this.normal(t);dummy.rotation.set(0,0,0);dummy.position.set(p.x,p.y+7.5,p.z);dummy.updateMatrix();poles.setMatrixAt(i,dummy.matrix);dummy.position.set(p.x-n.x*side*1.5,p.y+15,p.z-n.z*side*1.5);dummy.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z);dummy.updateMatrix();lamps.setMatrixAt(i,dummy.matrix);}this.group.add(poles,lamps);
+    let placed=0;
+    for(let i=0;i<count;i++){const t=i/count,side=i%2?1:-1,p=this.point(t).addScaledVector(this.normal(t),side*19),n=this.normal(t);if(!this.scenerySpace.clear(p,18.5))continue;dummy.rotation.set(0,0,0);dummy.position.set(p.x,p.y+7.5,p.z);dummy.updateMatrix();poles.setMatrixAt(placed,dummy.matrix);dummy.position.set(p.x-n.x*side*1.5,p.y+15,p.z-n.z*side*1.5);dummy.rotation.y=Math.atan2(this.tangent(t).x,this.tangent(t).z);dummy.updateMatrix();lamps.setMatrixAt(placed++,dummy.matrix);}poles.count=lamps.count=placed;this.group.add(poles,lamps);
   }
   private buildBrakeBoards(){
     const sections=this.sections.filter(s=>s.braking),stamp=new THREE.Object3D(),geometry=new THREE.PlaneGeometry(1.8,1.8);
@@ -217,7 +232,7 @@ export class Track {
       const canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;const ctx=canvas.getContext('2d')!;
       ctx.fillStyle='#eaf1e9';ctx.fillRect(0,0,128,128);ctx.fillStyle='#14231d';ctx.font='bold 64px sans-serif';ctx.textAlign='center';ctx.fillText(String(distance),64,85);
       const boards=new THREE.InstancedMesh(geometry,new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),side:THREE.DoubleSide}),sections.length);boards.name=`brake-boards-${distance}`;
-      sections.forEach((section,i)=>{const t=section.progress-distance/this.length,p=this.point(t).addScaledVector(this.normal(t),-12.5),v=this.tangent(t);stamp.position.copy(p);stamp.position.y+=1.9;stamp.rotation.set(0,Math.atan2(v.x,v.z)+Math.PI,0);stamp.updateMatrix();boards.setMatrixAt(i,stamp.matrix);});
+      let placed=0;sections.forEach(section=>{const t=section.progress-distance/this.length,p=this.point(t).addScaledVector(this.normal(t),-12.5),v=this.tangent(t);if(!this.scenerySpace.clear(p,11.5))return;stamp.position.copy(p);stamp.position.y+=1.9;stamp.rotation.set(0,Math.atan2(v.x,v.z)+Math.PI,0);stamp.updateMatrix();boards.setMatrixAt(placed++,stamp.matrix);});boards.count=placed;
       boards.computeBoundingSphere();this.group.add(boards);
     }
   }

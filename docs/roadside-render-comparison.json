@@ -1,0 +1,141 @@
+{
+  "baseline": "cfe72b6",
+  "condition": "Chromium SwiftShader, 1280x720, medium, fixed forward camera at recorded circuit progress; scene only, no cars/HUD; excludes shadow-update frame",
+  "circuits": [
+    {
+      "circuit": "silverstone",
+      "progress": 0.162,
+      "sparse": {
+        "calls": 175,
+        "triangles": 126922
+      },
+      "dense": {
+        "calls": 203,
+        "triangles": 139422
+      },
+      "denseOptimized": {
+        "calls": 195,
+        "triangles": 141022
+      }
+    },
+    {
+      "circuit": "interlagos",
+      "progress": 0.2,
+      "sparse": {
+        "calls": 200,
+        "triangles": 163952
+      },
+      "dense": {
+        "calls": 277,
+        "triangles": 171576
+      },
+      "denseOptimized": {
+        "calls": 236,
+        "triangles": 172028
+      }
+    },
+    {
+      "circuit": "monaco",
+      "progress": 0.05,
+      "sparse": {
+        "calls": 182,
+        "triangles": 168852
+      },
+      "dense": {
+        "calls": 230,
+        "triangles": 199470
+      },
+      "denseOptimized": {
+        "calls": 205,
+        "triangles": 199506
+      }
+    },
+    {
+      "circuit": "spa",
+      "progress": 0.1,
+      "sparse": {
+        "calls": 210,
+        "triangles": 161096
+      },
+      "dense": {
+        "calls": 233,
+        "triangles": 174656
+      },
+      "denseOptimized": {
+        "calls": 231,
+        "triangles": 177820
+      }
+    },
+    {
+      "circuit": "montreal",
+      "progress": 0.44,
+      "sparse": {
+        "calls": 145,
+        "triangles": 119347
+      },
+      "dense": {
+        "calls": 161,
+        "triangles": 143311
+      },
+      "denseOptimized": {
+        "calls": 158,
+        "triangles": 143331
+      }
+    },
+    {
+      "circuit": "suzuka",
+      "progress": 0.55,
+      "sparse": {
+        "calls": 103,
+        "triangles": 95227
+      },
+      "dense": {
+        "calls": 113,
+        "triangles": 104303
+      },
+      "denseOptimized": {
+        "calls": 112,
+        "triangles": 106343
+      }
+    },
+    {
+      "circuit": "singapore",
+      "progress": 0.51,
+      "sparse": {
+        "calls": 204,
+        "triangles": 112251
+      },
+      "dense": {
+        "calls": 252,
+        "triangles": 117869
+      },
+      "denseOptimized": {
+        "calls": 233,
+        "triangles": 119451
+      }
+    },
+    {
+      "circuit": "monza",
+      "progress": 0.23,
+      "sparse": {
+        "calls": 80,
+        "triangles": 84116
+      },
+      "dense": {
+        "calls": 94,
+        "triangles": 99748
+      },
+      "denseOptimized": {
+        "calls": 90,
+        "triangles": 101788
+      }
+    }
+  ],
+  "denseCalls": 1563,
+  "optimizedCalls": 1460,
+  "denseTriangles": 1150355,
+  "optimizedTriangles": 1161289,
+  "sparseCalls": 1299,
+  "sparseTriangles": 1031763,
+  "batchingCallReductionPercent": 6.589891234804868
+}

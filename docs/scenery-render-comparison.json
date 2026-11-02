@@ -60,5 +60,6 @@
     }
   ],
   "callsReductionPercent": 5.575411007862763,
-  "triangleReductionPercent": 14.813345317063863
+  "triangleReductionPercent": 14.813345317063863,
+  "candidate": "cfe72b6"
 }

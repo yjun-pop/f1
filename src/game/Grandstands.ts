@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import type {Track} from './Track';
 import type {GraphicsTier} from './Graphics';
+import {sceneryFootprint,type SceneryFootprint} from './ScenerySpace';
+import {containsWater} from './RegionalWaters';
 
 export const GRANDSTAND_PROGRESS=[.007,.0175,.028,.040,.052,.15,.215,.35,.45,.59,.74,.9];
 
@@ -31,14 +33,26 @@ export function createGrandstands(track:Track){
   const structureGeometry=mergeGeometries(structureParts);for(const g of structureParts)g.dispose();terraces.dispose();roof.dispose();post.dispose();
   const structureMaterial=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.75});
   const colors=[0xc83b35,0xd4d7d4,0x325794,0xe7bd4d,0x323b47,0x58a396,0x795d9c,0xbd5c42],tones=[0xe4b18b,0xb97f59,0x81543e,0xc99573];
-  // On compact and crossing layouts, another section can run behind a stand.
-  // Reserve the complete road width before allocating the crowd instances.
-  const road=track.circuit.environment?Array.from({length:Math.ceil(track.length/8)},(_,i)=>track.point(i/Math.ceil(track.length/8))):[];
+  // Every circuit uses the full canopy/support footprint, including curves
+  // returning behind the stand. Keep safe stands close rather than removing
+  // roadside scenery merely because its original placement was obstructed.
   return GRANDSTAND_PROGRESS.flatMap((t,standIndex)=>{
     const stand=new THREE.Group();stand.name='grandstand';stand.userData.progress=t;
-    stand.position.copy(track.point(t)).addScaledVector(track.normal(t),-37);stand.rotation.y=Math.atan2(track.tangent(t).x,track.tangent(t).z)+Math.PI/2;
-    stand.updateMatrix();const inverse=stand.matrix.clone().invert(),local=new THREE.Vector3();
-    if(road.some(p=>{local.copy(p).applyMatrix4(inverse);return Math.abs(local.x)<42&&local.z>-15&&local.z<26&&local.y>-2&&local.y<10;}))return [];
+    let footprint:SceneryFootprint|undefined,chosenYaw=0;
+    for(const shift of [0,-15,15,-30,30,-60,60,-90,90]){
+      const progress=((t+shift/track.length)%1+1)%1,yaw=Math.atan2(track.tangent(progress).x,track.tangent(progress).z)+Math.PI/2;
+      for(let offset=37;offset<=109;offset+=6){
+        stand.position.copy(track.point(progress)).addScaledVector(track.normal(progress),-offset);stand.position.y=track.sceneryHeight(stand.position.x,stand.position.z);
+        const candidate=sceneryFootprint(stand.position,yaw,-29,29,-3.5,13.5);
+        if(track.scenerySpace.intersectsFootprint(candidate,17)||track.scenerySpace.intersectsReserved(candidate,1.5))continue;
+        const c=Math.cos(yaw),s=Math.sin(yaw);
+        if([-1,0,1].some(x=>[-1,0,1].some(z=>containsWater(candidate.x+c*x*candidate.halfX+s*z*candidate.halfZ,candidate.z-s*x*candidate.halfX+c*z*candidate.halfZ,track.waters))))continue;
+        footprint=candidate;chosenYaw=yaw;stand.userData.offset=offset;stand.userData.progress=progress;stand.userData.sourceProgress=t;break;
+      }
+      if(footprint)break;
+    }
+    if(!footprint)return [];
+    track.scenerySpace.reserveFootprint(footprint);stand.rotation.y=chosenYaw;stand.updateMatrix();stand.userData.footprint=footprint;
     const structure=new THREE.Mesh(structureGeometry,structureMaterial);structure.name='grandstand-structure';structure.castShadow=structure.receiveShadow=true;
     const seats=new THREE.InstancedMesh(seat,seatMaterial,360),people=new THREE.InstancedMesh(body,shirts,360),heads=new THREE.InstancedMesh(head,skin,360);people.name='spectator-bodies';heads.name='spectator-heads';
     seats.name='grandstand-seats';people.userData.nearGeometry=body;people.userData.farGeometry=farBody;people.userData.nearMaterial=shirts;people.userData.farMaterial=farShirts;

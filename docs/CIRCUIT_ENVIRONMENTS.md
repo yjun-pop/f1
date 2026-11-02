@@ -49,7 +49,7 @@ network access to these sites is unavailable in this execution environment):
 - A shared 64 m spatial index answers prop/shore/tree clearance queries using local
   road segments instead of repeatedly scanning the full circuit.
 - City props and landmark parts share primitive geometries and materials and use
-  static instance batches in 300 m cells. Facade detail is a near-only batch.
+  static instance batches in 300 m cells; the close dressing layer uses 450 m batches. Facade detail is a near-only batch.
 - Water tiles share source vertex buffers and use bounded 320 m index batches.
   There is no extra water camera, reflection pass, or transparent ocean layer.
 - Backgrounds add no dynamic lights or per-frame animation callbacks. A generated
@@ -68,7 +68,7 @@ network access to these sites is unavailable in this execution environment):
   Reported draw calls/triangles describe scene submissions, not measured player
   FPS or a guarantee of performance on a particular GPU.
 
-### Recorded start-line comparison
+### Recorded start-line comparison for cfe72b6 (before the close-layer update)
 
 Baseline: `f338b9f`. Same camera (80° FOV, 1.7 m eye height, 1100 m far plane),
 medium quality, 1280×720, Chromium/SwiftShader. These are track/environment draws
@@ -85,3 +85,45 @@ features enabled in the candidate.
 cost while showing more features. These measurements establish scene submission
 budgets, not hardware FPS. The common 1,588,504-byte park HDR is no longer requested
 at game startup; the asset is retained for existing loader/disposal regression tests.
+
+## Close scenery and structure clearance update
+
+The old grandstand guard only ran when a circuit had an `environment` field. The
+original Monza, Silverstone and Spa definitions did not, so their grandstands
+were never checked. At Silverstone's old 0.15-lap stand anchor, the roof/support
+footprint crossed the actual asphalt around progress 0.1624–0.1667. The stand is
+now about 60 m upstream; all twelve Silverstone stands are retained.
+
+Every circuit now tests complete oriented footprints against road **segments**,
+including returning road sections and canopy overhangs. An occupied-footprint
+spatial index prevents stands, pits and close buildings from overlapping. Stands
+try safe lateral offsets and then nearby positions along the track. The pit is
+also validated before other facilities are placed. Woodland is generated after
+facilities and buildings, so trees avoid their actual final positions. Pole and
+brake-board placement also rejects adjacent road branches.
+
+A separate close dressing layer follows the game road: Brazil has low-rise houses,
+shops and paved forecourts along its outer perimeter, while the permanent venue's
+infield remains open. Monaco and Singapore get street-front buildings on eligible
+land sides. These are original procedural dressing, not surveyed individual
+buildings. Park circuits get more woodland, low planting and marshal/service huts.
+Road clearance and existing facilities take priority over filling every gap.
+
+Close facades share one texture/material per circuit and vary colour through
+instance attributes. Hedges, forecourts and service structures use shared primitive
+geometries. They add no dynamic lights, per-frame callbacks or reflection cameras.
+
+`tests/roadside-placement.mjs` reproduces the old Silverstone intrusion, checks the
+actual complete road mesh against every stand/pit footprint on all eight maps,
+checks facility overlap, and verifies close urban coverage and building clearance.
+At the recorded build, Interlagos has 336 close-layer buildings, including 299 with
+centres less than 55 m from a road centreline. A 100-position forward-view geometry
+check sees close urban buildings at 98 of those positions. This is a visibility
+fixture rather than a promise that every camera orientation sees a building.
+
+[Roadside rendering comparison](roadside-render-comparison.json) records the same
+eight fixed views before densification, after densification, and after instance
+colour/spatial batching. The richer scene costs more than the sparse baseline;
+the final batching reduces draws relative to the initial dense implementation. Triangle and
+draw counts are not GPU FPS measurements. Historical start-line numbers above
+apply specifically to cfe72b6, not to the current denser scene.
