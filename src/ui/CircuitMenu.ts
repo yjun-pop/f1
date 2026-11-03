@@ -46,7 +46,7 @@ export function circuitMenuMarkup(selected:CircuitId,prefix=''){
   return `<section class="race-menu" id="${id('menu-shell')}" aria-labelledby="${id('menu-title')}">
     <div class="menu-topbar"><div class="menu-brand" aria-label="APEX FORMULA"><i>Λ</i> APEX<span>FORMULA</span></div><span class="menu-mode"><i></i> QUICK RACE <span>/ SINGLE PLAYER</span></span></div>
     <div class="menu-heading"><div><div class="menu-kicker">01 <span> / </span> SELECT YOUR CIRCUIT</div><h1 id="${id('menu-title')}">어디서 <em>달릴까요?</em></h1><p id="${id('menu-description')}">서킷을 고르고, 당신의 다음 베스트 랩에 도전하세요.</p></div><div class="menu-session"><span><b id="${id('driver-count')}">${DEFAULT_FIELD_SIZE}</b> DRIVERS</span><i></i><span><b>03</b> LAPS</span><i></i><span class="menu-dry" id="${id('conditions')}">${circuit.night?'☾ <b>NIGHT · DRY</b>':'☀ <b>DRY</b>'}</span></div></div>
-    <fieldset class="circuit-grid"><legend class="sr-only">레이스할 서킷 선택</legend>${CIRCUITS.map((c,i)=>{const p=PRESENTATION[c.id];return `<label class="circuit-card ${c.id===selected?'is-selected':''}" id="${id('card-'+c.id)}" style="--circuit-accent:${p.accent}"><input class="circuit-radio" type="radio" name="${id('circuit')}" id="${id('circuit-'+c.id)}" value="${c.id}" ${c.id===selected?'checked':''} aria-describedby="${id('facts-'+c.id)}"/><span class="card-topline"><span>${flag(c.id)} ${c.country}</span><span class="card-choice"><span class="choice-label">선택됨</span><i>✓</i></span></span><span class="card-title">${c.name}<small>${c.label}</small></span><span class="card-map"><span class="card-watermark">0${i+1}</span>${circuitPreview(c)}<span class="card-map-caption">${p.landmark}</span></span><span class="card-bottom" id="${id('facts-'+c.id)}"><span class="card-character">${p.theme}<small>${p.style}</small></span><span class="card-measure"><b>${(c.length/1000).toFixed(3)}<small>KM</small></b><span>${c.cornerCount} CORNERS</span></span></span></label>`;}).join('')}</fieldset>
+    <fieldset class="circuit-gallery" id="${id('gallery')}" aria-roledescription="갤러리"><legend class="sr-only">레이스할 서킷 선택</legend><div class="gallery-stage" id="${id('gallery-stage')}">${CIRCUITS.map((c,i)=>{const p=PRESENTATION[c.id];return `<label class="circuit-card ${c.id===selected?'is-selected':''}" id="${id('card-'+c.id)}" style="--circuit-accent:${p.accent}"><input class="circuit-radio" type="radio" name="${id('circuit')}" id="${id('circuit-'+c.id)}" value="${c.id}" ${c.id===selected?'checked':''} aria-describedby="${id('facts-'+c.id)}"/><span class="card-topline"><span>${flag(c.id)} ${c.country}</span><span class="card-choice"><span class="choice-label">선택됨</span><i>✓</i></span></span><span class="card-title">${c.name}<small>${c.label}</small></span><span class="card-map"><span class="card-watermark">0${i+1}</span>${circuitPreview(c)}<span class="card-map-caption">${p.landmark}</span></span><span class="card-bottom" id="${id('facts-'+c.id)}"><span class="card-character">${p.theme}<small>${p.style}</small></span><span class="card-measure"><b>${(c.length/1000).toFixed(3)}<small>KM</small></b><span>${c.cornerCount} CORNERS</span></span></span></label>`;}).join('')}</div><div class="gallery-controls"><button type="button" class="gallery-arrow" id="${id('gallery-prev')}" aria-label="이전 서킷"><span aria-hidden="true">←</span></button><div class="gallery-pagination" aria-label="서킷 바로 선택">${CIRCUITS.map(c=>`<button type="button" class="gallery-dot" id="${id('dot-'+c.id)}" aria-label="${PRESENTATION[c.id].country} · ${c.label} 선택"></button>`).join('')}</div><button type="button" class="gallery-arrow" id="${id('gallery-next')}" aria-label="다음 서킷"><span aria-hidden="true">→</span></button><span class="gallery-counter" id="${id('gallery-counter')}" aria-live="polite" aria-atomic="true"></span></div></fieldset>
     <div class="menu-bottom"><div class="selected-circuit" aria-live="polite"><span class="menu-kicker">YOUR NEXT CHALLENGE</span><h2 id="${id('selection-title')}">${info.country} · ${circuit.label}</h2><p id="${id('selection-description')}">${info.description}</p><span class="menu-record">PERSONAL BEST <b id="${id('selection-record')}">${record(selected)}</b></span></div><div class="menu-launch"><label class="menu-transmission" for="${id('start-transmission')}">변속 방식<select id="${id('start-transmission')}"><option value="auto">자동 변속</option><option value="manual">수동 변속 · Q / E</option></select></label><button type="button" class="menu-wheel-button" id="${id('wheel-settings')}">레이싱 휠 연결 · 입력 설정</button><button class="menu-start" id="${id('start')}"><span id="${id('start-label')}">${circuit.label}에서 시작</span><span aria-hidden="true">↗</span></button><span class="menu-launch-hint"><kbd>← →</kbd> 서킷 선택 <span>·</span> <kbd>ENTER</kbd> 레이스 시작</span></div></div>
     <div class="menu-footnote"><span>APEX FORMULA <i>/</i> CHASE YOUR NEXT APEX.</span><details><summary>조작 방법</summary><p>W / ↑ 가속 · S / ↓ 제동 · A D / ← → 조향<br>SHIFT ERS · F DRS · Q / E 변속 · T 변속 방식<br>C 시점 · G 주행선 · ESC 일시정지</p></details></div><p class="menu-status" id="${id('menu-status')}" role="status" hidden></p>
   </section>`;
@@ -59,12 +59,12 @@ interface MenuOptions {
 export class CircuitMenu {
   private selected:CircuitId;private loading=false;private failed=false;
   private keyboardHandler=(event:KeyboardEvent)=>{
+    if(event.defaultPrevented)return;
     const target=event.target as HTMLElement;
     if(target?.closest?.('dialog[open]'))return;
     if(event.code==='ArrowLeft'||event.code==='ArrowRight'){
-      if(target?.matches?.('input,select,textarea,button,summary,[contenteditable="true"]')||this.loading||this.failed)return;
-      const index=CIRCUITS.findIndex(c=>c.id===this.selected),next=CIRCUITS[(index+(event.code==='ArrowRight'?1:CIRCUITS.length-1))%CIRCUITS.length];
-      event.preventDefault();this.select(next.id);this.node('circuit-'+next.id).focus();return;
+      if(target?.matches?.('input:not(.circuit-radio),select,textarea,button,summary,[contenteditable="true"]')||this.loading||this.failed)return;
+      event.preventDefault();this.move(event.code==='ArrowRight'?1:-1);this.node('circuit-'+this.selected).focus({preventScroll:true});return;
     }
     if(event.code!=='Enter'||event.repeat||target?.matches?.('button,a,summary,select,textarea,[contenteditable="true"]'))return;
     event.preventDefault();this.start();
@@ -72,7 +72,21 @@ export class CircuitMenu {
   constructor(private root:HTMLElement,private options:MenuOptions){
     this.selected=options.selected;
     if(options.render!==false)root.innerHTML=circuitMenuMarkup(options.selected,options.prefix);
-    for(const circuit of CIRCUITS)this.node<HTMLInputElement>('circuit-'+circuit.id).addEventListener('change',()=>this.select(circuit.id));
+    for(const circuit of CIRCUITS){
+      this.node<HTMLInputElement>('circuit-'+circuit.id).addEventListener('change',()=>this.select(circuit.id));
+      this.node('dot-'+circuit.id).addEventListener('click',()=>this.select(circuit.id));
+    }
+    this.node('gallery-prev').addEventListener('click',()=>this.move(-1));
+    this.node('gallery-next').addEventListener('click',()=>this.move(1));
+    const stage=this.node('gallery-stage');let touch:{id:number;x:number;y:number}|undefined,swiped=false;
+    stage.addEventListener('pointerdown',event=>{swiped=false;if(event.pointerType==='touch')touch={id:event.pointerId,x:event.clientX,y:event.clientY};});
+    stage.addEventListener('pointerup',event=>{
+      if(!touch||event.pointerId!==touch.id)return;
+      const dx=event.clientX-touch.x,dy=event.clientY-touch.y;touch=undefined;
+      if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.4){swiped=true;this.move(dx<0?1:-1);}
+    });
+    stage.addEventListener('pointercancel',()=>{touch=undefined;});
+    stage.addEventListener('click',event=>{if(swiped){event.preventDefault();event.stopPropagation();swiped=false;}},true);
     this.node('menu-shell').addEventListener('keydown',event=>{
       const e=event as KeyboardEvent;
       if(e.code==='Enter'&&!e.repeat&&(e.target as HTMLElement)?.matches?.('input[type="radio"]')){e.preventDefault();e.stopPropagation();this.start();}
@@ -82,18 +96,35 @@ export class CircuitMenu {
     this.node<HTMLSelectElement>('start-transmission').addEventListener('change',event=>options.transmission?.(transmissionMode((event.target as HTMLSelectElement).value)));
     this.setTransmission(options.mode);
     if(options.keyboard)window.addEventListener('keydown',this.keyboardHandler);
+    else this.node('menu-shell').addEventListener('keydown',this.keyboardHandler);
+    this.updateGallery();
   }
   private node<T extends HTMLElement=HTMLElement>(id:string){return this.root.querySelector<T>('#'+(this.options.prefix??'')+id)!;}
+  private move(direction:number){
+    const index=CIRCUITS.findIndex(c=>c.id===this.selected);
+    this.select(CIRCUITS[(index+direction+CIRCUITS.length)%CIRCUITS.length].id);
+  }
+  private updateGallery(){
+    const index=CIRCUITS.findIndex(c=>c.id===this.selected),total=CIRCUITS.length;
+    CIRCUITS.forEach((c,i)=>{
+      let offset=(i-index+total)%total;if(offset>total/2)offset-=total;
+      const card=this.node('card-'+c.id),radio=this.node<HTMLInputElement>('circuit-'+c.id),dot=this.node('dot-'+c.id);
+      card.style.setProperty('--slot',String(Math.max(-2,Math.min(2,offset))));
+      card.classList.toggle('is-selected',offset===0);card.classList.toggle('is-neighbor',Math.abs(offset)===1);card.classList.toggle('is-away',Math.abs(offset)>1);
+      card.setAttribute('aria-hidden',String(Math.abs(offset)>1));radio.checked=offset===0;radio.tabIndex=offset===0?0:-1;
+      dot.setAttribute('aria-current',offset===0?'true':'false');dot.classList.toggle('is-current',offset===0);
+    });
+    this.node('gallery-counter').textContent=`${String(index+1).padStart(2,'0')} / ${String(total).padStart(2,'0')}`;
+  }
   select(id:CircuitId){
     if(this.loading||this.failed)return;
     this.selected=id;const circuit=circuitById(id),info=PRESENTATION[id];
-    for(const c of CIRCUITS){this.node<HTMLInputElement>('circuit-'+c.id).checked=c.id===id;this.node('card-'+c.id).classList.toggle('is-selected',c.id===id);}
+    this.updateGallery();
     this.node('selection-title').textContent=`${info.country} · ${circuit.label}`;
     this.node('conditions').innerHTML=circuit.night?'☾ <b>NIGHT · DRY</b>':'☀ <b>DRY</b>';
     this.node('selection-description').textContent=info.description;
     this.node('selection-record').textContent=record(id);
     this.node('start-label').textContent=`${circuit.label}에서 시작`;
-    this.node('card-'+id).scrollIntoView?.({block:'nearest',inline:'nearest',behavior:'smooth'});
   }
   setTransmission(mode:TransmissionMode){this.node<HTMLSelectElement>('start-transmission').value=mode;}
   start(){
@@ -104,7 +135,8 @@ export class CircuitMenu {
   setLoading(label:string){
     this.node<HTMLButtonElement>('wheel-settings').disabled=true;
     this.loading=true;this.node('menu-shell').classList.toggle('is-loading',true);
-    for(const c of CIRCUITS)this.node<HTMLInputElement>('circuit-'+c.id).disabled=true;
+    for(const c of CIRCUITS){this.node<HTMLInputElement>('circuit-'+c.id).disabled=true;this.node<HTMLButtonElement>('dot-'+c.id).disabled=true;}
+    this.node<HTMLButtonElement>('gallery-prev').disabled=true;this.node<HTMLButtonElement>('gallery-next').disabled=true;
     this.node<HTMLSelectElement>('start-transmission').disabled=true;this.node<HTMLButtonElement>('start').disabled=true;
     this.node('start-label').textContent='그리드 준비 중…';
     const status=this.node('menu-status');status.hidden=false;status.textContent=`${label} 서킷과 주행선을 준비하고 있습니다…`;

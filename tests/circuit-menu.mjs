@@ -17,13 +17,14 @@ function environment(href='https://example.test/f1/',saved={}){
   const nodes=new Map(),listeners=new Map(),frames=[],storage=new Map(Object.entries(saved)),launches=[],contexts=[];
   let locationURL=new URL(href),reloads=0,wheelViews=0;
   const node=(id,tag='div')=>{
-    const classes=new Set(),events=new Map();let html='';
+    const classes=new Set(),events=new Map(),attributes=new Map(),styles=new Map();let html='';
     const element={id,tag,events,value:'',textContent:'',checked:false,disabled:false,hidden:false,removed:false,
+      style:{setProperty:(key,value)=>styles.set(key,value)},setAttribute:(key,value)=>attributes.set(key,value),getAttribute:key=>attributes.get(key),
       classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name),contains:name=>classes.has(name)},
       addEventListener:(type,fn)=>events.set(type,fn),
       querySelector:selector=>nodes.get(selector.slice(1)),
       focus(){globalThis.document.activeElement=element;},remove(){element.removed=true;},
-      matches:selector=>selector.split(',').some(part=>part.trim()===tag||part.trim()==='input[type="radio"]'&&tag==='input'&&element.type==='radio'),
+      matches:selector=>selector.split(',').some(part=>part.trim()===tag||part.trim()==='input:not(.circuit-radio)'&&tag==='input'&&element.type!=='radio'||part.trim()==='input[type="radio"]'&&tag==='input'&&element.type==='radio'),
       emit(type,extra={}){const event={target:element,preventDefault(){},stopPropagation(){},...extra};events.get(type)?.(event);},
       get innerHTML(){return html;},set innerHTML(value){html=value;
         for(const match of value.matchAll(/<([a-z][\w-]*)\b([^>]*\bid="([^"]+)"[^>]*)>/g)){
@@ -57,6 +58,23 @@ env.nodes.get('wheel-settings').emit('click');assert.equal(wheelOpens,1);assert.
 assert.equal((env.root.innerHTML.match(/type="radio"/g)??[]).length,8);
 assert.equal((env.root.innerHTML.match(/class="circuit-outline"/g)??[]).length,8);
 const previews=CIRCUITS.map(c=>circuitPreview(c));assert.equal(new Set(previews).size,8);assert.ok(previews.every(p=>!p.includes('NaN')&&!p.includes('Infinity')));
+assert.equal(env.nodes.get('gallery-counter').textContent,'01 / 08');
+assert.equal(env.nodes.get('card-monza').classList.contains('is-selected'),true);
+assert.equal(env.nodes.get('card-montreal').classList.contains('is-neighbor'),true);
+assert.equal(env.nodes.get('card-silverstone').classList.contains('is-neighbor'),true);
+assert.equal(env.nodes.get('card-spa').getAttribute('aria-hidden'),'true');
+env.nodes.get('gallery-prev').emit('click');assert.equal(env.nodes.get('circuit-montreal').checked,true);
+env.nodes.get('gallery-next').emit('click');assert.equal(env.nodes.get('circuit-monza').checked,true);
+env.nodes.get('dot-suzuka').emit('click');assert.equal(env.nodes.get('circuit-suzuka').checked,true);
+assert.equal(env.nodes.get('gallery-counter').textContent,'05 / 08');
+assert.equal(env.nodes.get('dot-suzuka').getAttribute('aria-current'),'true');
+const stage=env.nodes.get('gallery-stage');
+stage.emit('pointerdown',{pointerType:'touch',pointerId:1,clientX:240,clientY:90});
+stage.emit('pointerup',{pointerId:1,clientX:140,clientY:96});assert.equal(env.nodes.get('circuit-interlagos').checked,true);
+let cancelled=false;stage.emit('click',{preventDefault(){cancelled=true;}});assert.equal(cancelled,true,'A swipe must not also select the card under the release point');
+stage.emit('pointerdown',{pointerType:'touch',pointerId:2,clientX:240,clientY:90});
+stage.emit('pointerup',{pointerId:2,clientX:230,clientY:190});assert.equal(env.nodes.get('circuit-interlagos').checked,true,'Vertical page scrolling must not change circuits');
+console.log('PASS: centered gallery, blurred-neighbor states, wraparound arrows, direct selection and horizontal-only touch navigation');
 env.nodes.get('circuit-spa').emit('change');
 assert.equal(env.nodes.get('selection-title').textContent,'벨기에 · 스파');
 assert.equal(env.nodes.get('selection-record').textContent,'1:54.490');
@@ -69,13 +87,15 @@ console.log('PASS: eight distinct geographic map cards, selected state, per-circ
 
 env.key('ArrowRight');assert.equal(env.nodes.get('circuit-monaco').checked,true,'Arrow selection must include the newly added circuits');menu.select('montreal');env.key('ArrowRight');assert.equal(env.nodes.get('circuit-monza').checked,true,'Circuit arrows wrap around');
 assert.equal(document.activeElement,env.nodes.get('circuit-monza'));
+env.key('ArrowRight',document.activeElement);assert.equal(env.nodes.get('circuit-silverstone').checked,true);env.key('ArrowLeft',document.activeElement);assert.equal(env.nodes.get('circuit-monza').checked,true);
 env.key('Enter',env.nodes.get('start-transmission'));assert.equal(starts.length,1,'Enter in the gearbox dropdown must retain native behavior');
 env.key('Enter',{matches:()=>false,closest:()=>({})});assert.equal(starts.length,1,'Wheel setup input must not start the underlying race');
 env.key('Enter',{matches:()=>false},true);assert.equal(starts.length,1,'Held Enter must not launch repeatedly');
 env.nodes.get('menu-shell').emit('keydown',{code:'Enter',repeat:false,target:env.nodes.get('circuit-monza')});
 assert.deepEqual(starts.at(-1),['monza','manual']);
-menu.setLoading('몬자');menu.select('spa');menu.start();
+menu.setLoading('몬자');menu.select('spa');menu.start();env.nodes.get('gallery-next').emit('click');env.nodes.get('dot-spa').emit('click');
 assert.equal(starts.length,2);assert.equal(env.nodes.get('circuit-monza').checked,true);
+assert.ok(env.nodes.get('gallery-prev').disabled&&env.nodes.get('gallery-next').disabled&&CIRCUITS.every(c=>env.nodes.get('dot-'+c.id).disabled));
 assert.ok(env.nodes.get('start').disabled&&env.nodes.get('start-transmission').disabled&&CIRCUITS.every(c=>env.nodes.get('circuit-'+c.id).disabled));
 assert.equal(env.nodes.get('wheel-settings').disabled,true);env.nodes.get('wheel-settings').emit('click');assert.equal(wheelOpens,1);
 assert.equal(env.nodes.get('menu-status').hidden,false);menu.dispose();assert.equal(env.listeners.get('keydown').size,0);
