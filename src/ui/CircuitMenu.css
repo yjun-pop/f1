@@ -86,3 +86,46 @@
   #front-menu .race-menu{min-height:620px;grid-template-rows:auto minmax(min-content,1fr) auto minmax(84px,1fr) auto}
   #front-menu .circuit-gallery{margin-top:60px}
 }
+
+/* A single circuit floats over its own live scenery. */
+.circuit-backdrop{position:fixed;inset:0;z-index:29;pointer-events:none;background:#0b111a;opacity:0;transition:opacity .45s ease}
+.circuit-backdrop.is-ready{opacity:1}
+.circuit-backdrop canvas{width:100%;height:100%;opacity:var(--shot-opacity,1)}
+#front-menu{background:linear-gradient(180deg,#050c18a8,transparent 35%,#050b17c9),radial-gradient(ellipse at 50% 42%,#060e1938 15%,#040a16bd 100%)}
+#front-menu .race-menu{z-index:1;grid-template-rows:auto minmax(min-content,1fr) minmax(170px,1fr) minmax(110px,1fr) auto}
+#front-menu .circuit-gallery{position:relative;align-self:end;margin-top:88px}
+#front-menu .circuit-card:not(.is-selected){display:none}
+#front-menu .circuit-card.is-selected{background:linear-gradient(150deg,#172533c4,#0b1823ad);box-shadow:0 18px 65px #0005,inset 0 0 0 1px color-mix(in srgb,var(--circuit-accent) 45%,transparent);backdrop-filter:blur(8px)}
+#front-menu .gallery-stage{isolation:auto}
+#front-menu .gallery-stage::after,#front-menu .gallery-pagination{display:none}
+#front-menu .gallery-controls{position:absolute;inset:0;display:block;margin:0;pointer-events:none}
+#front-menu .gallery-arrow{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:64px;border:0;background:#07101b5c;font:300 42px/1 sans-serif;pointer-events:auto;color:#f0f5fc;text-shadow:0 2px 12px #000;border-radius:8px}
+#front-menu .gallery-arrow:first-child{left:calc(50% - min(230px,32%) - 66px)}
+#front-menu .gallery-arrow:nth-of-type(2){right:calc(50% - min(230px,32%) - 66px)}
+#front-menu .gallery-arrow:hover{background:#ffffff1c}
+#front-menu .gallery-counter{position:absolute;right:0;bottom:0;color:#c1cfda}
+#front-menu .menu-start{align-self:center;margin:0;box-shadow:0 8px 40px #0005}
+#front-menu .menu-brand,#front-menu .menu-session,#front-menu .menu-record,#front-menu .menu-heading h1,#front-menu .menu-footnote{text-shadow:0 2px 12px #000}
+#front-menu .menu-record{color:#c4d2de}
+#front-menu .menu-wheel-button,#front-menu .menu-transmission select{background:#0b1927b8}
+@media(min-width:681px) and (max-height:800px){#front-menu .race-menu{grid-template-rows:auto minmax(min-content,1fr) minmax(100px,1fr) minmax(95px,1fr) auto}#front-menu .circuit-gallery{margin-top:55px}}
+@media(max-width:680px){
+ #front-menu .race-menu{min-height:740px;grid-template-rows:auto minmax(min-content,1fr) minmax(115px,1fr) minmax(160px,1fr) auto}
+ #front-menu .circuit-gallery{margin-top:70px}
+ #front-menu .gallery-arrow{width:32px;height:54px;font-size:30px;background:transparent}
+ #front-menu .gallery-arrow:first-child{left:calc(50% - 39% - 36px)}
+ #front-menu .gallery-arrow:nth-of-type(2){right:calc(50% - 39% - 36px)}
+ #front-menu .gallery-counter{bottom:-14px;font-size:9px}
+ #front-menu .menu-start{margin:0}
+}
+@media(prefers-reduced-motion:reduce){.circuit-backdrop{transition:none}}
+#front-menu .menu-start{position:absolute;left:50%;top:78%;transform:translate(-50%,-50%)}
+#front-menu .menu-start:hover{transform:translate(-50%,calc(-50% - 1px))}
+#front-menu .menu-start:disabled{transform:translate(-50%,-50%)}
+@media(max-width:680px){#front-menu .menu-start{top:76%}}
+@media(prefers-reduced-motion:reduce){#front-menu .menu-start:hover{transform:translate(-50%,-50%)}}
+#front-menu .menu-start{grid-row:auto;grid-column:auto}
+@media(max-width:680px){
+ #front-menu .gallery-arrow:first-child{left:calc(11vw - var(--screen-gutter) - 36px)}
+ #front-menu .gallery-arrow:nth-of-type(2){right:calc(11vw - var(--screen-gutter) - 36px)}
+}
