@@ -11,12 +11,14 @@ const INTRO_SECTIONS:Record<CircuitId,readonly number[]>={
   monaco:[6,8,10,15],suzuka:[18,3,11,15],interlagos:[1,4,10,12],
   singapore:[5,12,14,16],montreal:[1,6,10,14]
 };
-const SHOT_HOLD_MS=3000,FADE_MS=600;
+const SHOT_HOLD_MS=3000,OVERLAP_MS=600;
 
 /** Menu scenery only: no Race, drivers, vehicles, audio or simulation loop. */
 export class CircuitBackdrop {
   readonly targetFPS=120;
   private renderer:THREE.WebGLRenderer;
+  private overlap:HTMLCanvasElement;
+  private overlapPending=false;private holdPending=false;private sceneReady=false;private resizePending=false;
   private scene?:THREE.Scene;private track?:Track;private lighting?:WorldLighting;
   private camera=new THREE.PerspectiveCamera(57,1,.5,1500);
   private interacting=false;
@@ -34,28 +36,28 @@ export class CircuitBackdrop {
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate=false;
     this.renderer.domElement.setAttribute('aria-hidden','true');host.append(this.renderer.domElement);
-    host.dataset.targetFps=String(this.targetFPS);
+    this.overlap=document.createElement('canvas');this.overlap.className='circuit-overlap';this.overlap.setAttribute('aria-hidden','true');this.overlap.style.opacity='0';this.overlap.width=this.overlap.height=1;host.append(this.overlap);
+    host.dataset.targetFps=String(this.targetFPS);host.dataset.transition='idle';
     this.resize();window.addEventListener('resize',this.resize);document.addEventListener('visibilitychange',this.visibility);
     this.frame=requestAnimationFrame(this.animate);
   }
   select(id:CircuitId){
     if(this.stopped||id===this.selected)return;this.selected=id;
-    window.clearTimeout(this.timer);window.clearTimeout(this.shotTimer);this.changing=true;this.host.classList.remove('is-ready');
-    // Keep the outgoing frame intact until its 600ms fade has finished.
-    // Only the latest selection may replace the scenery beneath the hidden layer.
-    this.afterFade(()=>{
-      if(this.stopped)return;
+    window.clearTimeout(this.timer);window.clearTimeout(this.shotTimer);this.captureOutgoing();this.changing=true;this.holdPending=false;
+    // Keep one opaque outgoing image while only the latest selected world loads.
+    this.timer=window.setTimeout(()=>{
+      if(this.stopped||this.selected!==id)return;
       try{
-        this.clearWorld();const scene=new THREE.Scene(),definition=circuitById(id);this.scene=scene;
+        this.sceneReady=false;this.clearWorld();const scene=new THREE.Scene(),definition=circuitById(id);this.scene=scene;
         this.track=new Track(scene,definition);
         this.lighting=new WorldLighting(scene,this.renderer,'medium',!!definition.night,environmentFor(id));
         this.renderer.toneMappingExposure=environmentFor(id).exposure;
         this.elapsed=this.last=this.renderedAt=0;this.detailAt=-1;this.shadowAt=-2;this.warmup=2;
         this.shotIndex=0;this.prepareShot();
         this.paintedAt=this.sampleTime=this.sampleFrames=0;
-        this.host.dataset.circuit=id;this.changing=false;this.resize();
+        this.host.dataset.circuit=id;this.changing=false;this.holdPending=true;
       }catch(error){console.warn('Circuit backdrop unavailable',error);this.clearWorld();this.changing=false;}
-    });
+    },this.reduced.matches?0:80);
   }
   private animate=(now:number)=>{
     if(this.stopped)return;this.frame=requestAnimationFrame(this.animate);
@@ -65,18 +67,24 @@ export class CircuitBackdrop {
     if(now-this.renderedAt<1000/this.targetFPS-.6||!this.track||!this.scene||!this.lighting)return;
     const paintDt=this.paintedAt?Math.min(.1,(now-this.paintedAt)/1000):0;this.paintedAt=now;
     this.renderedAt=now-((now-this.renderedAt)%(1000/this.targetFPS));
+    if(this.resizePending){this.resize();this.resizePending=false;}
     this.poseCamera(this.reduced.matches?0:this.elapsed);
     if(this.elapsed-this.detailAt>.25){this.track.updatePresentation(this.camera.position,'medium');this.detailAt=this.elapsed;}
     if(this.elapsed-this.shadowAt>1.5){this.lighting.sun.target.position.copy(this.focus);this.lighting.sun.position.copy(this.focus).add(this.lighting.sunOffset);this.renderer.shadowMap.needsUpdate=true;this.shadowAt=this.elapsed;}
     this.renderer.render(this.scene,this.camera);
-    if(!this.host.classList.contains('is-ready')){this.host.classList.add('is-ready');this.scheduleShot();}
+    this.sceneReady=true;
+    if(!this.host.classList.contains('is-ready'))this.host.classList.add('is-ready');
+    if(this.overlapPending){
+      // The incoming scene has actually rendered before the outgoing image fades.
+      this.overlapPending=false;this.holdPending=false;this.overlap.style.transition=this.reduced.matches?'none':'';this.overlap.style.opacity='0';this.finishOverlap();
+    }else if(this.holdPending){this.holdPending=false;this.scheduleShot();}
     if(++this.count%30===0)this.host.dataset.frames=String(this.count);
     if(this.warmup>0){this.warmup-=dt;return;}
     this.sampleTime+=paintDt;this.sampleFrames++;
     if(this.sampleTime>2){
       this.host.dataset.renderFps=(this.sampleFrames/this.sampleTime).toFixed(1);
       // Spend fewer pixels rather than dropping the requested refresh cadence.
-      if(this.sampleFrames/this.sampleTime<58&&this.scale>.65){this.scale=Math.max(.65,this.scale*.85);this.resize();}
+      if(this.sampleFrames/this.sampleTime<58&&this.scale>.65){this.scale=Math.max(.65,this.scale*.85);this.resizePending=true;}
       this.sampleTime=this.sampleFrames=0;
     }
   };
@@ -85,31 +93,53 @@ export class CircuitBackdrop {
     this.interacting=active;window.clearTimeout(this.shotTimer);
     if(!active&&this.track&&!this.changing)this.scheduleShot();
   }
-  private afterFade(action:()=>void){
-    const hidden=()=>{
-      if(this.stopped)return;
-      // Check the actual CSS transition value, including slow frames.
-      if(Number(getComputedStyle(this.host).opacity)>.001){this.timer=window.setTimeout(hidden,32);return;}
-      action();
+  /** Snapshot only at a cut: one WebGL renderer/world, no second live scene. */
+  private captureOutgoing(){
+    if(this.reduced.matches){this.clearOverlap();return;}
+    const opacity=Number(getComputedStyle(this.overlap).opacity);
+    if(opacity>=.999){this.overlapPending=true;return;}
+    if(!this.sceneReady||!this.scene)return;
+    try{
+      // Copy immediately after drawing; preserveDrawingBuffer stays disabled.
+      this.renderer.render(this.scene,this.camera);
+      const source=this.renderer.domElement;let image:HTMLCanvasElement=source;
+      if(opacity>.001){
+        // Rapid map changes preserve the currently visible blend, not an older
+        // single scene. This temporary 2D buffer is released after the copy.
+        image=document.createElement('canvas');image.width=source.width;image.height=source.height;
+        const ctx=image.getContext('2d')!;ctx.drawImage(source,0,0);ctx.globalAlpha=opacity;ctx.drawImage(this.overlap,0,0,image.width,image.height);
+      }
+      this.overlap.style.transition='none';this.overlap.width=source.width;this.overlap.height=source.height;
+      this.overlap.getContext('2d')!.drawImage(image,0,0,this.overlap.width,this.overlap.height);
+      if(image!==source)image.width=image.height=1;
+      this.overlap.style.opacity='1';void this.overlap.offsetWidth;
+      this.overlapPending=true;this.host.dataset.transition='overlap';
+    }catch(error){console.warn('Backdrop overlap unavailable',error);this.clearOverlap();}
+  }
+  private clearOverlap(){
+    this.overlap.style.transition='none';this.overlap.style.opacity='0';this.overlap.width=this.overlap.height=1;
+    this.overlapPending=false;this.host.dataset.transition='idle';
+  }
+  private finishOverlap(){
+    const finish=()=>{
+      if(this.stopped||this.changing||this.overlapPending)return;
+      if(Number(getComputedStyle(this.overlap).opacity)>.001){this.timer=window.setTimeout(finish,32);return;}
+      this.clearOverlap();this.scheduleShot();
     };
-    this.timer=window.setTimeout(hidden,this.reduced.matches?0:FADE_MS+32);
+    this.timer=window.setTimeout(finish,this.reduced.matches?0:OVERLAP_MS+32);
   }
   private scheduleShot(){
     window.clearTimeout(this.shotTimer);
-    if(this.stopped||this.interacting||this.reduced.matches||document.hidden)return;
+    if(this.stopped||this.interacting||this.reduced.matches||document.hidden||this.overlapPending||this.host.dataset.transition==='overlap')return;
     const hold=()=>{
       if(this.stopped||this.interacting||this.changing||document.hidden)return;
       if(Number(getComputedStyle(this.host).opacity)<.999){this.shotTimer=window.setTimeout(hold,32);return;}
       // Start the three-second hold only when the incoming frame is fully visible.
       this.shotTimer=window.setTimeout(()=>{
         if(this.stopped||this.interacting||this.changing||!this.track||document.hidden)return;
-        this.changing=true;this.host.classList.remove('is-ready');
-        this.afterFade(()=>{
-          if(this.stopped||!this.track)return;
-          this.shotIndex=(this.shotIndex+1)%INTRO_SECTIONS[this.track.circuit.id].length;
-          this.prepareShot();this.elapsed=this.last=0;this.detailAt=-1;this.shadowAt=-2;
-          this.changing=false;
-        });
+        this.captureOutgoing();
+        this.shotIndex=(this.shotIndex+1)%INTRO_SECTIONS[this.track.circuit.id].length;
+        this.prepareShot();this.elapsed=this.last=0;this.detailAt=-1;this.shadowAt=-2;this.holdPending=true;
       },SHOT_HOLD_MS);
     };
     hold();
@@ -159,5 +189,5 @@ export class CircuitBackdrop {
     }
     this.scene=undefined;this.track=undefined;this.renderer.renderLists.dispose();
   }
-  dispose(){if(this.stopped)return;this.stopped=true;cancelAnimationFrame(this.frame);window.clearTimeout(this.timer);window.clearTimeout(this.shotTimer);window.removeEventListener('resize',this.resize);document.removeEventListener('visibilitychange',this.visibility);this.clearWorld();this.renderer.dispose();this.renderer.forceContextLoss();this.host.remove();}
+  dispose(){if(this.stopped)return;this.stopped=true;cancelAnimationFrame(this.frame);window.clearTimeout(this.timer);window.clearTimeout(this.shotTimer);window.removeEventListener('resize',this.resize);document.removeEventListener('visibilitychange',this.visibility);this.clearOverlap();this.clearWorld();this.renderer.dispose();this.renderer.forceContextLoss();this.host.remove();}
 }
