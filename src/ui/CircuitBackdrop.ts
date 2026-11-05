@@ -10,6 +10,8 @@ export class CircuitBackdrop {
   private renderer:THREE.WebGLRenderer;
   private scene?:THREE.Scene;private track?:Track;private lighting?:WorldLighting;
   private camera=new THREE.PerspectiveCamera(57,1,.5,1500);
+  private changing=false;
+  private focus=new THREE.Vector3();private forward=new THREE.Vector3();private normal=new THREE.Vector3();
   private frame=0;private timer=0;private stopped=false;private selected?:CircuitId;
   private elapsed=0;private last=0;private renderedAt=0;private detailAt=-1;private shadowAt=-2;
   private count=0;private paintedAt=0;private scale=1;private sampleTime=0;private sampleFrames=0;private warmup=2;
@@ -28,8 +30,9 @@ export class CircuitBackdrop {
   }
   select(id:CircuitId){
     if(this.stopped||id===this.selected)return;this.selected=id;
-    window.clearTimeout(this.timer);this.host.classList.remove('is-ready');
-    // Coalesce quick arrow presses and let the fade paint before world creation.
+    window.clearTimeout(this.timer);this.changing=true;this.host.classList.remove('is-ready');
+    // Keep the outgoing frame intact until its 600ms fade has finished.
+    // Only the latest selection may replace the scenery beneath the hidden layer.
     this.timer=window.setTimeout(()=>{
       if(this.stopped)return;
       try{
@@ -38,33 +41,28 @@ export class CircuitBackdrop {
         this.lighting=new WorldLighting(scene,this.renderer,'medium',!!definition.night,environmentFor(id));
         this.renderer.toneMappingExposure=environmentFor(id).exposure;
         this.elapsed=this.last=this.renderedAt=0;this.detailAt=-1;this.shadowAt=-2;this.warmup=2;
-        this.host.dataset.circuit=id;this.resize();
-      }catch(error){console.warn('Circuit backdrop unavailable',error);this.clearWorld();}
-    },240);
+        const anchor=60/this.track.length;
+        this.focus.copy(this.track.roadPoint(anchor));this.focus.y+=2;
+        this.forward.copy(this.track.tangent(anchor));this.normal.copy(this.track.roadNormal(anchor));
+        this.paintedAt=this.sampleTime=this.sampleFrames=0;
+        this.host.dataset.circuit=id;this.changing=false;this.resize();
+      }catch(error){console.warn('Circuit backdrop unavailable',error);this.clearWorld();this.changing=false;}
+    },this.reduced.matches?0:660);
   }
   private animate=(now:number)=>{
     if(this.stopped)return;this.frame=requestAnimationFrame(this.animate);
-    if(document.hidden){this.last=0;return;}
+    if(document.hidden||this.changing){this.last=0;return;}
     const dt=this.last?Math.min(.1,(now-this.last)/1000):0;this.last=now;this.elapsed+=dt;
     // rAF follows the display. Never impose a 30fps fallback or simulate frames.
     if(now-this.renderedAt<1000/this.targetFPS-.6||!this.track||!this.scene||!this.lighting)return;
     const paintDt=this.paintedAt?Math.min(.1,(now-this.paintedAt)/1000):0;this.paintedAt=now;
     this.renderedAt=now-((now-this.renderedAt)%(1000/this.targetFPS));
-    const shot=Math.floor(this.elapsed/12),phase=(this.elapsed%12)/12;
-    const anchors=[0,this.track.sections[2]?.progress??.25,this.track.sections[6]?.progress??.65];
-    const progress=anchors[shot%anchors.length]+(this.reduced.matches?0:phase*100/this.track.length);
-    const p=this.track.roadPoint(progress),n=this.track.roadNormal(progress),forward=this.track.tangent(progress);
-    const height=shot%3===0?32:shot%3===1?18:44,side=shot%2===0?38:-32;
-    this.camera.position.copy(p).addScaledVector(n,side).addScaledVector(forward,-62);this.camera.position.y+=height;
-    const target=p.clone().addScaledVector(forward,42);target.y+=2;this.camera.lookAt(target);
+    this.poseCamera(this.reduced.matches?0:this.elapsed);
     if(this.elapsed-this.detailAt>.25){this.track.updatePresentation(this.camera.position,'medium');this.detailAt=this.elapsed;}
-    if(this.elapsed-this.shadowAt>1.5){this.lighting.sun.target.position.copy(p);this.lighting.sun.position.copy(p).add(this.lighting.sunOffset);this.renderer.shadowMap.needsUpdate=true;this.shadowAt=this.elapsed;}
+    if(this.elapsed-this.shadowAt>1.5){this.lighting.sun.target.position.copy(this.focus);this.lighting.sun.position.copy(this.focus).add(this.lighting.sunOffset);this.renderer.shadowMap.needsUpdate=true;this.shadowAt=this.elapsed;}
     this.renderer.render(this.scene,this.camera);
     this.host.classList.add('is-ready');
     if(++this.count%30===0)this.host.dataset.frames=String(this.count);
-    // Fade between camera shots without retaining a second rendered world.
-    this.host.style.setProperty('--shot-opacity',String(this.reduced.matches?1:Math.min(1,phase*22,(1-phase)*22)));
-    if(this.reduced.matches)this.elapsed=0.6;
     if(this.warmup>0){this.warmup-=dt;return;}
     this.sampleTime+=paintDt;this.sampleFrames++;
     if(this.sampleTime>2){
@@ -74,6 +72,16 @@ export class CircuitBackdrop {
       this.sampleTime=this.sampleFrames=0;
     }
   };
+  private poseCamera(time:number){
+    if(!this.track)return;
+    // Drift around one fixed landmark. Following the instantaneous road tangent
+    // spun the view in chicanes, and the old 12s shot index teleported the camera.
+    // Slow continuous curves have no shot boundaries or angle resets.
+    const forward=-85+18*Math.sin(time/24),side=45+18*Math.sin(time/35);
+    const height=(environmentFor(this.track.circuit.id).city?62:42)+8*Math.sin(time/29);
+    this.camera.position.copy(this.focus).addScaledVector(this.forward,forward).addScaledVector(this.normal,side);
+    this.camera.position.y+=height;this.camera.lookAt(this.focus);
+  }
   private clearWorld(){
     this.lighting?.dispose();this.lighting=undefined;
     if(this.scene){

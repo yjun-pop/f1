@@ -88,9 +88,9 @@
 }
 
 /* A single circuit floats over its own live scenery. */
-.circuit-backdrop{position:fixed;inset:0;z-index:29;pointer-events:none;background:#0b111a;opacity:0;transition:opacity .45s ease}
+.circuit-backdrop{position:fixed;inset:0;z-index:29;pointer-events:none;background:#0b111a;opacity:0;transition:opacity .6s ease-in-out}
 .circuit-backdrop.is-ready{opacity:1}
-.circuit-backdrop canvas{width:100%;height:100%;opacity:var(--shot-opacity,1)}
+.circuit-backdrop canvas{width:100%;height:100%;opacity:1}
 #front-menu{background:linear-gradient(180deg,#050c18a8,transparent 35%,#050b17c9),radial-gradient(ellipse at 50% 42%,#060e1938 15%,#040a16bd 100%)}
 #front-menu .race-menu{z-index:1;grid-template-rows:auto minmax(min-content,1fr) minmax(170px,1fr) minmax(110px,1fr) auto}
 #front-menu .circuit-gallery{position:relative;align-self:end;margin-top:88px}
