@@ -8,7 +8,7 @@ import {WorldLighting} from '../game/WorldLighting';
 // with the actual scenery. No start-line shot is required.
 const INTRO_SECTIONS:Record<CircuitId,readonly number[]>={
   monza:[1,6,8,11],silverstone:[9,10,12,15],spa:[2,5,10,18],
-  monaco:[4,6,8,15],suzuka:[3,11,13,15],interlagos:[1,4,10,12],
+  monaco:[4,6,10,15],suzuka:[3,11,13,15],interlagos:[1,4,10,12],
   singapore:[5,12,14,16],montreal:[1,6,10,14]
 };
 const SHOT_HOLD_MS=3000,FADE_MS=600;

@@ -3,6 +3,7 @@ import type {Track} from './Track';
 import {environmentFor,type GeoPoint} from './CircuitEnvironment';
 import {containsWater} from './RegionalWaters';
 import {createSpatialChunks} from './TrackChunks';
+import {monacoWaterMaterial} from './MonacoScenery';
 import {sceneryFootprint} from './ScenerySpace';
 
 type Shape='box'|'roof'|'pole'|'ball'|'hull'|'shrub'|'paving';
@@ -50,7 +51,7 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
     p.y=track.sceneryHeight(p.x,p.z);return p;
   };
   const landmarkPositions=new Map<string,THREE.Vector3>();
-  for(const landmark of env.landmarks){
+  for(const landmark of (track.circuit.id==='monaco'?[]:env.landmarks)){
     if(landmark.kind==='banking')continue;
     const radius=landmark.kind==='hotel'?(landmark.id==='marina-bay-sands'?115:45):landmark.kind==='bridge'?185:landmark.kind==='hangar'?105:landmark.height*.52;
     const p=anchor(landmark.at,radius);if(!p)continue;
@@ -76,7 +77,7 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
       part('regional-city',p,[w*.2,h+2,d*.1],[2,2,3],dark,'box',0,true);
     }
   };
-  if(env.city==='riviera'){city([7.421,43.7378],8,6,33);city([7.4258,43.7401],7,6,34);city([7.431,43.741],6,5,38);}
+  // Monaco uses the dedicated architecture/marina asset pack.
   if(env.city==='marina'){city([103.852,1.2814],7,5,48);city([103.855,1.294],6,4,48);city([103.8616,1.2975],5,4,45);}
   if(env.city==='paulista'){city([-46.694,-23.6975],8,5,44);city([-46.703,-23.702],8,4,42);city([-46.693,-23.707],8,5,37);city([-46.688,-23.698],5,5,55);}
 
@@ -85,7 +86,7 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
   // outer perimeter. Street circuits can have buildings on either land side.
   const boundary=Array.from({length:Math.ceil(track.length/20)},(_,i)=>track.point(i/Math.ceil(track.length/20)));
   const infield=(p:THREE.Vector3)=>{let inside=false;for(let i=0,j=boundary.length-1;i<boundary.length;j=i++)if((boundary[i].z>p.z)!==(boundary[j].z>p.z)&&p.x<(boundary[j].x-boundary[i].x)*(p.z-boundary[i].z)/(boundary[j].z-boundary[i].z)+boundary[i].x)inside=!inside;return inside;};
-  if(env.city){
+  if(env.city&&track.circuit.id!=='monaco'){
     const lowCanvas=document.createElement('canvas');lowCanvas.width=128;lowCanvas.height=128;const lowContext=lowCanvas.getContext('2d')!;
     lowContext.fillStyle=night?'#172532':'#e6dfd0';lowContext.fillRect(0,0,128,128);
     const floors=env.city==='paulista'?4:6;
@@ -111,7 +112,7 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
       emit('roadside-houses','box',dark,facadePoint,new THREE.Vector3(w*.68,1.8,.12),yaw);
       if((Math.floor(metres/step)+row)%4===0){facadePoint.y+=1.3;emit('roadside-houses','box',white,facadePoint,new THREE.Vector3(w*.9,.18,2),yaw);}
     }
-  }else{
+  }else if(!env.city){
     const hedge=material('roadside-planting',env.foliage),serviceRoof=material('service-roof',track.circuit.id==='silverstone'?0x617b96:0x84785d);
     for(let metres=20;metres<track.length;metres+=track.circuit.id==='silverstone'?60:42)for(const side of [-1,1]){
       const t=metres/track.length,normal=track.normal(t),yaw=Math.atan2(track.tangent(t).x,track.tangent(t).z)-side*Math.PI/2;
@@ -133,27 +134,24 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
 
   // Water uses local index tiles sharing one vertex buffer. No planar-reflection
   // camera or transparent full-screen water layer is needed in either view.
-  const waterMaterial=new THREE.MeshStandardMaterial({color:night?0x153e56:track.circuit.id==='montreal'?0x3c8793:0x287f9b,roughness:night?.28:.35,metalness:.25});
+  const waterMaterial=track.circuit.id==='monaco'?monacoWaterMaterial():new THREE.MeshStandardMaterial({color:night?0x153e56:track.circuit.id==='montreal'?0x3c8793:0x287f9b,roughness:night?.28:.35,metalness:.25});
   for(const area of track.waters){
     const positions:number[]=[],indices:number[]=[],size=24;
-    for(let x=area.bounds.min.x;x<area.bounds.max.x;x+=size)for(let z=area.bounds.min.y;z<area.bounds.max.y;z+=size){
-      const corners=[[x,z],[x+size,z],[x,z+size],[x+size,z+size]];
-      if(!corners.every(([a,b])=>containsWater(a,b,[area])&&track.scenerySpace.distanceSquared(a,b,30)>=900))continue;
+    const waterTile=(x:number,z:number,step:number)=>{
+      const corners=[[x,z],[x+step,z],[x,z+step],[x+step,z+step]],valid=corners.map(([a,b])=>containsWater(a,b,[area])&&track.scenerySpace.distanceSquared(a,b,30)>=900);
+      if(!valid.every(Boolean)){
+        if(track.circuit.id==='monaco'&&step>3&&(valid.some(Boolean)||containsWater(x+step/2,z+step/2,[area]))){for(const dx of[0,step/2])for(const dz of[0,step/2])waterTile(x+dx,z+dz,step/2);}return;
+      }
       const i=positions.length/3;for(const [a,b]of corners)positions.push(a,-.045,b);indices.push(i,i+2,i+1,i+1,i+2,i+3);
-    }
+    };
+    for(let x=area.bounds.min.x;x<area.bounds.max.x;x+=size)for(let z=area.bounds.min.y;z<area.bounds.max.y;z+=size)waterTile(x,z,size);
     if(!positions.length)continue;
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setIndex(indices);geometry.computeVertexNormals();
+    if(track.circuit.id==='monaco'){const uv:number[]=[];for(let j=0;j<positions.length;j+=3)uv.push(positions[j]/64,positions[j+2]/64);geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));}
     const group=createSpatialChunks(geometry,waterMaterial,320,'harbour-water');group.userData.region=area.name;
     // Register the local tiles separately; a large river bound must not make
     // the entire river visible whenever one shore enters the camera frustum.
     for(const child of [...group.children]){const tile=new THREE.Group();tile.name='harbour-water';tile.userData.region=area.name;tile.add(child);register(tile);}
-  }
-  if(track.circuit.id==='monaco'){
-    const center=track.geographicPoint([7.4257,43.7358]);
-    for(let row=0;row<7;row++)for(let col=0;col<5;col++){
-      const p=center.clone().add(new THREE.Vector3((col-2)*21,0,(row-3)*25));if(!containsWater(p.x,p.z,track.waters)||!track.scenerySpace.clear(p,32))continue;
-      const yaw=.2+(row%2)*.1;part('port-hercule-yachts',p,[0,.6,0],[4.4,1.4,13],white,'hull',yaw);part('port-hercule-yachts',p,[0,1.7,-1],[3.5,1.8,7],white,'box',yaw);part('port-hercule-yachts',p,[0,2.2,-1],[3.6,.7,5],dark,'box',yaw);
-    }
   }
   if(track.circuit.id==='silverstone'){
     const center=track.geographicPoint([-1.017,52.079]),runway=material('runway',0x777d79),fieldA=material('field-a',0xa9b27f),fieldB=material('field-b',0xb6b88f);
@@ -166,7 +164,7 @@ export function createRegionalScenery(track:Track,register:(group:THREE.Group)=>
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setIndex(indices);geometry.computeVertexNormals();
     const wing=new THREE.Group();wing.name='silverstone-wing';wing.position.copy(pit.position);wing.rotation.copy(pit.rotation);wing.add(new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0xcbd0d0,metalness:.4,roughness:.45,side:THREE.DoubleSide})));register(wing);
   }
-  for(const landmark of env.landmarks){
+  for(const landmark of (track.circuit.id==='monaco'?[]:env.landmarks)){
     if(landmark.kind==='banking'){
       const center=track.geographicPoint(landmark.at),positions:number[]=[],indices:number[]=[];
       for(let i=0;i<=48;i++){const angle=-1.2+i/48*2.4;for(const outer of [false,true]){const r=145+(outer?8:-8),p=center.clone().add(new THREE.Vector3(Math.sin(angle)*r,outer?6.5:.7,Math.cos(angle)*r-100));positions.push(p.x,p.y,p.z);}}

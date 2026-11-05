@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type {Track} from './Track';
 import {GRAPHICS_PROFILES,type GraphicsTier} from './Graphics';
 import {createRegionalScenery} from './RegionalScenery';
+import {createMonacoScenery} from './MonacoScenery';
 import {createTunnelGeometry} from './TunnelGeometry';
 
 /** Circuit landmarks use static meshes/local instance batches, never a light
@@ -12,6 +13,7 @@ export function createCircuitScenery(track:Track){
   const register=(group:THREE.Group)=>{group.updateMatrixWorld(true);const sphere=new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());chunks.push({group,center:sphere.center,radius:sphere.radius});root.add(group);};
   const stamp=new THREE.Object3D();
   createRegionalScenery(track,register);
+  createMonacoScenery(track,register);
   if(track.circuit.id==='interlagos'){
     const from=track.sections[0].progress-50/track.length,to=track.sections[2].progress+50/track.length,rows=Math.ceil((to-from)*track.length/3),positions:number[]=[],colors:number[]=[],indices:number[]=[];
     for(const side of[-1,1]){

@@ -36,12 +36,18 @@ jobs:
             if [ -n "$changed" ] && ! printf '%s\n' "$changed" | rg -qv '^(src/ui/(CircuitMenu\.(ts|css)|CircuitBackdrop\.ts)|src/main\.ts|tests/circuit-menu\.mjs|README\.md|\.github/workflows/pages\.yml)$'; then
               echo 'ui_only=true' >> "$GITHUB_OUTPUT"
             fi
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | rg -qv '^(src/game/(MonacoScenery|RegionalScenery|CircuitScenery)\.ts|src/ui/CircuitBackdrop\.ts|tests/(regional-scenery|roadside-placement|monaco-scenery)\.mjs|README\.md|docs/MONACO_ENVIRONMENT\.md|\.github/workflows/pages\.yml)$'; then
+              echo 'scenery_only=true' >> "$GITHUB_OUTPUT"
+            fi
           fi
       - name: Check title screen
-        if: steps.checks.outputs.ui_only == 'true'
+        if: steps.checks.outputs.ui_only == 'true' || steps.checks.outputs.scenery_only == 'true'
         run: node tests/circuit-menu.mjs
+      - name: Check scenery placement and rendering structure
+        if: steps.checks.outputs.scenery_only == 'true'
+        run: node tests/regional-scenery.mjs && node tests/roadside-placement.mjs && node tests/monaco-scenery.mjs
       - name: Check racing and game systems
-        if: steps.checks.outputs.ui_only != 'true'
+        if: steps.checks.outputs.ui_only != 'true' && steps.checks.outputs.scenery_only != 'true'
         run: npm test
       - run: npm run build -- --base=/f1/
       - uses: actions/configure-pages@v5
