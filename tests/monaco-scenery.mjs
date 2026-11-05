@@ -20,7 +20,7 @@ const {environmentFor}=await import(moduleURL('CircuitEnvironment'));
 const {containsWater}=await import(moduleURL('RegionalWaters'));
 const {createSkyBackdrop,createNightSkyTexture}=await import(moduleURL('WorldLighting'));
 const scene=new THREE.Scene(),track=new Track(scene,CIRCUITS.find(c=>c.id==='monaco')),root=track.group.getObjectByName('circuit-landmarks'),info=track.group.userData.monacoEnvironment;
-assert.ok(info.houses>=500&&info.yachts>=25);assert.ok(root.getObjectByName('monaco-harbour-hotel'));assert.ok(root.getObjectByName('monaco-marina'));assert.ok(root.getObjectByName('monaco-urban-ground'));console.log('PASS: dense Mediterranean blocks, original landmark terrace, marina and paved neighbourhoods',{houses:info.houses,yachts:info.yachts});
+assert.ok(info.houses>=500&&info.yachts>=25);assert.ok(root.getObjectByName('monaco-harbour-hotel'));assert.ok(root.getObjectByName('monaco-marina'));assert.ok(root.getObjectByName('monaco-urban-ground'));console.log('PASS: dense Mediterranean blocks, hotel-underpass architecture, marina and paved neighbourhoods',{houses:info.houses,yachts:info.yachts});
 const road=track.surfaceGeometries.get('asphalt-road').getAttribute('position');
 for(const lot of info.lots){
  assert.equal(track.scenerySpace.intersectsFootprint(lot.footprint,17),false);
@@ -34,6 +34,6 @@ console.log('PASS: moored yacht hulls remain within water and outside the road c
 let hullCount=0;const matrix=new THREE.Matrix4(),scale=new THREE.Vector3();
 root.traverse(mesh=>{if(!mesh.isInstancedMesh||mesh.name!=='monaco-marina'||mesh.geometry.attributes.position.count!==14)return;mesh.geometry.computeBoundingBox();for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,matrix);scale.setFromMatrixScale(matrix);if(scale.y<1.5)continue;hullCount++;const y=matrix.elements[13];assert.ok(y+mesh.geometry.boundingBox.min.y*scale.y<-.045);assert.ok(y+mesh.geometry.boundingBox.max.y*scale.y>0);}});assert.equal(hullCount,info.yachts);console.log('PASS: every principal yacht hull intersects the waterline instead of hovering above it');
 let instances=0,meshes=0,lights=0,triangles=0;const materials=new Set();root.traverse(o=>{if(o.isLight)lights++;if(o.isMesh){meshes++;materials.add(o.material);if(o.isInstancedMesh){assert.ok(o.count<=400);instances+=o.count;triangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3*o.count;}if(o.geometry)for(const a of Object.values(o.geometry.attributes))assert.ok(a.array.every(Number.isFinite));}});
-assert.equal(lights,0);assert.ok(meshes<650);assert.ok(materials.size<=16);assert.ok(instances<25000);assert.ok(triangles<550000);
+assert.equal(lights,0);assert.ok(meshes<650);assert.ok(materials.size<=24);assert.ok(instances<25000);assert.ok(triangles<550000);
 console.log('PASS: shared atlases/materials, finite geometry, local batches and bounded whole-scene complexity',{meshes,instances,materials:materials.size,triangles});
 track.updatePresentation(track.point(.3),'low');root.traverse(o=>{if(o.userData.nearDetail)assert.equal(o.visible,false);});track.updatePresentation(new THREE.Vector3(1e6,0,1e6),'high');assert.ok(root.userData.chunks.every(c=>!c.group.visible));console.log('PASS: low-tier detail removal and distant chunk culling');

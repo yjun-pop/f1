@@ -7,8 +7,8 @@ import {WorldLighting} from '../game/WorldLighting';
 // Four recognizable corners per circuit; the section coordinates are shared
 // with the actual scenery. No start-line shot is required.
 const INTRO_SECTIONS:Record<CircuitId,readonly number[]>={
-  monza:[1,6,8,11],silverstone:[9,10,12,15],spa:[2,5,10,18],
-  monaco:[4,6,10,15],suzuka:[3,11,13,15],interlagos:[1,4,10,12],
+  monza:[1,6,8,11],silverstone:[18,10,12,15],spa:[3,5,10,18],
+  monaco:[6,8,10,15],suzuka:[18,3,11,15],interlagos:[1,4,10,12],
   singapore:[5,12,14,16],montreal:[1,6,10,14]
 };
 const SHOT_HOLD_MS=3000,FADE_MS=600;
@@ -119,6 +119,22 @@ export class CircuitBackdrop {
     const number=INTRO_SECTIONS[this.track.circuit.id][this.shotIndex];
     const section=this.track.sections.find(s=>s.number===number)!;
     this.focus.copy(this.track.roadPoint(section.progress));this.focus.y+=2;
+    // Compose landmark shots around their actual built context. A road-only
+    // anchor can leave the hotel/terraces behind the camera after safe siting.
+    const id=this.track.circuit.id,pit=this.track.group.getObjectByName('pit-building');
+    if(pit&&(id==='silverstone'&&number===18||id==='montreal'&&number===14)){
+      this.focus.lerp(pit.position,.75);this.focus.y+=7;
+    }
+    if(id==='monaco'&&number===8&&this.track.tunnel){
+      this.focus.copy(this.track.roadPoint(this.track.tunnel.start+125/this.track.length));this.focus.y+=12;
+    }
+    const sites=this.track.group.userData.venueArchitecture?.sites as {name:string;frame:{p:THREE.Vector3}}[]|undefined;
+    const site=sites?.find(s=>id==='spa'&&number===3&&s.name==='spa-raidillon-terraces'||id==='singapore'&&number===12&&s.name==='singapore-fullerton-colonnade');
+    if(site){this.focus.lerp(site.frame.p,.6);this.focus.y+=id==='singapore'?9:4;}
+    if(id==='suzuka'&&number===18){
+      const wheel=this.track.group.getObjectByName('suzuka-ferris-wheel')?.userData.geographicAnchor?.placed as THREE.Vector3|undefined;
+      if(wheel){this.focus.lerp(wheel,.55);this.focus.y+=16;}
+    }
     // This basis stays fixed for the whole shot, including sharp chicanes.
     this.forward.copy(this.track.tangent(section.progress));this.normal.copy(this.track.roadNormal(section.progress));
     this.host.dataset.view=section.name;this.host.dataset.viewIndex=String(this.shotIndex);

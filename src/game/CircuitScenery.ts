@@ -3,7 +3,7 @@ import type {Track} from './Track';
 import {GRAPHICS_PROFILES,type GraphicsTier} from './Graphics';
 import {createRegionalScenery} from './RegionalScenery';
 import {createMonacoScenery} from './MonacoScenery';
-import {createTunnelGeometry} from './TunnelGeometry';
+import {createVenueArchitecture} from './VenueArchitecture';
 
 /** Circuit landmarks use static meshes/local instance batches, never a light
  * or shadow map per building. They are simplified game scenery. */
@@ -12,6 +12,7 @@ export function createCircuitScenery(track:Track){
   const chunks:{group:THREE.Group;center:THREE.Vector3;radius:number}[]=[];
   const register=(group:THREE.Group)=>{group.updateMatrixWorld(true);const sphere=new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());chunks.push({group,center:sphere.center,radius:sphere.radius});root.add(group);};
   const stamp=new THREE.Object3D();
+  createVenueArchitecture(track,register);
   createRegionalScenery(track,register);
   createMonacoScenery(track,register);
   if(track.circuit.id==='interlagos'){
@@ -31,12 +32,6 @@ export function createCircuitScenery(track:Track){
     const t=track.sections.find(s=>s.number===14)!.progress,group=new THREE.Group();group.name='wall-of-champions';group.position.copy(track.point(t)).addScaledVector(track.normal(t),-17.5);group.rotation.y=Math.atan2(track.tangent(t).x,track.tangent(t).z);
     const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=96;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#f1ede1';ctx.fillRect(0,0,1024,96);ctx.fillStyle='#b51e37';ctx.font='bold 56px sans-serif';ctx.textAlign='center';ctx.fillText('WALL OF CHAMPIONS',512,67);
     const panel=new THREE.Mesh(new THREE.PlaneGeometry(30,1.4),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),side:THREE.DoubleSide}));panel.position.y=2;panel.rotation.y=-Math.PI/2;group.add(panel);register(group);
-  }
-  if(track.tunnel){
-    const {start,end}=track.tunnel,geometry=createTunnelGeometry(track.tunnel);
-    const group=new THREE.Group();group.name='monaco-tunnel';const shell=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0x5e6c78,roughness:.94,side:THREE.DoubleSide}));shell.castShadow=true;group.add(shell);
-    const lamps=new THREE.InstancedMesh(new THREE.BoxGeometry(.2,.12,2.8),new THREE.MeshBasicMaterial({color:0xf1f2d9}),Math.floor((end-start)*track.length/15)+1);
-    for(let i=0;i<lamps.count;i++){const t=THREE.MathUtils.lerp(start,end,i/Math.max(1,lamps.count-1)),p=track.roadPoint(t);stamp.position.copy(p);stamp.position.y+=5.65;stamp.rotation.set(0,Math.atan2(track.tangent(t).x,track.tangent(t).z),0);stamp.updateMatrix();lamps.setMatrixAt(i,stamp.matrix);}group.add(lamps);register(group);
   }
   if(track.circuit.overpass){
     const b=track.circuit.overpass,positions:number[]=[],indices:number[]=[];

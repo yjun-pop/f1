@@ -73,12 +73,12 @@ export function createMonacoScenery(track:Track,register:(group:THREE.Group)=>vo
     if(detailed&&index%5===0){part(name,p,yaw,[w*.34,.8,-d/2-1.5],[1.5,1.6,.7],stone,'box',true,0x6b7774);part(name,p,yaw,[w*.34,1.7,-d/2-1.5],[1.7,.35,.9],green,'ball',true);}
   };
   // A recognizable, original Belle Époque terrace composition near Casino.
-  const casinoSource=track.geographicPoint([7.4271,43.7390]);let casino:THREE.Vector3|undefined;
-  for(let r=0;r<=240&&!casino;r+=24)for(let i=0;i<16;i++){
+  const casinoSource=track.geographicPoint([7.4263,43.7390]);let casino:THREE.Vector3|undefined;
+  for(let r=0;r<=36&&!casino;r+=12)for(let i=0;i<16;i++){
     const p=casinoSource.clone().add(new THREE.Vector3(Math.sin(i*Math.PI/8)*r,0,Math.cos(i*Math.PI/8)*r));if(reserve(p,.15,38,20,25,'casino')){casino=p;break;}
   }
   if(casino){
-    const p=casino,yaw=.15,name='monaco-harbour-hotel';building(p,yaw,38,20,18,2,name);
+    const p=casino,yaw=.15,name='monaco-casino-terraces';building(p,yaw,38,20,18,2,name);
     part(name,p,yaw,[0,19,0],[17,3,16],trim);part(name,p,yaw,[0,23,0],[7,6,7],roof,'dome');part(name,p,yaw,[0,30,0],[.18,4,.18],metal);
     for(const x of[-16,16]){part(name,p,yaw,[x,21,0],[7,8,9],facade,'box',false,0xf2dfc0);part(name,p,yaw,[x,25.2,0],[5,3.5,5],metal,'dome');}
     for(let x=-14;x<=14;x+=4){part(name,p,yaw,[x,3.5,-11.2],[2.6,3,.12],glass);part(name,p,yaw,[x,5,-11.3],[2.6,2.6,1],trim,'arch',true);part(name,p,yaw,[x-1.6,3,-11.1],[.35,5,.35],trim,'pole');}
@@ -154,7 +154,7 @@ function createUrbanGround(track:Track,register:(g:THREE.Group)=>void){
     // The water renderer reserves a 30m shore/road safety strip. Pave it as
     // working quays rather than leaving an artificial grass beach in the port.
     const wet=corners.map(([px,pz])=>containsWater(px,pz,track.waters)),near=corners.some(([px,pz])=>track.scenerySpace.distanceSquared(px,pz,48)<48**2);
-    if(step>3&&(wet.some(Boolean)&&!wet.every(Boolean)||wet.some(Boolean)&&near)){for(const dx of[0,step/2])for(const dz of[0,step/2])tile(x+dx,z+dz,step/2);return;}
+    if(step>1.5&&(wet.some(Boolean)&&!wet.every(Boolean)||wet.some(Boolean)&&near)){for(const dx of[0,step/2])for(const dz of[0,step/2])tile(x+dx,z+dz,step/2);return;}
     const fp=sceneryFootprint(center,0,-step/2,step/2,-step/2,step/2);
     if(track.scenerySpace.intersectsFootprint(fp,11.8)||!corners.every(([px,pz])=>!containsWater(px,pz,track.waters)||track.scenerySpace.distanceSquared(px,pz,37)<36**2))return;
     const k=positions.length/3,shade=.8+.1*Math.sin(x*.04)*Math.cos(z*.03);color.setHex(track.sceneryHeight(center.x,center.z)>8?0xb3ad9d:0xaaa99d).multiplyScalar(shade);
