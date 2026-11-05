@@ -39,7 +39,7 @@ for(const circuit of CIRCUITS.slice(3)){
  track.group.updateMatrixWorld(true);
  for(const stand of track.group.children.filter(o=>o.name==='grandstand')){const inverse=stand.matrixWorld.clone().invert();for(const point of planner.points){const q=point.clone().applyMatrix4(inverse);assert.ok(!(Math.abs(q.x)<30&&q.z>-3&&q.z<14&&q.y>-2&&q.y<10),'Grandstands must not obstruct a neighboring section of the racing line');}}
  const visual=track.group.getObjectByName('circuit-landmarks');assert.ok(visual);let pointLights=0;visual.traverse(o=>{if(o.isPointLight)pointLights++;});assert.equal(pointLights,0,'Landmarks must not allocate a point light or shadow map for each lamp/window');
- if(circuit.id==='monaco'){assert.ok(track.group.getObjectByName('monaco-tunnel'));assert.ok(track.group.getObjectByName('city-buildings'));assert.ok(track.group.getObjectByName('harbour-water'));}
+ if(circuit.id==='monaco'){assert.ok(track.group.getObjectByName('monaco-tunnel'));assert.ok(track.group.getObjectByName('roadside-houses'));assert.ok(track.group.getObjectByName('harbour-water'));}
  if(circuit.id==='interlagos')assert.ok(track.group.getObjectByName('senna-s-runoff'));
  if(circuit.id==='montreal'){assert.ok(track.group.getObjectByName('wall-of-champions'));assert.ok(track.group.getObjectByName('harbour-water'));}
  if(circuit.night){const building=track.group.getObjectByName('city-buildings');assert.ok(building?.material.emissiveIntensity>.5);assert.equal(circuit.id,'singapore');}
@@ -82,4 +82,4 @@ for(const circuit of CIRCUITS.slice(3)){
  }
 }
 const night=createNightSkyTexture(128),day=createSkyTexture(128),mean=t=>{let sum=0;const d=t.image.data;for(let i=0;i<d.length;i+=4)sum+=THREE.DataUtils.fromHalfFloat(d[i])+THREE.DataUtils.fromHalfFloat(d[i+1])+THREE.DataUtils.fromHalfFloat(d[i+2]);return sum/(d.length/4);};
-assert.ok(mean(night)<mean(day)*.08);assert.ok([...night.image.data].every(Number.isFinite));night.dispose();day.dispose();console.log('PASS: Singapore night uses a dark filtered HDR sky instead of the daylight photograph');
+assert.ok(mean(night)<mean(day)*.08);assert.ok([...night.image.data].every(Number.isFinite));night.dispose();day.dispose();console.log('PASS: Singapore night uses a distinct dark filtered procedural sky');
