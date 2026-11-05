@@ -212,3 +212,17 @@
  #front-menu .menu-footnote summary{padding:10px 0}
 }
 #front-menu .menu-wheel-button{bottom:56px}
+
+
+/* A race ends in results, not a second copy of the circuit-selection menu. */
+.overlay.race-session-overlay{z-index:15;display:grid;place-items:center;padding:24px;background:#030a13c9;overflow:auto}
+.overlay.race-session-overlay[hidden]{display:none}
+.race-session-panel{width:min(620px,100%);padding:clamp(24px,4vw,48px);background:linear-gradient(145deg,#172433,#0b1420);border:1px solid #ffffff26;border-top:3px solid #ff795f;box-shadow:0 20px 70px #0006;font-family:'Noto Sans KR',sans-serif}
+.race-session-brand{font:800 24px 'Barlow Condensed',sans-serif;color:#ff795f;letter-spacing:2px}.race-session-brand span{color:#edf2f6;margin-left:8px}
+.race-session-circuit{color:#bacbda;font-size:15px;margin:22px 0 10px}.race-session-panel h2{font-size:clamp(28px,4vw,40px);margin:0 0 28px;letter-spacing:-1px}
+.race-session-results{display:grid;grid-template-columns:.8fr 1.2fr 1.2fr;gap:16px;padding:22px 0;margin-bottom:24px;border-block:1px solid #ffffff20}.race-session-results[hidden],.race-session-gearbox[hidden]{display:none}
+.race-session-results>div>span{display:block;font-size:13px;color:#aebed0;margin-bottom:10px}.race-session-results b{display:block;font:700 clamp(24px,3vw,32px) 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap}.race-session-results small{color:#aebed0;font-size:13px}
+.race-session-gearbox{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:0 0 24px;color:#c8d7e3;font-size:15px}.race-session-gearbox select{font:inherit;color:#eef3f7;background:#0b1624;border:1px solid #ffffff40;padding:10px}
+.race-session-actions{display:flex;gap:12px}.race-session-actions button{flex:1;min-height:50px;padding:12px;font:600 16px 'Noto Sans KR',sans-serif;background:#ffffff08;border:1px solid #ffffff35}.race-session-actions button:first-child{background:#ff795f;color:#101722;border-color:transparent}.race-session-actions button:disabled{opacity:.5;cursor:wait}.race-session-actions button:focus-visible{outline:2px solid #d5e9ff;outline-offset:4px}
+#race-session-status{font-size:14px;line-height:1.7;color:#c9d9e5;margin-bottom:0}
+@media(max-width:480px){.race-session-results{gap:10px}.race-session-results b{font-size:25px}.race-session-actions{flex-direction:column}}
