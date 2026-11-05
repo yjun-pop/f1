@@ -48,7 +48,7 @@
 #front-menu .menu-bottom{align-items:center;margin-top:18px;padding-top:18px}
 #front-menu .menu-record{font:11px 'Noto Sans KR',sans-serif;letter-spacing:0}
 #front-menu .menu-footnote{justify-content:flex-end;margin-top:14px}
-@media(max-width:680px){#front-menu .menu-heading{display:flex;align-items:flex-start;gap:10px}#front-menu .menu-session{margin-top:5px;gap:9px;flex-wrap:wrap;justify-content:flex-end;font-size:9px}#front-menu .menu-session b{font-size:13px}#front-menu .menu-bottom{gap:16px}#front-menu .gallery-stage{padding:10px 0}}
+@media(max-width:680px){#front-menu .menu-heading{display:flex;align-items:flex-start;gap:10px}#front-menu .menu-session{margin-top:5px;gap:9px;flex-wrap:wrap;justify-content:flex-end;font-size:9px}#front-menu .menu-session b{font-size:13px}#front-menu .menu-bottom{gap:16px}#front-menu .gallery-stage{--card-width:70%;padding:10px 0}}
 
 /* Anchor launch-screen chrome to the viewport, independently of the gallery. */
 #front-menu{--screen-gutter:clamp(16px,2.5vw,48px);padding:var(--screen-gutter)}
@@ -100,8 +100,8 @@
 #front-menu .gallery-stage::after,#front-menu .gallery-pagination{display:none}
 #front-menu .gallery-controls{position:absolute;inset:0;display:block;margin:0;pointer-events:none}
 #front-menu .gallery-arrow{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:64px;border:0;background:#07101b5c;font:300 42px/1 sans-serif;pointer-events:auto;color:#f0f5fc;text-shadow:0 2px 12px #000;border-radius:8px}
-#front-menu .gallery-arrow:first-child{left:calc(50% - min(230px,32%) - 66px)}
-#front-menu .gallery-arrow:nth-of-type(2){right:calc(50% - min(230px,32%) - 66px)}
+#front-menu .gallery-arrow:first-child{left:calc(50% - min(230px,32%) - 96px)}
+#front-menu .gallery-arrow:nth-of-type(2){right:calc(50% - min(230px,32%) - 96px)}
 #front-menu .gallery-arrow:hover{background:#ffffff1c}
 #front-menu .gallery-counter{position:absolute;right:0;bottom:0;color:#c1cfda}
 #front-menu .menu-start{align-self:center;margin:0;box-shadow:0 8px 40px #0005}
@@ -113,8 +113,6 @@
  #front-menu .race-menu{min-height:740px;grid-template-rows:auto minmax(min-content,1fr) minmax(115px,1fr) minmax(160px,1fr) auto}
  #front-menu .circuit-gallery{margin-top:70px}
  #front-menu .gallery-arrow{width:32px;height:54px;font-size:30px;background:transparent}
- #front-menu .gallery-arrow:first-child{left:calc(50% - 39% - 36px)}
- #front-menu .gallery-arrow:nth-of-type(2){right:calc(50% - 39% - 36px)}
  #front-menu .gallery-counter{bottom:-14px;font-size:9px}
  #front-menu .menu-start{margin:0}
 }
@@ -125,10 +123,6 @@
 @media(max-width:680px){#front-menu .menu-start{top:76%}}
 @media(prefers-reduced-motion:reduce){#front-menu .menu-start:hover{transform:translate(-50%,-50%)}}
 #front-menu .menu-start{grid-row:auto;grid-column:auto}
-@media(max-width:680px){
- #front-menu .gallery-arrow:first-child{left:calc(11vw - var(--screen-gutter) - 36px)}
- #front-menu .gallery-arrow:nth-of-type(2){right:calc(11vw - var(--screen-gutter) - 36px)}
-}
 
 /* Clear route: circuit identity, light map, setup summary, launch. */
 .launch-race-facts,.gallery-neighbor{display:none}
@@ -156,7 +150,7 @@
 #front-menu .menu-heading h1{font-size:18px;font-weight:400;color:#9cabb9;top:62px}
 #front-menu .gallery-counter{color:#8e9dac;font-size:10px}
 @media(max-width:680px){
- #front-menu .card-title{font-size:36px;letter-spacing:1px}
+ #front-menu .card-title{font-size:clamp(28px,8vw,36px);letter-spacing:1px}
  #front-menu .card-map{height:120px;margin-top:10px}
  #front-menu .menu-setup-summary{bottom:calc(24% + 44px);width:78%;gap:8px}
  #front-menu .gallery-neighbor{font-size:9px;width:76px}
@@ -172,8 +166,8 @@
 #front-menu .menu-transmission select{min-height:40px}
 @media(max-width:680px){
  #front-menu .menu-transmission select{min-height:44px}
- #front-menu .gallery-arrow:first-child{left:max(calc(11vw - var(--screen-gutter) - 36px),calc(-1 * var(--screen-gutter)))}
- #front-menu .gallery-arrow:nth-of-type(2){right:max(calc(11vw - var(--screen-gutter) - 36px),calc(-1 * var(--screen-gutter)))}
+ #front-menu .gallery-arrow:first-child{left:max(calc(15% - var(--screen-gutter) * .7 - 44px),calc(-1 * var(--screen-gutter) + 4px))}
+ #front-menu .gallery-arrow:nth-of-type(2){right:max(calc(15% - var(--screen-gutter) * .7 - 44px),calc(-1 * var(--screen-gutter) + 4px))}
 }
 
 /* Readable at desktop viewing distance; do not shrink corner labels to 9–11px. */
