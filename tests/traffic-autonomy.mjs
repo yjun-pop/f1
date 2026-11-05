@@ -136,3 +136,24 @@ for(const [metres,elapsed,gap,speed,slowSpeed] of [[300,5,30,65,30],[740,8,35,50
  assert.ok(attacker.agent.passAttempts>0);assert.equal(attacker.speedCap,94);assert.equal(attacker.powerAssist,1);
  console.log(`PASS: independent ${metres}m early/chicane duel, two-wide ${(twoWide/120).toFixed(2)}s, completed=${completed}, no contacts or departures`);
 }
+
+// Observe the new phase in real steering/physics, not only a status string.
+{
+ const track=referenceTrack,scene=new THREE.Scene(),race=new Race(track,scene,new LinePlanner(track),{opponentCount:2}),ghost=new Vehicle(track,scene);ghost.position.set(1e6,0,1e6);race.state='racing';race.elapsed=60;race.balanceRivals=()=>{};
+ const [leader,attacker]=race.opponents;
+ for(const [driver,metres,speed] of [[attacker,200,55],[leader,245,50]]){driver.car.resetAt(metres/track.length);driver.car.position.copy(race.speedPlanner.point(driver.car.progress));driver.car.speed=speed;driver.lane=0;}
+ leader.plan=()=>{leader.control={steer:0,throttle:Math.max(0,Math.min(1,.3+(50-leader.car.speed)*.6)),brake:0};};
+ let preparation=0,offset=0,bodyOffset=0,committed=false;
+ for(let frame=0;frame<180;frame++){race.update(1/120,ghost);if(attacker.agent.intent==='prepare'){preparation++;offset=Math.max(offset,Math.abs(attacker.lane));bodyOffset=Math.max(bodyOffset,Math.abs(attacker.car.position.clone().sub(race.speedPlanner.point(attacker.car.progress)).dot(track.normal(attacker.car.progress))));}if(preparation&&attacker.agent.intent==='overtake')committed=true;}
+ assert.ok(preparation>=12,'A moderate closing speed must expose a real preparation interval');assert.ok(offset>.2,'Preparation must change the steering corridor');assert.ok(bodyOffset>.1,'The car body must actually move during preparation');assert.ok(committed);assert.equal(race.opponents.reduce((n,o)=>n+o.collisionCount,0),0);assert.ok(race.opponents.every(o=>!o.car.offRoad));
+ console.log('PASS: actual patient driver prepares a visible offset before committing, with no contact or road departure',{preparationSeconds:preparation/120,offset,bodyOffset});
+}
+{
+ const track=referenceTrack,scene=new THREE.Scene(),race=new Race(track,scene,new LinePlanner(track),{opponentCount:2}),ghost=new Vehicle(track,scene);ghost.position.set(1e6,0,1e6);race.state='racing';race.elapsed=60;race.balanceRivals=()=>{};
+ const [recovering,rear]=race.opponents;recovering.car.resetAt(110/track.length,11.5);recovering.car.offRoad=true;recovering.car.speed=4;recovering.lane=11.5;
+ rear.car.resetAt(100/track.length,6);rear.car.speed=55;rear.plan=()=>{rear.control={steer:0,throttle:Math.max(0,Math.min(1,.4+(55-rear.car.speed)*.6)),brake:0};};
+ let waiting=0,teleports=0;const recover=recovering.car.recover.bind(recovering.car);recovering.car.recover=()=>{teleports++;recover();};
+ for(let frame=0;frame<120*6.5;frame++){race.update(1/120,ghost);if(recovering.agent.behavior.recoveryWaiting)waiting++;}
+ assert.ok(waiting>0,'A fast approaching rear car must delay the lateral rejoin');assert.equal(teleports,0);assert.equal(recovering.car.offRoad,false);assert.equal(race.opponents.reduce((n,o)=>n+o.collisionCount,0),0);
+ console.log('PASS: physical off-track driver waits for the rear car, rejoins without contact and does not teleport',{waitingSeconds:waiting/120});
+}

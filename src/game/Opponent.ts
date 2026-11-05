@@ -59,7 +59,7 @@ export class Opponent implements Rival {
   }
   advance(dt:number){
     this.car.drive(dt,this.control);
-    this.stuck=this.car.offRoad&&this.car.speed<5?this.stuck+dt:0;
+    this.stuck=this.car.offRoad&&this.car.speed<5&&!this.agent.behavior.recoveryWaiting?this.stuck+dt:0;
     if(this.stuck>2.5){this.car.recover();this.stuck=0;this.decision=0;}
     this.distance=this.car.distance;this.speed=this.car.speed;
   }
