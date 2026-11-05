@@ -7,21 +7,19 @@ import {Race,formatTime} from '../game/Race';
 import {graphicsMode,type GraphicsMode,type GraphicsTier} from '../game/Graphics';
 import {DEFAULT_FIELD_SIZE} from '../game/RaceRoster';
 import {formatInterval} from '../game/RaceTiming';
-import {TIMING_ENTRANTS,displayLap,sameLap,liveLapsMarkup,timingId} from './LapTables';
-import type {RaceStanding} from '../game/RaceLaps';
 export class HUD {
   private root:HTMLElement;
   private map:CanvasRenderingContext2D;
   private path:Path2D;
   private wasPaused=false;private session:RaceSessionPanel;private sessionState='';
-  private textNodes=new Map<string,Element>();private timingOrder='';
+  private textNodes=new Map<string,Element>();
   private mapPoint:(p:{x:number;z:number})=>{x:number;y:number};
   constructor(root:HTMLElement,track:Track,actions:{start:(id:CircuitId)=>void,restart:()=>void,camera:()=>void;resume:()=>void;recover:()=>void;volume:(value:number)=>void;audioLevel:number;motionLevel:number;motion:(value:number)=>void;graphicsMode:GraphicsMode;graphicsTier:GraphicsTier;graphics:(mode:GraphicsMode)=>void;transmissionMode?:TransmissionMode;transmission?:(mode:TransmissionMode)=>void;menu?:()=>void;wheel?:()=>void}) {
     this.root=root;
     root.innerHTML=`<header><div class="brand"><i>Λ</i> APEX<span>FORMULA</span><small>OPEN WHEEL RACING / 01</small></div><div class="session"><b>${track.name} · ${track.country}</b><small>RACE · 3 LAPS · DRY · ${track.circuit?.night?'NIGHT':'DAYLIGHT'}</small></div></header>
     <div class="rearview-frame" role="img" aria-label="차량 뒤쪽 실시간 백미러"><div id="rearview-viewport"></div><span>REAR VIEW</span></div>
     <aside class="timing"><div class="eyebrow">RACE CLASSIFICATION</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>POSITION</small></span></div><div class="intervals" aria-label="앞뒤 차량 시간 차"><div class="interval-row"><span>앞차 <b id="gap-ahead-name">—</b></span><strong id="gap-ahead">—</strong></div><div class="interval-row"><span>뒤차 <b id="gap-behind-name">—</b></span><strong id="gap-behind">—</strong></div></div><div class="timingrow"><span>LAP</span><b id="lap">1 / 3</b></div><div class="timingrow"><span>CURRENT</span><b id="current"></b></div><div class="timingrow"><span>LAST</span><b id="last"></b></div><div class="timingrow best"><span title="개인 최고 랩">PB</span><b id="best"></b></div></aside>
-    ${liveLapsMarkup()}<div class="mapbox"><canvas id="map" width="240" height="190"></canvas><span>${track.name} · ${track.country} · ${(track.length/1000).toFixed(2)} KM</span></div>
+    <div class="mapbox"><canvas id="map" width="240" height="190"></canvas><span>${track.name} · ${track.country} · ${(track.length/1000).toFixed(2)} KM</span></div>
 <div class="aero-status" aria-label="DRS와 슬립스트림 상태"><b id="drs-status">DRS · 선두 첫 랩 후</b><span id="draft-status"></span></div><div id="warning"></div><div id="wheel-notice" class="wheel-input-notice" role="status" hidden></div><footer><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> 주행</span><span><kbd>Q / E</kbd> 기어 ↓ / ↑ · <kbd>T</kbd> <b id="gearbox-label">자동</b></span><span><kbd>F</kbd> DRS</span><span><kbd>C</kbd> 시점</span><span><kbd>G</kbd> 라인</span><span><kbd>R</kbd> 트랙 복귀</span><span><kbd>ESC</kbd> 일시정지</span><span id="audio-state"><kbd>M</kbd> 음소거</span><button id="camera">시점 변경</button><button id="restart">다시 시작</button></footer>
     <div class="overlay race-session-overlay" id="overlay" hidden>${raceSessionMarkup()}</div>
     <div class="pause-shade" id="pause-menu" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden><section class="pause-panel"><div class="eyebrow">APEX FORMULA / SESSION CONTROL</div><h2 id="pause-title">일시정지</h2><p>레이스와 랩 타이머가 멈췄습니다.</p><button id="resume" class="primary">레이스 계속 <span>ESC →</span></button><button id="recover">트랙으로 복귀 후 계속</button><button id="pause-camera">시점 변경 <span>C</span></button><button type="button" id="pause-wheel-settings">레이싱 휠 · 입력 설정 <span>→</span></button><p id="controller-state" role="status"></p><label for="transmission-mode">변속 방식</label><select id="transmission-mode" aria-describedby="transmission-hint"><option value="auto">자동</option><option value="manual">수동 · Q 내리기 / E 올리기</option></select><p id="transmission-hint">T 자동·수동 전환 · 수동은 Q / E로 변속합니다.<br>너무 높은 회전수가 되는 하향 변속은 보호됩니다.</p><label for="motion-strength">주행 진동 <output id="motion-value"></output></label><input id="motion-strength" type="range" min="0" max="100" step="5" aria-label="제동·연석·변속 화면 움직임 강도"/><label for="audio-volume">주행 사운드 <output id="audio-value"></output></label><input id="audio-volume" type="range" min="0" max="100" step="1" aria-label="주행 사운드 음량"/><label for="graphics-quality">그래픽 품질 <output id="graphics-value"></output></label><select id="graphics-quality" aria-describedby="graphics-hint"><option value="auto">자동</option><option value="low">낮음 · 성능 우선</option><option value="medium">보통 · 균형</option><option value="high">높음 · 화질 우선</option></select><p id="graphics-hint">자동 설정은 주행 성능에 맞춰 화질을 조절합니다.</p><div class="pause-controls">W / ↑ 가속 · S / ↓ 제동<br>A D / ← → 조향 · SHIFT 부스트 · F DRS · G 유도선<br>DRS: 선두 첫 랩 후 감지선에서 앞차 1초 이내 · 구간 안에서 F</div><details class="rival-summary"><summary>AI 성향 · 충돌 감점</summary><div id="rival-scores"></div></details><button id="change-circuit" class="secondary">다른 서킷 선택 <span>→</span></button><p class="change-circuit-hint">현재 레이스를 종료하고 서킷 선택 화면으로 돌아갑니다.</p><button id="pause-restart" class="secondary">레이스 다시 시작</button></section></div>`;
@@ -35,7 +33,6 @@ export class HUD {
     const motion=root.querySelector<HTMLInputElement>('#motion-strength')!;motion.value=String(Math.round(actions.motionLevel*100));
     const showMotion=()=>root.querySelector('#motion-value')!.textContent=Number(motion.value)===0?'꺼짐':`${motion.value}%`;showMotion();
     motion.addEventListener('input',()=>{actions.motion(Number(motion.value)/100);showMotion();});
-    if(window.matchMedia?.('(max-width:700px), (max-height:560px)').matches)(root.querySelector('#live-laps') as HTMLDetailsElement).open=false;
     this.session=new RaceSessionPanel(root,{start:()=>actions.start(track.circuit.id),restart:restartRace,menu:()=>actions.menu?.()});
     root.querySelector('#pause-wheel-settings')!.addEventListener('click',()=>actions.wheel?.());
     root.querySelector('#change-circuit')!.addEventListener('click',()=>actions.menu?.());
@@ -69,25 +66,12 @@ export class HUD {
   }
   setMuted(muted:boolean){this.root.querySelector('#audio-state')!.innerHTML=`<kbd>M</kbd> ${muted?'소리 켜기':'음소거'}`;}
   private text(id:string,value:string){let node=this.textNodes.get(id);if(!node){node=this.root.querySelector('#'+id)!;this.textNodes.set(id,node);}if(node.textContent!==value)node.textContent=value;}
-  private updateLaps(rows:readonly RaceStanding[],state:Race['state']){
-    this.text('live-laps-status',state==='racing'?'LIVE':state==='finished'?'종료':'출발 준비');
-    const visible=new Set(rows.map(row=>row.id)),valid=rows.flatMap(row=>row.best===null?[]:[row.best]),fastest=valid.length?Math.min(...valid):null;
-    for(const entrant of TIMING_ENTRANTS)this.root.querySelector<HTMLElement>('#'+timingId(entrant.id))!.hidden=!visible.has(entrant.id);
-    for(const row of rows){
-      const id=timingId(row.id);this.text(id+'-rank',String(row.position).padStart(2,'0'));this.text(id+'-name',row.name);
-      this.text(id+'-lap',`${Math.min(3,row.completed+1)}/3`);
-      this.text(id+'-current',row.finish!==null?'완주':displayLap(row.current));this.text(id+'-last',displayLap(row.last));this.text(id+'-best',displayLap(row.best));
-      this.root.querySelector('#'+id+'-best')!.classList.toggle('session-fastest',sameLap(row.best,fastest));
-    }
-    const order=rows.map(row=>row.id).join('|');
-    if(order!==this.timingOrder){this.root.querySelector('#live-laps-body')!.append(...rows.map(row=>this.root.querySelector('#'+timingId(row.id))!));this.timingOrder=order;}
-  }
   update(v:Vehicle,r:Race,paused:boolean,track:Track,cameraMode:number){
     (this.root.querySelector('#pause-menu') as HTMLElement).hidden=!paused;
     if(paused&&!this.wasPaused)(this.root.querySelector('#resume') as HTMLElement).focus();
     if(!paused&&this.wasPaused)(document.activeElement as HTMLElement)?.blur();
     if(paused){const scores=this.root.querySelector('#rival-scores')!;scores.replaceChildren(...r.opponents.map(o=>{const row=document.createElement('div');row.textContent=`${o.name} · ${o.personality} · ${o.agent.status} · ${o.agent.strategy.status} · ERS ${Math.round(o.car.boost)}% / ${o.collisionScore.toFixed(0)}점 (${o.collisionCount}회)`;return row;}));}
-    const standings=r.classification??[],playerStanding=standings.find(row=>row.id==='PLAYER');this.updateLaps(standings,r.state);
+    const standings=r.classification??[],playerStanding=standings.find(row=>row.id==='PLAYER');
     this.wasPaused=paused;this.setTransmissionMode(v.transmission.mode);
     this.root.classList.toggle('cockpit-view',cameraMode===1);
     this.text('field-size',String(r.fieldSize).padStart(2,'0'));this.text('driver-count',String(r.fieldSize).padStart(2,'0'));
