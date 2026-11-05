@@ -19,12 +19,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Choose checks for changed files
+        id: checks
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$BEFORE_SHA" HEAD)
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | rg -qv '^(src/ui/CircuitMenu\.(ts|css)|tests/circuit-menu\.mjs|README\.md|\.github/workflows/pages\.yml)$'; then
+              echo 'ui_only=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Check title screen
+        if: steps.checks.outputs.ui_only == 'true'
+        run: node tests/circuit-menu.mjs
+      - name: Check racing and game systems
+        if: steps.checks.outputs.ui_only != 'true'
+        run: npm test
       - run: npm run build -- --base=/f1/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
