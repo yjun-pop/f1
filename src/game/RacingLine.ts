@@ -8,6 +8,7 @@ const STEP=2.5,MAX_SAMPLES=512,HEIGHTS=[.25,.49,.73];
 /** Corner-only, upright guidance following the optimized path in world space. */
 export class RacingLine {
   readonly planner:LinePlanner;
+  readonly sampleSpacing:number;
   private ribbon:THREE.Mesh<THREE.BufferGeometry,THREE.MeshBasicMaterial>;
   private zones:CornerZone[];
   private markers:THREE.InstancedMesh;
@@ -23,6 +24,7 @@ export class RacingLine {
   brakingCue:{distance:number;target:number}|null=null;
   visible=true;targetKmh=0;instruction='ACCELERATE';
   constructor(private track:Track,scene:THREE.Scene){
+    this.sampleSpacing=track.length/(Math.ceil(track.length/(STEP*6))*6);
     this.planner=new LinePlanner(track);this.zones=this.findCorners();
     const geometry=new THREE.BufferGeometry(),indices:number[]=[];
     geometry.setAttribute('position',new THREE.BufferAttribute(this.positions,3).setUsage(THREE.DynamicDrawUsage));
@@ -96,7 +98,7 @@ export class RacingLine {
     this.markers.visible=this.ribbon.visible;this.markers.count=0;
     if(!this.ribbon.visible||!active)return;
     // A whole number of six-sample marker groups closes the lap without phase jumps.
-    const step=this.track.length/(Math.ceil(this.track.length/(STEP*6))*6);
+    const step=this.sampleSpacing;
     const first=Math.ceil(Math.max(meters+2,active.start-approach)/step)*step;
     const end=Math.min(active.end,first+(MAX_SAMPLES-1)*step);
     const count=Math.min(MAX_SAMPLES,Math.ceil((end-first)/step)+1);

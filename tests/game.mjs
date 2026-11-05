@@ -121,9 +121,10 @@ for(let sample=0;sample<guide.sampleCount;sample++){
   assert.ok(ribbonPositions.getY(base)>.2,'Ribbon must float clear of the asphalt');
   assert.ok(ribbonPositions.getY(base+2)-ribbonPositions.getY(base)>.45,'Ribbon must be vertical, not painted on the road');
 }
-const startMeters=Math.ceil((v.progress*track.length+2)/2.5)*2.5;
+assert.ok(guide.sampleSpacing>2.4&&guide.sampleSpacing<=2.5);
+const startMeters=Math.ceil((v.progress*track.length+2)/guide.sampleSpacing)*guide.sampleSpacing;
 for(let sample=0;sample<guide.sampleCount-1;sample++){
-  const expected=guide.planner.point((startMeters+sample*2.5)/track.length);
+  const expected=guide.planner.point((startMeters+sample*guide.sampleSpacing)/track.length);
   assert.ok(Math.hypot(ribbonPositions.getX(sample*3)-expected.x,ribbonPositions.getZ(sample*3)-expected.z)<.001,'Ribbon must follow the actual optimized path');
 }
 const ribbonColors=guide.ribbon.geometry.getAttribute('color');
