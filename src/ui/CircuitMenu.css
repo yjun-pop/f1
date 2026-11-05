@@ -82,3 +82,7 @@
   #front-menu .menu-record{font-size:10px}
   #front-menu .menu-record>b{margin-left:6px;font-size:10px}
 }
+@media(min-width:681px) and (max-height:800px){
+  #front-menu .race-menu{min-height:620px;grid-template-rows:auto minmax(min-content,1fr) auto minmax(84px,1fr) auto}
+  #front-menu .circuit-gallery{margin-top:60px}
+}
