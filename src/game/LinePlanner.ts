@@ -140,6 +140,19 @@ export class LinePlanner {
     }
     return distance;
   }
+  /** Distance to the braking point for the most demanding upcoming corner.
+   * Use corner grip limits here: the speed envelope already includes braking. */
+  brakingCue(progress:number,speed:number,offRoad=false){
+    if(speed<8)return null;
+    let cue:{distance:number;target:number}|null=null;
+    for(let metres=8;metres<=Math.min(900,this.track.length*.5);metres+=8){
+      const t=progress+metres/this.track.length,target=this.cornerLimit(t,offRoad);
+      if(target>=speed-3)continue;
+      const distance=this.pathDistance(progress,t)-this.brakingDistance(speed,target,offRoad)-speed*.3;
+      if(!cue||distance<cue.distance)cue={distance,target};
+    }
+    return cue&&cue.distance<=160?{distance:Math.max(0,cue.distance),target:Math.round(cue.target*3.6)}:null;
+  }
   advice(progress:number,speed:number,offRoad=false){
     // Bound the search by the full stop distance, then propagate
     // a speed-dependent braking envelope backwards along the actual path.

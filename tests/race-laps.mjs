@@ -35,3 +35,8 @@ for(let second=1;second<=300;second++){player.distance=second/100;race.update(1,
 assert.equal(race.state,'finished');assert.equal(race.position,2);assert.equal(race.classification[0].id,rival.id);assert.equal(race.classification[1].id,'PLAYER');assert.equal(race.classification[0].lapTimes.length,3);assert.ok(Math.abs(race.classification[0].finish-250)<1e-6);assert.ok(Math.abs(race.classification[1].finish-300)<1e-6);assert.ok(Math.abs(race.best-100)<1e-6);assert.equal(race.bestAtStart,105);assert.ok(Math.abs(Number(records.get('apex-best-monza-v3'))-100)<1e-6);
 const result=JSON.stringify(race.classification);race.update(10,player);assert.equal(JSON.stringify(race.classification),result);race.reset();assert.equal(race.state,'ready');assert.ok(race.classification.every(row=>!row.lapTimes.length));assert.equal(race.bestAtStart,race.best);
 console.log('PASS: production Race collects AI after advance, records finish order and all three player laps, preserves the pre-race PB, freezes results and clears timing on restart');
+
+const guidance={track:{length:1000},cornerLimit:t=>t>=.2&&t<.25?20:90,pathDistance:(a,b)=>(b-a)*1000,brakingDistance:()=>100};
+const approaching=LinePlanner.prototype.brakingCue.call(guidance,0,50);assert.equal(approaching.distance,85);assert.equal(approaching.target,72);
+const due=LinePlanner.prototype.brakingCue.call(guidance,.1,50);assert.equal(due.distance,0);assert.equal(LinePlanner.prototype.brakingCue.call(guidance,0,5),null);
+console.log('PASS: braking-point distance, corner target speed, brake-now threshold and low-speed suppression');
