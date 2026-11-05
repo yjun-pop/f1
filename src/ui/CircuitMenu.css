@@ -50,3 +50,35 @@
 #front-menu .menu-record{font:11px 'Noto Sans KR',sans-serif;letter-spacing:0}
 #front-menu .menu-footnote{justify-content:flex-end;margin-top:14px}
 @media(max-width:680px){#front-menu .menu-heading{display:flex;align-items:flex-start;gap:10px}#front-menu .menu-session{margin-top:5px;gap:9px;flex-wrap:wrap;justify-content:flex-end;font-size:9px}#front-menu .menu-session b{font-size:13px}#front-menu .menu-bottom{gap:16px}#front-menu .gallery-stage{padding:10px 0}}
+
+/* Anchor launch-screen chrome to the viewport, independently of the gallery. */
+#front-menu{--screen-gutter:clamp(16px,2.5vw,48px);padding:var(--screen-gutter)}
+#front-menu .race-menu{max-width:none;margin:0;min-height:660px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(min-content,1fr) auto minmax(110px,1fr) auto}
+#front-menu .menu-topbar{grid-row:1;margin:0;align-self:start}
+#front-menu .menu-heading,#front-menu .menu-bottom,#front-menu .menu-launch{display:contents}
+#front-menu .menu-heading h1{position:absolute;left:0;top:64px;font-size:26px}
+#front-menu .menu-session{position:absolute;right:0;top:7px;padding:0;margin:0}
+#front-menu .circuit-gallery{grid-row:2;align-self:end;width:100%;margin-top:88px}
+#front-menu .menu-start{grid-row:3;justify-self:center;width:min(460px,64%);margin-top:16px}
+#front-menu .selected-circuit{position:absolute;left:0;bottom:0}
+#front-menu .menu-transmission{position:absolute;right:0;bottom:82px;width:270px;margin:0}
+#front-menu .menu-wheel-button{position:absolute;right:0;bottom:37px;width:270px;margin:0}
+#front-menu .menu-footnote{grid-row:5;justify-self:end;padding:0;margin:0;border:0}
+#front-menu .gallery-counter{right:0}
+#front-menu .menu-status{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);width:min(460px,90%);text-align:center;margin:0}
+@media(max-width:680px){
+  #front-menu .race-menu{min-height:720px;grid-template-rows:auto minmax(min-content,1fr) auto minmax(150px,1fr) auto}
+  #front-menu .menu-brand{font-size:16px;gap:6px;letter-spacing:1px}
+  #front-menu .menu-brand i{font-size:25px}
+  #front-menu .menu-session{top:48px;gap:8px;font-size:8px}
+  #front-menu .menu-session b{font-size:11px}
+  #front-menu .menu-heading h1{top:47px;font-size:20px}
+  #front-menu .circuit-gallery{margin-top:70px}
+  #front-menu .gallery-stage{margin:0 calc(-1 * var(--screen-gutter))}
+  #front-menu .menu-start{width:78%;margin-top:12px}
+  #front-menu .selected-circuit{bottom:0;font-size:10px;max-width:65%}
+  #front-menu .menu-transmission{bottom:88px;width:100%}
+  #front-menu .menu-wheel-button{bottom:43px;width:100%}
+  #front-menu .menu-record{font-size:10px}
+  #front-menu .menu-record>b{margin-left:6px;font-size:10px}
+}
