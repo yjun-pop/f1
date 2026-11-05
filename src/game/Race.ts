@@ -8,6 +8,8 @@ import {PackDirector} from './PackDirector';
 import {StartSequence,type StartSignal} from './StartSequence';
 import {DEFAULT_FIELD_SIZE,DRIVER_PROFILES} from './RaceRoster';
 import {RaceTiming} from './RaceTiming';
+import {RaceLaps} from './RaceLaps';
+export {formatTime} from './RaceLaps';
 import {AISpeedPlanner} from './AISpeedPlanner';
 import {CornerPaceObserver} from './CornerPaceObserver';
 import {RaceAerodynamics} from './Aerodynamics';
@@ -27,15 +29,17 @@ export class Race {
   private contacts=new Map<string,number>();
   private pack=new PackDirector();
   private lapStart=0;private completed=0;private storageKey:string;
-  readonly timing:RaceTiming;private player?:Vehicle;
+  readonly timing:RaceTiming;readonly laps:RaceLaps;bestAtStart=0;private player?:Vehicle;
   readonly opponents:Opponent[]=[];
   get fieldSize(){return this.opponents.length+1;}
   private timingSamples(player:Vehicle){return [{id:'PLAYER',name:'PLAYER',distance:player.distance},...this.opponents.map(o=>({id:o.name,name:o.name,distance:o.car.distance}))];}
   get intervals(){return this.player?this.timing.neighbours(this.timingSamples(this.player),'PLAYER',this.elapsed):{ahead:null,behind:null};}
+  private lapSamples(player:Vehicle){return [{id:'PLAYER',name:'YOU',distance:player.distance},...this.opponents.map(o=>({id:o.id,name:o.name,distance:o.car.distance}))];}
+  get classification(){return this.player?this.laps.standings(this.lapSamples(this.player),this.elapsed):[];}
   private gridPlayer?:Vehicle;
   constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number;player?:Vehicle}={}){
     this.gridPlayer=options.player;
-    this.timing=new RaceTiming(track.length);this.aerodynamics=new RaceAerodynamics(track,planner);track.details.addDRSBoards(track,this.aerodynamics.zones);
+    this.timing=new RaceTiming(track.length);this.laps=new RaceLaps(track.length);this.aerodynamics=new RaceAerodynamics(track,planner);track.details.addDRSBoards(track,this.aerodynamics.zones);
     // Rivals retain fixed steering/grip calibration, but share the player's
     // engine output, ERS and speed limits. Difficulty adjusts driving targets.
     this.aiSpeeds=Float64Array.from(planner.cornerSpeeds);
@@ -53,15 +57,15 @@ export class Race {
     this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
     const profiles=DRIVER_PROFILES.slice(0,Math.max(1,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
     profiles.forEach((profile,i)=>this.opponents.push(new Opponent(profile,i,track,scene,planner,this.aiSpeeds,this.speedPlanner)));this.reset();
-    try{this.best=Number(localStorage.getItem(this.storageKey)||0);}catch{}
+    try{const best=Number(localStorage.getItem(this.storageKey)||0);this.best=Number.isFinite(best)&&best>0?best:0;}catch{}this.bestAtStart=this.best;
   }
-  reset(){this.aerodynamics.reset();this.aeroPreparedAt=-Infinity;this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
+  reset(){this.laps.reset();this.bestAtStart=this.best;this.aerodynamics.reset();this.aeroPreparedAt=-Infinity;this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
     // Bind the playable car before arming the start so paint, poses and timing
     // share one standing grid. Unbound simulations can stage their own field.
     if(this.gridPlayer){const slot=gridSlot(this.fieldSize);this.gridPlayer.reset();this.gridPlayer.resetAt(slot.meters/this.track.length,slot.lane);this.player=this.gridPlayer;}
     this.opponents.forEach((o,i)=>o.reset(this.gridPlayer?gridSlot(i+1):{meters:15+(this.opponents.length-1-i)*12,lane:i%2?3:-3},i+1));}
 
-  start(){if(this.state==='ready'){this.startSequence.arm();this.countdown=this.startSequence.remaining;this.state='countdown';}}
+  start(){if(this.state==='ready'){this.bestAtStart=this.best;this.startSequence.arm();this.countdown=this.startSequence.remaining;this.state='countdown';}}
   private balanceRivals(player:Vehicle,dt:number){
     const corner=this.cornerObserver.sample(player,dt);if(corner)this.pack.recordCorner(corner.speed,corner.reference);
     const sample=((player.progress%1+1)%1)*this.aiSpeeds.length,index=Math.floor(sample);
@@ -110,13 +114,14 @@ export class Race {
   }
   update(dt:number,player:Vehicle){
     this.player=player;
-    if(this.state==='countdown'){this.startSequence.advance(dt);this.countdown=this.startSequence.remaining;if(this.startSequence.signal.phase==='go'){this.state='racing';this.timing.update(this.timingSamples(player),0);}return;}
+    if(this.state==='countdown'){this.startSequence.advance(dt);this.countdown=this.startSequence.remaining;if(this.startSequence.signal.phase==='go'){this.state='racing';this.laps.reset(this.lapSamples(player),0);this.timing.update(this.timingSamples(player),0);}return;}
     if(this.state!=='racing')return;
+    if(!this.laps.started)this.laps.reset(this.lapSamples(player),this.elapsed);
     if(this.aeroPreparedAt!==this.elapsed)this.prepareAerodynamics(player);this.aeroPreparedAt=-Infinity;
     this.elapsed+=dt;this.lapTime=this.elapsed-this.lapStart;
     const done=Math.floor(player.distance+1e-6);
-    if(done>this.completed){this.lastLap=this.lapTime;this.pack.recordLap(this.lastLap*88/(this.track.circuit?.referenceLap??88),this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;try{localStorage.setItem(this.storageKey,String(this.best));}catch{}}
-      this.completed=done;this.lapStart=this.elapsed;this.lapTime=0;if(done>=3){this.timing.update(this.timingSamples(player),this.elapsed);this.state='finished';this.aerodynamics.reset();return;}}
+    if(done>this.completed){this.laps.update([{id:'PLAYER',name:'YOU',distance:player.distance}],this.elapsed);const recorded=this.laps.lap('PLAYER',done);this.lastLap=recorded?.seconds??this.lapTime;this.pack.recordLap(this.lastLap*88/(this.track.circuit?.referenceLap??88),this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;try{localStorage.setItem(this.storageKey,String(this.best));}catch{}}
+      this.completed=done;this.lapStart=recorded?.elapsed??this.elapsed;this.lapTime=this.elapsed-this.lapStart;if(done>=3){this.laps.update(this.lapSamples(player),this.elapsed);this.position=this.classification.find(row=>row.id==='PLAYER')?.position??this.position;this.timing.update(this.timingSamples(player),this.elapsed);this.state='finished';this.aerodynamics.reset();return;}}
     this.balanceRivals(player,dt);
     // All drivers observe the same instant, before any car advances.
     const observation=observeTraffic([player,...this.opponents.map(o=>o.car)]);
@@ -139,6 +144,6 @@ export class Race {
     for(const [key,time] of this.contacts)if(this.elapsed-time>.6)this.contacts.delete(key);
     this.position=1+this.opponents.filter(o=>o.distance>player.distance).length;
     this.timing.update(this.timingSamples(player),this.elapsed);
+    this.laps.update(this.lapSamples(player),this.elapsed);
   }
 }
-export function formatTime(s:number){if(!s)return '—:——.———';return `${Math.floor(s/60)}:${(s%60).toFixed(3).padStart(6,'0')}`;}

@@ -1,0 +1,37 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import ts from 'typescript';
+import * as THREE from 'three';
+const cache=new Map(),three=new URL('../node_modules/three/build/three.module.js',import.meta.url).href;
+function moduleURL(name){
+  if(cache.has(name))return cache.get(name);
+  let source=ts.transpileModule(fs.readFileSync(new URL(`../src/${name}.ts`,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+  source=source.replace(/from 'three\/addons\/([^']+)'/g,(_,path)=>`from '${new URL('../node_modules/three/examples/jsm/'+path,import.meta.url).href}'`).replace(/from 'three'/g,`from '${three}'`).replace(/from '\.\/(\w+)'/g,(_,dep)=>`from '${moduleURL(name.split('/')[0]+'/'+dep)}'`).replace(/from '\.\.\/game\/(\w+)'/g,(_,dep)=>`from '${moduleURL('game/'+dep)}'`);
+  const url=`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;cache.set(name,url);return url;
+}
+const {RaceLaps,formatTime}=await import(moduleURL('game/RaceLaps'));
+const snapshot=[];
+for(const fps of [30,60,120,144]){
+ const clock=new RaceLaps(1000),samples=[{id:'PLAYER',name:'YOU',distance:-.096},{id:'ai:nova',name:'NOVA',distance:-.008},{id:'ai:vector',name:'VECTOR',distance:-.016}],starts=samples.map(s=>s.distance),speeds=[.02,.022,.019];clock.reset(samples);
+ let time=0;for(let frame=1;frame<=fps*155;frame++){time=frame/fps;samples.forEach((s,i)=>s.distance=starts[i]+speeds[i]*time);clock.update(frame%2?[...samples].reverse():samples,time);if(clock.lap('PLAYER',3))break;}
+ const rows=clock.standings(samples,time),player=rows.find(row=>row.id==='PLAYER');
+ assert.equal(rows[0].id,'ai:nova');assert.equal(player.position,2);assert.equal(player.completed,3);assert.ok(Math.abs(player.finish-154.8)<1e-7);assert.ok(Math.abs(player.best-50)<1e-7);assert.equal(player.current,null);
+ assert.equal(rows[2].finish,null);assert.equal(rows[2].completed,2);assert.ok(rows[2].current>0);assert.equal(rows[0].lapTimes.length,3);snapshot.push({fps,finish:player.finish,best:player.best});
+ const frozen=JSON.stringify(rows);samples[1].distance=5;clock.update(samples,time+200);assert.equal(clock.standings(samples,time+200)[0].lapTimes.length,3);assert.equal(JSON.stringify(rows),frozen);
+ clock.reset(samples.map(s=>({...s,distance:-.02})));assert.ok(clock.standings(samples,0).every(row=>row.lapTimes.length===0&&row.best===null&&row.finish===null));
+}
+console.log('PASS: independent interpolated lap clocks at 30/60/120/144fps, grid launch, three-lap cap, unfinished entrants, immutable snapshots and reset',snapshot);
+const reverse=new RaceLaps(1000),sample={id:'PLAYER',name:'YOU',distance:.99};reverse.reset([sample]);sample.distance=1.01;reverse.update([sample],1);sample.distance=.99;reverse.update([sample],2);sample.distance=1.01;reverse.update([sample],3);assert.equal(reverse.standings([sample],3)[0].lapTimes.length,1);assert.equal(reverse.lap('PLAYER',1).seconds,.5);
+const invalid=new RaceLaps(1000),jump={id:'PLAYER',name:'YOU',distance:0};invalid.reset([jump]);jump.distance=.2;invalid.update([jump],10);jump.distance=1.8;invalid.update([jump],10.01);jump.distance=1.99;invalid.update([jump],30);jump.distance=2.01;invalid.update([jump],31);assert.equal(invalid.lap('PLAYER',1),undefined);assert.equal(invalid.lap('PLAYER',2).seconds,null);assert.equal(invalid.standings([jump],31)[0].best,null);
+assert.equal(formatTime(59.9998),'1:00.000');assert.equal(formatTime(85.125),'1:25.125');for(const value of [0,-1,NaN,Infinity,null,undefined])assert.equal(formatTime(value),'—:——.———');
+console.log('PASS: reverse recrossings are not extra laps, teleports/partial laps cannot create best times, and millisecond formatting carries across minutes');
+const {resultTable,playerLapCards}=await import(moduleURL('ui/LapTables'));
+const html=resultTable([{id:'PLAYER',name:'<img src=x onerror=alert(1)>',position:1,distance:3,completed:3,current:null,last:80,best:80,finish:245,lapTimes:[{lap:1,seconds:85,elapsed:85},{lap:2,seconds:80,elapsed:165},{lap:3,seconds:80,elapsed:245}]}]);assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));assert.ok(playerLapCards(undefined).includes('완료 기록 없음'));
+console.log('PASS: result names are escaped, missing laps stay empty and no finish estimates are fabricated');
+globalThis.window={innerWidth:1280,innerHeight:720};globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};const records=new Map([['apex-best-monza-v3','105']]);globalThis.localStorage={getItem:key=>records.get(key)??null,setItem:(key,value)=>records.set(key,value)};
+const {Track}=await import(moduleURL('game/Track')),{Vehicle}=await import(moduleURL('game/Vehicle')),{LinePlanner}=await import(moduleURL('game/LinePlanner')),{Race}=await import(moduleURL('game/Race'));
+const scene=new THREE.Scene(),track=new Track(scene),player=new Vehicle(track,scene),race=new Race(track,scene,new LinePlanner(track),{player,opponentCount:1}),rival=race.opponents[0];race.start();race.update(race.countdown+.01,player);player.resetAt(0);player.position.set(1e6,0,1e6);rival.car.resetAt(0);rival.plan=()=>{};rival.advance=dt=>{rival.car.distance+=.012*dt;rival.distance=rival.car.distance;};race.balanceRivals=()=>{};race.update(0,player);
+for(let second=1;second<=300;second++){player.distance=second/100;race.update(1,player);}
+assert.equal(race.state,'finished');assert.equal(race.position,2);assert.equal(race.classification[0].id,rival.id);assert.equal(race.classification[1].id,'PLAYER');assert.equal(race.classification[0].lapTimes.length,3);assert.ok(Math.abs(race.classification[0].finish-250)<1e-6);assert.ok(Math.abs(race.classification[1].finish-300)<1e-6);assert.ok(Math.abs(race.best-100)<1e-6);assert.equal(race.bestAtStart,105);assert.ok(Math.abs(Number(records.get('apex-best-monza-v3'))-100)<1e-6);
+const result=JSON.stringify(race.classification);race.update(10,player);assert.equal(JSON.stringify(race.classification),result);race.reset();assert.equal(race.state,'ready');assert.ok(race.classification.every(row=>!row.lapTimes.length));assert.equal(race.bestAtStart,race.best);
+console.log('PASS: production Race collects AI after advance, records finish order and all three player laps, preserves the pre-race PB, freezes results and clears timing on restart');

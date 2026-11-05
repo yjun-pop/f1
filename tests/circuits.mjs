@@ -111,7 +111,7 @@ for(const circuit of CIRCUITS.slice(1,3)){
 const {HUD}=await import(moduleURL('../ui/HUD'));
 const {Game}=await import(moduleURL('Game'));
 const nodes=new Map();
-const node=()=>({events:new Map(),value:'',textContent:'',innerHTML:'',hidden:false,style:{setProperty(){}},addEventListener(type,fn){this.events.set(type,fn);},setAttribute(){},focus(){},classList:{toggle(){}},replaceChildren(){},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})});
+const node=()=>({events:new Map(),value:'',textContent:'',innerHTML:'',hidden:false,style:{setProperty(){}},addEventListener(type,fn){this.events.set(type,fn);},setAttribute(){},focus(){},classList:{toggle(){}},replaceChildren(){},append(){},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})});
 const root={innerHTML:'',classList:{toggle(){}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,node());return nodes.get(selector);},querySelectorAll:()=>[]};
 globalThis.Path2D=class {moveTo(){}lineTo(){}};
 const choices=[],noop=()=>{};let menuOpened=0;
