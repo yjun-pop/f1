@@ -50,8 +50,8 @@ export function createMonacoScenery(track:Track,register:(group:THREE.Group)=>vo
   const part=(name:string,p:THREE.Vector3,yaw:number,offset:readonly number[],size:readonly number[],m:THREE.Material=trim,shape:Shape='box',detail=false,color=0xffffff)=>emit(name,shape,m,local(p,yaw,...offset as [number,number,number]),size,yaw,detail,color);
   const lots:{footprint:SceneryFootprint;position:THREE.Vector3;height:number;kind:string}[]=[];
   const landCorners=(fp:SceneryFootprint)=>[-1,1].flatMap(x=>[-1,1].map(z=>local(new THREE.Vector3(fp.x,0,fp.z),fp.yaw,x*fp.halfX,0,z*fp.halfZ)));
-  const valid=(p:THREE.Vector3,fp:SceneryFootprint)=>landCorners(fp).every(q=>!containsWater(q.x,q.z,track.waters))&&!track.scenerySpace.intersectsFootprint(fp,17)&&!track.scenerySpace.intersectsReserved(fp,1);
-  const reserve=(p:THREE.Vector3,yaw:number,w:number,d:number,h:number,kind:string)=>{const fp=sceneryFootprint(p,yaw,-w/2-2,w/2+2,-d/2-3,d/2+2);if(!valid(p,fp))return false;track.scenerySpace.reserveFootprint(fp);p.y=Math.max(...landCorners(fp).map(q=>track.sceneryHeight(q.x,q.z)));lots.push({footprint:fp,position:p.clone(),height:h,kind});return true;};
+  const valid=(fp:SceneryFootprint)=>landCorners(fp).every(q=>!containsWater(q.x,q.z,track.waters))&&!track.scenerySpace.intersectsFootprint(fp,17)&&!track.scenerySpace.intersectsReserved(fp,1);
+  const reserve=(p:THREE.Vector3,yaw:number,w:number,d:number,h:number,kind:string)=>{const fp=sceneryFootprint(p,yaw,-w/2-2,w/2+2,-d/2-3,d/2+2);if(!valid(fp))return false;track.scenerySpace.reserveFootprint(fp);p.y=Math.max(...landCorners(fp).map(q=>track.sceneryHeight(q.x,q.z)));lots.push({footprint:fp,position:p.clone(),height:h,kind});return true;};
   const tones=[0xf0d4b2,0xcfcabc,0xf4e6ce,0xc6d5cf,0xd6b39b,0xe3d6c4];
   const building=(p:THREE.Vector3,yaw:number,w:number,d:number,h:number,index:number,name='monaco-apartments')=>{
     const detailed=track.scenerySpace.distanceSquared(p.x,p.z,110)<110**2;

@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import type {Track} from './Track';
 
 /** A compact street circuit cannot use two fixed 16m offsets: opposing

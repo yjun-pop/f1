@@ -55,7 +55,7 @@ function environment(href='https://example.test/f1/',saved={}){
 }
 
 let env=environment(undefined,{'apex-best-spa-v3':'114.49'}),starts=[],modes=[],previewsShown=[],wheelOpens=0;
-const menu=new CircuitMenu(env.root,{selected:'monza',mode:'auto',keyboard:true,preview:id=>previewsShown.push(id),start:(...args)=>starts.push(args),wheel:()=>wheelOpens++,transmission:mode=>modes.push(mode)});
+const menu=new CircuitMenu(env.root,{selected:'monza',mode:'auto',preview:id=>previewsShown.push(id),start:(...args)=>starts.push(args),wheel:()=>wheelOpens++,transmission:mode=>modes.push(mode)});
 env.nodes.get('wheel-settings').emit('click');assert.equal(wheelOpens,1);assert.deepEqual(starts,[]);
 assert.equal((env.root.innerHTML.match(/type="radio"/g)??[]).length,8);
 assert.equal((env.root.innerHTML.match(/class="circuit-outline"/g)??[]).length,8);

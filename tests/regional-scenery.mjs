@@ -40,7 +40,7 @@ for(const circuit of CIRCUITS){
  track.updatePresentation(new THREE.Vector3(1e6,0,1e6),'low');assert.ok(root.userData.chunks.every(c=>!c.group.visible));
  root.traverse(o=>{if(o.userData.nearDetail)assert.equal(o.visible,false);});
  const forest=track.group.getObjectByName('woodland');for(const leaf of forest.children.filter(o=>o.userData.nearGeometry)){assert.ok((leaf.userData.farGeometry.index?.count??leaf.userData.farGeometry.getAttribute('position').count)<(leaf.userData.nearGeometry.index?.count??leaf.userData.nearGeometry.getAttribute('position').count));assert.equal(leaf.material.map,null);assert.equal(leaf.castShadow,false);}
- const sky=circuit.night?createNightSkyTexture(128,env):createSkyBackdrop(undefined,new THREE.Vector3(-85,50,-77),env);let checksum=0;for(let i=0;i<sky.image.data.length;i+=53)checksum=(checksum+sky.image.data[i]*(i+1))%2147483647;skies.add(checksum);sky.dispose();
+ const sky=circuit.night?createNightSkyTexture(128,env):createSkyBackdrop(new THREE.Vector3(-85,50,-77),env);let checksum=0;for(let i=0;i<sky.image.data.length;i+=53)checksum=(checksum+sky.image.data[i]*(i+1))%2147483647;skies.add(checksum);sky.dispose();
  console.log(`PASS: ${circuit.id} geographic landmarks, flat drivable corridor, shore-clipped water, bounded static batches and low-tier detail/shadow culling`,{instances,detail,waterTiles});
 }
 assert.equal(skies.size,8);console.log('PASS: eight distinct regional sky/reflection palettes with reusable filtered backgrounds');

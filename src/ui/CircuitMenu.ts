@@ -41,7 +41,7 @@ function record(id:CircuitId){
   let value=0;try{value=Number(localStorage.getItem(`apex-best-${id}-v3`));}catch{}
   return Number.isFinite(value)&&value>0?`${Math.floor(value/60)}:${(value%60).toFixed(3).padStart(6,'0')}`:'아직 기록 없음';
 }
-export function circuitMenuMarkup(selected:CircuitId,prefix=''){
+function circuitMenuMarkup(selected:CircuitId,prefix=''){
   const circuit=circuitById(selected),info=PRESENTATION[selected],id=(value:string)=>prefix+value;
   return `<section class="race-menu" id="${id('menu-shell')}" aria-labelledby="${id('menu-title')}">
     <div class="menu-topbar"><div class="menu-brand" aria-label="APEX FORMULA"><i>Λ</i> APEX<span>FORMULA</span></div><span class="menu-mode"><i></i> QUICK RACE <span>/ SINGLE PLAYER</span></span></div>
@@ -53,7 +53,7 @@ export function circuitMenuMarkup(selected:CircuitId,prefix=''){
 }
 
 interface MenuOptions {
-  selected:CircuitId;mode:TransmissionMode;prefix?:string;render?:boolean;keyboard?:boolean;
+  selected:CircuitId;mode:TransmissionMode;prefix?:string;
   start:(id:CircuitId,mode:TransmissionMode)=>void;preview?:(id:CircuitId)=>void;transmission?:(mode:TransmissionMode)=>void;wheel?:()=>void;
 }
 export class CircuitMenu {
@@ -71,7 +71,7 @@ export class CircuitMenu {
   };
   constructor(private root:HTMLElement,private options:MenuOptions){
     this.selected=options.selected;
-    if(options.render!==false)root.innerHTML=circuitMenuMarkup(options.selected,options.prefix);
+    root.innerHTML=circuitMenuMarkup(options.selected,options.prefix);
     for(const circuit of CIRCUITS){
       this.node<HTMLInputElement>('circuit-'+circuit.id).addEventListener('change',()=>this.select(circuit.id));
       this.node('dot-'+circuit.id).addEventListener('click',()=>this.select(circuit.id));
@@ -95,8 +95,7 @@ export class CircuitMenu {
     this.node('wheel-settings').addEventListener('click',()=>{if(!this.loading)options.wheel?.();});
     this.node<HTMLSelectElement>('start-transmission').addEventListener('change',event=>options.transmission?.(transmissionMode((event.target as HTMLSelectElement).value)));
     this.setTransmission(options.mode);
-    if(options.keyboard)window.addEventListener('keydown',this.keyboardHandler);
-    else this.node('menu-shell').addEventListener('keydown',this.keyboardHandler);
+    window.addEventListener('keydown',this.keyboardHandler);
     this.updateGallery();
   }
   private node<T extends HTMLElement=HTMLElement>(id:string){return this.root.querySelector<T>('#'+(this.options.prefix??'')+id)!;}
@@ -151,11 +150,5 @@ export class CircuitMenu {
     const status=this.node('menu-status');status.hidden=false;status.textContent='레이스를 불러오지 못했습니다. 다시 불러오기를 눌러 주세요.';
     this.node('start-label').textContent='다시 불러오기';this.node<HTMLButtonElement>('start').disabled=false;
   }
-  result(position:number,elapsed:string,best:string){
-    this.node('menu-title').textContent=`P${position} · RACE FINISHED`;
-    this.node('menu-description').textContent=`레이스 ${elapsed} · 베스트 랩 ${best}. 같은 서킷에 다시 도전하거나 다음 서킷을 선택하세요.`;
-    this.select(this.selected);
-  }
-  reset(){this.node('menu-title').innerHTML='서킷 선택';this.node('menu-description').textContent='서킷을 고르고, 당신의 다음 베스트 랩에 도전하세요.';}
-  dispose(){if(this.options.keyboard)window.removeEventListener('keydown',this.keyboardHandler);}
+  dispose(){window.removeEventListener('keydown',this.keyboardHandler);}
 }

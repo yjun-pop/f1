@@ -1488,12 +1488,11 @@ for(let lights=1;lights<=5;lights++){
 const pausedPeakCount=cuePeaks();signalAudio.updateStart(audibleStart.signal,false);assert.equal(signalAudio.cueBus.gain.value,0);signalAudio.updateStart(audibleStart.signal,true);assert.equal(cuePeaks(),pausedPeakCount);
 audibleStart.advance(audibleStart.remaining);signalAudio.updateStart(audibleStart.signal,true);assert.equal(cuePeaks(),6);assert.equal(signalAudio.cue.frequency.value,990);
 signalAudio.setVolume(.3);assert.equal(signalAudio.cueBus.gain.value,.3);signalAudio.toggleMute();assert.equal(signalAudio.cueBus.gain.value,0);signalAudio.toggleMute();signalAudio.silence();assert.equal(signalAudio.cueBus.gain.value,0);assert.equal(signalAudio.cueGain.gain.value,0);delete globalThis.AudioContext;
-// Actual bundled HDR source, local material variation and independently culled
+// Generated sky resampling, local material variation and independently culled
 // tree batches must be valid and stay within the existing quality profiles.
-const {HDRLoader}=await import('three/addons/loaders/HDRLoader.js');const hdrBytes=fs.readFileSync(new URL('../src/assets/park-sky.hdr',import.meta.url));
-const parsedSky=new HDRLoader().parse(hdrBytes.buffer.slice(hdrBytes.byteOffset,hdrBytes.byteOffset+hdrBytes.byteLength)),sourceSky=new THREE.DataTexture(parsedSky.data,parsedSky.width,parsedSky.height,THREE.RGBAFormat,THREE.HalfFloatType);sourceSky.flipY=true;
-const {resizeSkyTexture}=await import(moduleURL('WorldLighting'));
-for(const tier of ['low','medium','high']){const photo=resizeSkyTexture(sourceSky,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(photo.image.width,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(photo.flipY,true);assert.ok(photo.image.data.every(value=>Number.isFinite(THREE.DataUtils.fromHalfFloat(value))));photo.dispose();}
+const {resizeSkyTexture,createSkyBackdrop:resampleBackdrop}=await import(moduleURL('WorldLighting'));
+const sourceSky=resampleBackdrop(new THREE.Vector3(-.55,.32,-.5));
+for(const tier of ['low','medium','high']){const sky=resizeSkyTexture(sourceSky,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(sky.image.width,GRAPHICS_PROFILES[tier].reflectionWidth);assert.equal(sky.flipY,true);assert.ok(sky.image.data.every(value=>Number.isFinite(THREE.DataUtils.fromHalfFloat(value))));sky.dispose();}
 const scenery=track.group.getObjectByName('woodland');assert.ok(scenery.children.length>=20&&scenery.children.every(child=>child instanceof THREE.InstancedMesh));
 assert.ok(scenery.children.filter(child=>child.material.map).every(child=>child.material.alphaTest>0),'Leaf cutouts must survive forest detail changes');
 const roadMesh=track.surfaceGeometries.get('asphalt-road'),grassMesh=track.surfaceGeometries.get('grass-terrain');
@@ -1501,19 +1500,7 @@ for(const geometry of [roadMesh,grassMesh]){const colors=geometry.getAttribute('
 for(const name of ['curved-rubber','gravel-runoff']){const group=track.group.getObjectByName(name);assert.ok(group.children.every(mesh=>mesh.geometry.getAttribute('position').array.every(Number.isFinite)));}
 const rubberFade=track.surfaceGeometries.get('curved-rubber').getAttribute('color');assert.equal(rubberFade.itemSize,4);assert.equal(rubberFade.getW(0),0);assert.equal(rubberFade.getW(80*2),0);assert.equal(rubberFade.getW(40*2),1,'Rubber deposits must fade in and out instead of ending as rectangular stamps');
 assert.equal(surfaceMaps('asphalt').map.image.width,512);assert.equal(surfaceMaps('gravel').map.image.width,512);sourceSky.dispose();
-console.log('PASS: five-light sequence, variable hold, frame-rate independence, held grid/timers, shared AI launch, gantry-only start lights, unique start cues, pause/mute, bundled HDR and varied road/woodland');
-// A late HDR load must adopt the currently selected quality, and a failed load
-// must leave the working generated sky in place rather than blank the scene.
-const originalHDRLoad=HDRLoader.prototype.loadAsync;
-try{
-  let resolvePhoto;HDRLoader.prototype.loadAsync=()=>new Promise(resolve=>{resolvePhoto=resolve;});
-  const lateScene=new THREE.Scene(),lateLighting=new WorldLighting(lateScene,reflectionRenderer,'high'),pendingPhoto=lateLighting.loadSky('test://bundled-hdr');
-  lateLighting.setQuality('low');const latePhoto=sourceSky.clone();resolvePhoto(latePhoto);assert.equal(await pendingPhoto,true);assert.equal(lateScene.background.image.width,512);assert.equal(lateLighting.sky.image.width,256);assert.ok(lateLighting.sunOffset.y>0&&Math.abs(lateLighting.sunOffset.length()-130)<1e-6);
-  const workingSky=lateScene.background;HDRLoader.prototype.loadAsync=async()=>{throw new Error('missing photo');};assert.equal(await lateLighting.loadSky('test://missing-hdr'),false);assert.equal(lateScene.background,workingSky);
-  let releasedPhoto=false;latePhoto.addEventListener('dispose',()=>{releasedPhoto=true;});lateLighting.dispose();assert.equal(releasedPhoto,true);
-}finally{HDRLoader.prototype.loadAsync=originalHDRLoad;}
-console.log('PASS: deferred HDR loading follows current quality, matches sun direction, releases resources and preserves a fallback sky on failure');
-
+console.log('PASS: five-light sequence, variable hold, frame-rate independence, held grid/timers, shared AI launch, gantry-only start lights, unique start cues, pause/mute, procedural sky and varied road/woodland');
 // Tight bends need an actually smooth path and bounded polygon approximation,
 // not only more triangles following the same kinked source line.
 const {kerbRows,KERB_PAINT_LENGTH}=await import(moduleURL('KerbGeometry'));
@@ -1583,10 +1570,10 @@ assert.ok(treeCandidates.length>0,'A near tree layer must exist beside the openi
 const projectedTrees=[0,20].map(metres=>{const p=parallaxOrigin.clone().addScaledVector(parallaxForward,metres),view=new THREE.PerspectiveCamera(80,16/9,.06,1100);view.position.copy(p).setY(1.5);view.lookAt(p.clone().addScaledVector(parallaxForward,26).setY(-.35));view.updateMatrixWorld(true);return treeCandidates[0].clone().project(view);});
 assert.ok(Math.abs(projectedTrees[0].x-projectedTrees[1].x)>.02,'Near scenery must provide real translation parallax');
 const nearestBefore=track.nearestProgress;track.nearestProgress=()=>{throw new Error('Unnecessary wheel search');};assert.doesNotThrow(()=>track.kerbContact(track.point(400/track.length),0,400/track.length));track.nearestProgress=nearestBefore;
-const {createSkyBackdrop}=await import(moduleURL('WorldLighting'));const skyOnly=createSkyBackdrop(undefined,shadowLight);assert.equal(skyOnly.image.width,512);assert.equal(skyOnly.flipY,true);skyOnly.dispose();
+const {createSkyBackdrop}=await import(moduleURL('WorldLighting'));const skyOnly=createSkyBackdrop(shadowLight);assert.equal(skyOnly.image.width,512);assert.equal(skyOnly.flipY,true);skyOnly.dispose();
 console.log('PASS: exact chunk preservation, shared buffers, local culling, static transforms, pixel limits, sustained-stall recovery, cached shadows, attached car contact shadows and real tree parallax',{meanSurfaceTriangles:Math.round(optimizedSurfaceTotal/6),fullSurfaceTotal,shadowRefreshes});
 
-const forestPit=track.group.children.find(object=>object.children.some(child=>child.geometry?.parameters?.width===17&&child.geometry?.parameters?.depth===240)),forestPitInverse=forestPit.matrixWorld.clone().invert();
+const forestPit=track.group.getObjectByName('pit-building');assert.ok(forestPit,'The named pit building must exist independently of its current architecture');const forestPitInverse=forestPit.matrixWorld.clone().invert();
 for(const mesh of scenery.children)if(!mesh.material.map)for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,instance);const local=new THREE.Vector3().setFromMatrixPosition(instance).applyMatrix4(forestPitInverse);assert.ok(Math.abs(local.x)>=16||Math.abs(local.z)>=130,'The near parallax layer must leave the pit building and its canopy clearance empty');}
 
 // Check the rendered wall edges, not only the centreline: a wide strip can

@@ -83,8 +83,8 @@ features enabled in the candidate.
 
 [Per-circuit raw results](scenery-render-comparison.json). Some scenes keep similar
 cost while showing more features. These measurements establish scene submission
-budgets, not hardware FPS. The common 1,588,504-byte park HDR is no longer requested
-at game startup; the asset is retained for existing loader/disposal regression tests.
+budgets, not hardware FPS. The obsolete park HDR asset and its unused loading path have been removed;
+regional skies are generated locally and reused for reflections.
 
 ## Close scenery and structure clearance update
 
