@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import {Track} from './Track';
 import {Vehicle} from './Vehicle';
 import {LinePlanner} from './LinePlanner';
-import {brakingDeceleration} from './Dynamics';
 
 interface CornerZone {start:number;end:number;minimumSpeed:number;minimumGrassSpeed?:number}
 const STEP=2.5,MAX_SAMPLES=512,HEIGHTS=[.25,.49,.73];
@@ -21,6 +20,7 @@ export class RacingLine {
   private accelerateColor=new THREE.Color(0x42ed80);
   private sampleCount=0;
   private engagedZone=-1;
+  brakingCue:{distance:number;target:number}|null=null;
   visible=true;targetKmh=0;instruction='ACCELERATE';
   constructor(private track:Track,scene:THREE.Scene){
     this.planner=new LinePlanner(track);this.zones=this.findCorners();
@@ -74,9 +74,10 @@ export class RacingLine {
   }
   toggle(){this.visible=!this.visible;}
   update(vehicle:Vehicle){
-    const allowed=this.planner.advice(vehicle.progress,vehicle.speed,vehicle.offRoad);
+    const guidance=this.planner.guidance(vehicle.progress,vehicle.speed,vehicle.offRoad,1400),allowed=guidance.target;
+    this.brakingCue=guidance.cue;
     this.targetKmh=Math.round(allowed*3.6);
-    const threshold=this.instruction==='BRAKE'?3:9;
+    const threshold=this.instruction==='BRAKE'?1.8:3.6;
     this.instruction=vehicle.kmh>this.targetKmh+threshold?'BRAKE':vehicle.kmh>this.targetKmh-10?'HOLD':'ACCELERATE';
     const meters=((vehicle.progress%1+1)%1)*this.track.length;
     let active:CornerZone|undefined,approach=0,best=Infinity,selected=-1;
@@ -94,28 +95,19 @@ export class RacingLine {
     this.sampleCount=0;this.ribbon.visible=this.visible&&!!active;this.ribbon.geometry.setDrawRange(0,0);
     this.markers.visible=this.ribbon.visible;this.markers.count=0;
     if(!this.ribbon.visible||!active)return;
-    const first=Math.ceil(Math.max(meters+2,active.start-approach)/STEP)*STEP;
-    const end=Math.min(active.end,first+(MAX_SAMPLES-1)*STEP);
-    const count=Math.min(MAX_SAMPLES,Math.ceil((end-first)/STEP)+1);
+    // A whole number of six-sample marker groups closes the lap without phase jumps.
+    const step=this.track.length/(Math.ceil(this.track.length/(STEP*6))*6);
+    const first=Math.ceil(Math.max(meters+2,active.start-approach)/step)*step;
+    const end=Math.min(active.end,first+(MAX_SAMPLES-1)*step);
+    const count=Math.min(MAX_SAMPLES,Math.ceil((end-first)/step)+1);
     if(count<2){this.ribbon.visible=false;this.markers.visible=false;return;}
-    let forecast=vehicle.speed,previousProgress=meters/this.track.length;
     for(let i=0;i<count;i++){
-      const s=Math.min(end,first+i*STEP),t=s/this.track.length,p=this.planner.point(t),distance=s-meters;
-      const target=Math.min(this.planner.speed(t),this.planner.cornerLimit(t,vehicle.offRoad));
-      const next=Math.min(this.planner.speed(t+8/this.track.length),this.planner.cornerLimit(t+8/this.track.length,vehicle.offRoad));
-      const profileDistance=this.planner.pathDistance(t,t+8/this.track.length);
-      const profileAcceleration=(next*next-target*target)/(2*Math.max(.1,profileDistance));
-      // Start with the actual car speed. Predict attainable braking/acceleration
-      // along the guide, so a corner exit is not painted red just because the
-      // car is still fast before braking at the entry.
-      const deceleration=brakingDeceleration(forecast,vehicle.offRoad)*.65;
-      const acceleration=Math.max(2,(vehicle.boosting?23:17)*(1-forecast/140)-.00105*forecast*forecast-.35);
-      const demand=profileAcceleration+(target-forecast)*1.6;
-      const signed=THREE.MathUtils.clamp(demand/(demand<0?deceleration:acceleration),-1,1);
+      const s=Math.min(end,first+i*step),t=s/this.track.length,p=this.planner.point(t),distance=s-meters;
+      const signed=guidance.at(this.planner.pathDistance(vehicle.progress,t)).effort;
       const blend=Math.tanh(Math.abs(signed)*1.8);
       this.color.copy(this.holdColor).lerp(signed<0?this.brakeColor:this.accelerateColor,blend);
       const fade=THREE.MathUtils.smoothstep(distance,2,15)*(1-THREE.MathUtils.smoothstep(s,active.end-25,active.end));
-      if(i%6===0&&distance>8&&fade>.1){
+      if(Math.round(s/step)%6===0&&distance>8&&fade>.1){
         const nextPoint=this.planner.point(t+2/this.track.length);
         this.markerPose.position.set(p.x,p.y+.29,p.z);this.markerPose.rotation.set(0,Math.atan2(nextPoint.x-p.x,nextPoint.z-p.z),0);
         this.markerPose.scale.setScalar(fade);this.markerPose.updateMatrix();
@@ -126,8 +118,7 @@ export class RacingLine {
         this.positions[position]=p.x;this.positions[position+1]=p.y+HEIGHTS[row];this.positions[position+2]=p.z;
         this.colors[color]=this.color.r;this.colors[color+1]=this.color.g;this.colors[color+2]=this.color.b;this.colors[color+3]=fade*(row===1?.9:.12);
       }
-      forecast=Math.sqrt(Math.max(0,forecast*forecast+2*THREE.MathUtils.clamp(demand,-deceleration,acceleration)*this.planner.pathDistance(previousProgress,t)));
-      previousProgress=t;
+
     }
     this.sampleCount=count;
     this.ribbon.material.opacity=Math.max(latched?this.ribbon.material.opacity:0,.88*THREE.MathUtils.smoothstep(approach-(active.start-meters),0,25));

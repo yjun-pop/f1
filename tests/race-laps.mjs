@@ -36,7 +36,18 @@ assert.equal(race.state,'finished');assert.equal(race.position,2);assert.equal(r
 const result=JSON.stringify(race.classification);race.update(10,player);assert.equal(JSON.stringify(race.classification),result);race.reset();assert.equal(race.state,'ready');assert.ok(race.classification.every(row=>!row.lapTimes.length));assert.equal(race.bestAtStart,race.best);
 console.log('PASS: production Race collects AI after advance, records finish order and all three player laps, preserves the pre-race PB, freezes results and clears timing on restart');
 
-const guidance={track:{length:1000},cornerLimit:t=>t>=.2&&t<.25?20:90,pathDistance:(a,b)=>(b-a)*1000,brakingDistance:()=>100};
-const approaching=LinePlanner.prototype.brakingCue.call(guidance,0,50);assert.equal(approaching.distance,85);assert.equal(approaching.target,72);
-const due=LinePlanner.prototype.brakingCue.call(guidance,.1,50);assert.equal(due.distance,0);assert.equal(LinePlanner.prototype.brakingCue.call(guidance,0,5),null);
-console.log('PASS: braking-point distance, corner target speed, brake-now threshold and low-speed suppression');
+const guidance={track:{length:1000},count:250,distances:new Float64Array(250).fill(4),accelerationProfiles:new Map(),accelerationProfile:LinePlanner.prototype.accelerationProfile,cornerLimit:t=>t>=.2&&t<.25?20:90,pathDistance:(a,b)=>(b-a)*1000,brakingDistance:()=>100,guidance:LinePlanner.prototype.guidance};
+const approaching=LinePlanner.prototype.brakingCue.call(guidance,0,50);assert.ok(approaching.distance>0&&approaching.distance<160);assert.equal(approaching.target,72);
+const due=LinePlanner.prototype.brakingCue.call(guidance,.19,50);assert.equal(due.distance,0);assert.equal(LinePlanner.prototype.brakingCue.call(guidance,0,5),null);
+console.log('PASS: braking-point distance and HUD target come from the same advice envelope');
+const {SpeedGuidance,smoothEffort}=await import(moduleURL('game/SpeedGuidance'));
+const samples=Array.from({length:151},(_,i)=>({distance:i*4,progress:i/250,limit:i<60?90:i<85?25:90,allowed:i<60?90:i<85?25:90,effort:0}));
+const profile=new SpeedGuidance(samples,70,()=>15);assert.ok(profile.cue);assert.equal(profile.target,profile.at(0).allowed);assert.equal(profile.cue.target,90,'Cue identifies the first binding constraint');
+for(let i=0;i<samples.length-1;i++){const a=samples[i],b=samples[i+1];assert.ok(a.allowed<=a.limit+1e-8);assert.ok(a.allowed*a.allowed<=b.allowed*b.allowed+30*(b.distance-a.distance)+1e-6);assert.ok(Math.abs(a.effort-b.effort)<=.06*(b.distance-a.distance)+1e-7);}
+const spike=Array.from({length:9},(_,i)=>({progress:0,distance:i*4,limit:30,allowed:30,effort:i===4?-1:1}));smoothEffort(spike);assert.equal(spike[4].effort,-1);assert.ok(spike[3].effort<0&&spike[5].effort<0);
+console.log('PASS: raw speed limits and physical braking bounds, continuous signed colors and preserved genuine braking spikes');
+const {RacingLine}=await import(moduleURL('game/RacingLine'));
+const visual=new RacingLine(track,scene);visual.zones=[{start:track.length-40,end:track.length+120,minimumSpeed:20}];
+function markerPositions(metres){player.resetAt(metres/track.length);player.speed=70;visual.update(player);const result=new Set(),matrix=new THREE.Matrix4();for(let i=0;i<visual.markers.count;i++){visual.markers.getMatrixAt(i,matrix);result.add([matrix.elements[12],matrix.elements[14]].map(v=>v.toFixed(3)).join(','));}assert.equal(visual.targetKmh,Math.round(visual.planner.advice(player.progress,player.speed)*3.6));assert.deepEqual(visual.brakingCue,visual.planner.brakingCue(player.progress,player.speed));return result;}
+const before=markerPositions(track.length-2),after=markerPositions(1);assert.ok(before.size>3&&after.size>3);assert.ok([...before].filter(key=>after.has(key)).length>=Math.min(before.size,after.size)-2,'Markers must stay at their world positions across a lap seam');
+console.log('PASS: shared HUD/line target and braking cue, fixed world-space arrow spacing across the start/finish seam');

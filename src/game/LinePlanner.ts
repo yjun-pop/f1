@@ -1,3 +1,4 @@
+import {SpeedGuidance,type GuideSample} from './SpeedGuidance';
 import * as THREE from 'three';
 import {Track,ROAD_HALF_WIDTH} from './Track';
 import {cornerSpeed,brakingDeceleration,HANDLING} from './Dynamics';
@@ -17,6 +18,7 @@ export class LinePlanner {
   readonly distances:Float64Array;
   private pathLengths:Float64Array;
   private curvatures:Float64Array;
+  private accelerationProfiles=new Map<boolean,{source:LinePlanner['cornerLimit'];values:Float64Array}>();
   constructor(private track:Track,options:{halfWidth?:number}={}){
     this.count=Math.ceil(track.length/4);this.offsets=new Float64Array(this.count);this.speeds=new Float64Array(this.count);this.cornerSpeeds=new Float64Array(this.count);this.distances=new Float64Array(this.count);this.pathLengths=new Float64Array(this.count+1);this.curvatures=new Float64Array(this.count);
     const centers=Array.from({length:this.count},(_,i)=>track.point(i/this.count));
@@ -115,13 +117,14 @@ export class LinePlanner {
     }
   }
   point(t:number){const f=((t%1+1)%1)*this.count,i=Math.floor(f);return this.points[i].clone().lerp(this.points[(i+1)%this.count],f-i);}
-  cornerLimit(t:number,offRoad=false){
+  cornerLimit(t:number,offRoad=false,maxSpeed=87){
     const f=((t%1+1)%1)*this.count,i=Math.floor(f),next=(i+1)%this.count;
-    if(!offRoad)return THREE.MathUtils.lerp(this.cornerSpeeds[i],this.cornerSpeeds[next],f-i);
     const curvature=THREE.MathUtils.lerp(this.curvatures[i],this.curvatures[next],f-i)/(CORNER_SPEED_MARGIN*CORNER_SPEED_MARGIN);
+    const dryLimit=maxSpeed===87?THREE.MathUtils.lerp(this.cornerSpeeds[i],this.cornerSpeeds[next],f-i):cornerSpeed(curvature,maxSpeed);
+    if(!offRoad)return dryLimit;
     // Both mechanical grip and downforce grip fall on grass, just as in
     // Dynamics. Reducing braking alone does not make the corner speed safe.
-    return Math.min(THREE.MathUtils.lerp(this.cornerSpeeds[i],this.cornerSpeeds[next],f-i),Math.sqrt(HANDLING.baseGrip*.94*.43/Math.max(.0001,curvature-HANDLING.downforce*.94*.43)));
+    return Math.min(dryLimit,Math.sqrt(HANDLING.baseGrip*.94*.43/Math.max(.0001,curvature-HANDLING.downforce*.94*.43)));
   }
   /** Signed distance along the guide, including any full laps. */
   pathDistance(from:number,to:number){
@@ -140,37 +143,27 @@ export class LinePlanner {
     }
     return distance;
   }
-  /** Distance to the braking point for the most demanding upcoming corner.
-   * Use corner grip limits here: the speed envelope already includes braking. */
-  brakingCue(progress:number,speed:number,offRoad=false){
-    if(speed<8)return null;
-    let cue:{distance:number;target:number}|null=null;
-    for(let metres=8;metres<=Math.min(900,this.track.length*.5);metres+=8){
-      const t=progress+metres/this.track.length,target=this.cornerLimit(t,offRoad);
-      if(target>=speed-3)continue;
-      const distance=this.pathDistance(progress,t)-this.brakingDistance(speed,target,offRoad)-speed*.3;
-      if(!cue||distance<cue.distance)cue={distance,target};
-    }
-    return cue&&cue.distance<=160?{distance:Math.max(0,cue.distance),target:Math.round(cue.target*3.6)}:null;
+  private accelerationProfile(offRoad:boolean){
+    const cached=this.accelerationProfiles.get(offRoad);if(cached?.source===this.cornerLimit)return cached.values;
+    const values=Float64Array.from({length:this.count},(_,i)=>this.cornerLimit(i/this.count,offRoad,94));
+    // Only acceleration is propagated here. Braking is solved once in guidance.
+    for(let pass=0;pass<2;pass++)for(let i=0;i<this.count;i++){const next=(i+1)%this.count;values[next]=Math.min(values[next],Math.sqrt(values[i]**2+10*this.distances[i]));}
+    this.accelerationProfiles.set(offRoad,{source:this.cornerLimit,values});return values;
   }
-  advice(progress:number,speed:number,offRoad=false){
-    // Bound the search by the full stop distance, then propagate
-    // a speed-dependent braking envelope backwards along the actual path.
-    // Using the approach-speed downforce throughout the stop brakes too late.
-    const stoppingRange=Math.max(240,speed*REACTION_TIME+this.brakingDistance(speed,0,offRoad)+40);
-    const samples:{distance:number;limit:number}[]=[];
-    for(let distance=0;distance<=this.track.length;distance+=4){
-      const t=progress+distance/this.track.length,pathDistance=this.pathDistance(progress,t);
-      samples.push({distance:Math.max(0,pathDistance-speed*REACTION_TIME),limit:Math.min(this.speed(t),this.cornerLimit(t,offRoad))});
-      if(pathDistance>=stoppingRange)break;
+  /** Raw corner limits -> one braking envelope. Geometry and AI speed tables stay unchanged. */
+  guidance(progress:number,speed:number,offRoad=false,range=0){
+    const reaction=Math.max(0,speed)*REACTION_TIME;
+    const horizon=Math.min(this.track.length,range+Math.max(240,reaction+this.brakingDistance(speed,0,offRoad)+40));
+    const samples:GuideSample[]=[],acceleration=this.accelerationProfile(offRoad);
+    for(let metres=0;metres<=horizon+4;metres+=4){
+      const t=progress+metres/this.track.length,limit=Math.min(this.cornerLimit(t,offRoad,94),this.cornerLimit(t+reaction/this.track.length,offRoad,94));
+      const f=((t%1+1)%1)*this.count,index=Math.floor(f),cap=THREE.MathUtils.lerp(acceleration[index],acceleration[(index+1)%this.count],f-index);
+      const safeLimit=Math.min(limit,cap);
+      samples.push({progress:t,distance:this.pathDistance(progress,t),limit:safeLimit,allowed:safeLimit,effort:0});
     }
-    let allowed=samples[samples.length-1].limit;
-    for(let i=samples.length-2;i>=0;i--){
-      const distance=samples[i+1].distance-samples[i].distance;
-      const decel=brakingDeceleration(allowed,offRoad)*BRAKING_GRIP_USAGE;
-      allowed=Math.min(samples[i].limit,Math.sqrt(allowed*allowed+2*decel*distance));
-    }
-    return allowed;
+    return new SpeedGuidance(samples,speed,v=>brakingDeceleration(v,offRoad)*BRAKING_GRIP_USAGE);
   }
+  brakingCue(progress:number,speed:number,offRoad=false){return this.guidance(progress,speed,offRoad).cue;}
+  advice(progress:number,speed:number,offRoad=false){return this.guidance(progress,speed,offRoad).target;}
   speed(t:number){const f=((t%1+1)%1)*this.count,i=Math.floor(f);return THREE.MathUtils.lerp(this.speeds[i],this.speeds[(i+1)%this.count],f-i);}
 }

@@ -108,7 +108,7 @@ export class Game {
     }
     this.cockpit.update(this.vehicle,dt,feedback);this.line.update(this.vehicle);
     const hudStamp=`${this.race.state}/${this.paused}/${this.cockpit.mode}`;this.hudAge+=dt;
-    if(this.hudAge>=.1||hudStamp!==this.hudStamp){this.hud.update(this.vehicle,this.race,this.paused,this.track,this.cockpit.mode);this.hud.setBrakingCue(this.line.visible&&this.race.state==='racing'&&!this.paused?this.line.planner.brakingCue(this.vehicle.progress,this.vehicle.speed,this.vehicle.offRoad):null);this.hud.setWheelStatus(this.input.wheel.status,!!this.input.wheel.profile?.enabled&&!this.input.wheel.armed&&!this.paused);this.hudAge=0;this.hudStamp=hudStamp;}
+    if(this.hudAge>=.1||hudStamp!==this.hudStamp){this.hud.update(this.vehicle,this.race,this.paused,this.track,this.cockpit.mode);this.hud.setBrakingCue(this.line.visible&&this.race.state==='racing'&&!this.paused?this.line.brakingCue:null);this.hud.setWheelStatus(this.input.wheel.status,!!this.input.wheel.profile?.enabled&&!this.input.wheel.armed&&!this.paused);this.hudAge=0;this.hudStamp=hudStamp;}
     this.renderer.render(this.scene,this.cockpit.camera);this.mirror.render(this.vehicle,!this.paused&&this.race.state==='racing'?dt:0);requestAnimationFrame(this.frame);
   };
 }

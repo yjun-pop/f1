@@ -334,8 +334,8 @@ console.log('PASS: guide arc distance, lap seams, grass corner limits, extended 
 const savedSpeed=guide.planner.speed.bind(guide.planner),savedAdvice=guide.planner.advice.bind(guide.planner);
 const savedLimit=guide.planner.cornerLimit.bind(guide.planner),savedZones=guide.zones;
 guide.zones=[{start:30,end:180,minimumSpeed:24}];guide.engagedZone=-1;
-guide.planner.speed=t=>{const distance=((t%1+1)%1)*track.length;return distance<65?50-distance*.4:24+(distance-65)*.2;};
-guide.planner.cornerLimit=()=>87;guide.planner.advice=()=>30;
+guide.planner.cornerLimit=t=>{const distance=((t%1+1)%1)*track.length;return distance<65?50-distance*.4:24+(distance-65)*.2;};
+
 v.resetAt(0);v.speed=70;guide.update(v);
 const colors=guide.ribbon.geometry.getAttribute('color');
 const brakingColor=new THREE.Color().fromBufferAttribute(colors,10*3+1),exitColor=new THREE.Color().fromBufferAttribute(colors,50*3+1);
@@ -344,7 +344,7 @@ assert.ok(exitColor.g>exitColor.r,'The exit must invite acceleration after the p
 const shades=new Set(Array.from({length:guide.sampleCount},(_,i)=>[colors.getX(i*3+1),colors.getY(i*3+1),colors.getZ(i*3+1)].map(v=>v.toFixed(3)).join(',')));
 assert.ok(shades.size>12,'Color strength must be a continuous gradient, not three discrete states');
 assert.equal(colors.getW((guide.sampleCount-1)*3+1),0,'The ribbon must fade out at the end of the exit');
-guide.planner.speed=()=>30;v.speed=30;guide.update(v);
+guide.planner.cornerLimit=()=>30;v.speed=30;guide.update(v);
 const holdColor=new THREE.Color().fromBufferAttribute(colors,10*3+1);
 assert.ok(holdColor.r>.9&&holdColor.g>.5&&holdColor.b<.2,'Matching a constant optimal speed must show the neutral yellow');
 // The same corner must remain active across the start/finish seam.
