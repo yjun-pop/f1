@@ -175,3 +175,39 @@
  #front-menu .gallery-arrow:first-child{left:max(calc(11vw - var(--screen-gutter) - 36px),calc(-1 * var(--screen-gutter)))}
  #front-menu .gallery-arrow:nth-of-type(2){right:max(calc(11vw - var(--screen-gutter) - 36px),calc(-1 * var(--screen-gutter)))}
 }
+
+/* Readable at desktop viewing distance; do not shrink corner labels to 9–11px. */
+#front-menu{--menu-text:clamp(15px,.85vw,18px);--menu-secondary:clamp(14px,.78vw,16px)}
+#front-menu .menu-brand{font-size:clamp(24px,1.6vw,34px);letter-spacing:1.5px}
+#front-menu .menu-brand i{font-size:40px}
+#front-menu .menu-heading h1{font-size:clamp(22px,1.4vw,28px);color:#c5d2df;font-weight:500}
+#front-menu .menu-session{font-size:var(--menu-secondary);color:#d6e1ea;letter-spacing:1px}
+#front-menu .menu-session .menu-dry b{font-size:var(--menu-text)}
+#front-menu .card-topline{font-size:var(--menu-secondary);letter-spacing:1.2px;color:#d6e1eb}
+#front-menu .card-title>small{font-size:var(--menu-text);color:#d4dfea;line-height:1.5}
+#front-menu .card-measure>b{font-size:clamp(19px,1.15vw,24px);color:#d9e4ec}
+#front-menu .card-measure>b small{font-size:14px;color:#b7cad8}
+#front-menu .gallery-neighbor{font-size:var(--menu-secondary);color:#e0e8f0;line-height:1.5;text-shadow:0 2px 10px #000}
+#front-menu .gallery-counter{font-size:var(--menu-secondary);color:#bdcddb;letter-spacing:1.2px}
+#front-menu .menu-transmission select{font-size:var(--menu-text);min-height:44px;color:#eef3f8;background:#081421c9;border-color:#90a7ba70;max-width:100%}
+#front-menu .launch-race-facts{font-size:var(--menu-text);color:#e1e9ef;line-height:1.5}
+#front-menu .menu-start{font-size:clamp(17px,1vw,20px);min-height:60px}
+#front-menu .menu-record{font-size:var(--menu-secondary);color:#c5d4e0;line-height:1.6}
+#front-menu .menu-record>b{font-size:var(--menu-text);font-weight:600;color:#d0f0e6}
+#front-menu .menu-wheel-button{font-size:var(--menu-text);min-height:48px;color:#e1ebf3;background:#0a1929c9;border-color:#7796b080}
+#front-menu .menu-footnote details{font-size:var(--menu-secondary);color:#d5e2ed}
+#front-menu .menu-footnote summary{padding:10px 4px;min-height:40px}
+#front-menu .menu-footnote details p{font-size:14px;line-height:1.9;width:390px;color:#e0eaf2}
+#front-menu .menu-status{font-size:var(--menu-secondary);color:#d0e7da}
+@media(max-width:680px){
+ #front-menu{--menu-text:16px;--menu-secondary:14px}
+ #front-menu .menu-brand{font-size:22px;gap:6px;letter-spacing:1px}
+ #front-menu .menu-brand i{font-size:30px}
+ #front-menu .menu-heading h1{font-size:20px;top:52px}
+ #front-menu .menu-session{top:54px}
+ #front-menu .card-title{font-size:clamp(28px,8vw,36px)}
+ #front-menu .menu-setup-summary{flex-direction:column;gap:8px}
+ #front-menu .menu-record>b{margin-left:8px;font-size:14px}
+ #front-menu .menu-footnote summary{padding:10px 0}
+}
+#front-menu .menu-wheel-button{bottom:56px}
