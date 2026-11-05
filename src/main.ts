@@ -11,13 +11,14 @@ let savedCircuit:unknown,savedTransmission:unknown;
 try{savedCircuit=localStorage.getItem('apex-circuit');savedTransmission=localStorage.getItem('apex-transmission-mode');}catch{}
 const selected=selectedCircuit(window.location.search,savedCircuit),mode=transmissionMode(savedTransmission);
 let launching=false;
+let previewInteraction=false;
 let backdrop:import('./ui/CircuitBackdrop').CircuitBackdrop|undefined,previewId=selected.id;
 const backdropHost=document.querySelector<HTMLElement>('#menu-backdrop')!;
 function preview(id:CircuitId){
   previewId=id;
   void import('./ui/CircuitBackdrop').then(({CircuitBackdrop})=>{
     if(launching||previewId!==id)return;
-    try{backdrop??=new CircuitBackdrop(backdropHost);backdrop.select(id);}catch(error){console.warn('Menu background unavailable',error);}
+    try{backdrop??=new CircuitBackdrop(backdropHost);backdrop.setInteracting(previewInteraction);backdrop.select(id);}catch(error){console.warn('Menu background unavailable',error);}
   }).catch(error=>console.warn('Menu background unavailable',error));
 }
 function start(id:CircuitId,transmission:TransmissionMode){
@@ -35,13 +36,26 @@ function start(id:CircuitId,transmission:TransmissionMode){
       new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext});
       // Game queues its first rendered frame first. Keep loading visible until
       // that frame, rather than briefly revealing an empty canvas or old menu.
-      requestAnimationFrame(()=>{menu.dispose();front.remove();});
+      requestAnimationFrame(()=>{dialogObserver.disconnect();menu.dispose();front.remove();});
     }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();}
   }));
 }
 const menu=new CircuitMenu(front,{selected:selected.id,mode,prefix:'front-',keyboard:true,start,preview,wheel:()=>{
-  void import('./ui/WheelSetup').then(module=>module.openWheelSetup()).catch(error=>{console.error(error);const status=front.querySelector<HTMLElement>('#front-menu-status')!;status.textContent='휠 설정을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.';status.hidden=false;});
+  previewInteraction=true;backdrop?.setInteracting(true);
+  void import('./ui/WheelSetup').then(module=>module.openWheelSetup()).catch(error=>{console.error(error);const status=front.querySelector<HTMLElement>('#front-menu-status')!;status.textContent='휠 설정을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.';status.hidden=false;updatePreviewInteraction();});
 },transmission:value=>{try{localStorage.setItem('apex-transmission-mode',value);}catch{}}});
+// Defer tour cuts while the user reads settings; camera drift stays active.
+const updatePreviewInteraction=()=>{
+  const focused=document.activeElement as HTMLElement|null;
+  previewInteraction=!!document.querySelector('dialog[open]')||!!front.querySelector('details[open]')||!!focused?.closest?.('.menu-setup-summary');
+  backdrop?.setInteracting(previewInteraction);
+};
+front.addEventListener('focusin',updatePreviewInteraction);
+front.addEventListener('focusout',()=>queueMicrotask(updatePreviewInteraction));
+front.addEventListener('toggle',updatePreviewInteraction,true);
+// Wheel settings is a lazy dialog outside the menu subtree.
+const dialogObserver=new MutationObserver(updatePreviewInteraction);
+dialogObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
 // A confirmed choice from a completed race goes straight to its next grid.
 // The intent is consumed by replaceState; refreshing returns to selection.
 if(new URLSearchParams(window.location.search).get('race')==='start')start(selected.id,mode);

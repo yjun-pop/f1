@@ -19,6 +19,7 @@ export class CircuitBackdrop {
   private renderer:THREE.WebGLRenderer;
   private scene?:THREE.Scene;private track?:Track;private lighting?:WorldLighting;
   private camera=new THREE.PerspectiveCamera(57,1,.5,1500);
+  private interacting=false;
   private changing=false;private shotTimer=0;private shotIndex=0;
   private focus=new THREE.Vector3();private forward=new THREE.Vector3();private normal=new THREE.Vector3();
   private frame=0;private timer=0;private stopped=false;private selected?:CircuitId;
@@ -79,6 +80,11 @@ export class CircuitBackdrop {
       this.sampleTime=this.sampleFrames=0;
     }
   };
+  setInteracting(active:boolean){
+    if(this.interacting===active)return;
+    this.interacting=active;window.clearTimeout(this.shotTimer);
+    if(!active&&this.track&&!this.changing)this.scheduleShot();
+  }
   private afterFade(action:()=>void){
     const hidden=()=>{
       if(this.stopped)return;
@@ -90,13 +96,13 @@ export class CircuitBackdrop {
   }
   private scheduleShot(){
     window.clearTimeout(this.shotTimer);
-    if(this.stopped||this.reduced.matches||document.hidden)return;
+    if(this.stopped||this.interacting||this.reduced.matches||document.hidden)return;
     const hold=()=>{
-      if(this.stopped||this.changing||document.hidden)return;
+      if(this.stopped||this.interacting||this.changing||document.hidden)return;
       if(Number(getComputedStyle(this.host).opacity)<.999){this.shotTimer=window.setTimeout(hold,32);return;}
       // Start the three-second hold only when the incoming frame is fully visible.
       this.shotTimer=window.setTimeout(()=>{
-        if(this.stopped||this.changing||!this.track||document.hidden)return;
+        if(this.stopped||this.interacting||this.changing||!this.track||document.hidden)return;
         this.changing=true;this.host.classList.remove('is-ready');
         this.afterFade(()=>{
           if(this.stopped||!this.track)return;

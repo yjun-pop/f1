@@ -35,6 +35,7 @@ function environment(href='https://example.test/f1/',saved={}){
       }};nodes.set(id,element);return element;
   };
   const root=node('root'),app=node('app');
+  globalThis.MutationObserver=class {observe(){}disconnect(){}};
   globalThis.document={querySelector:selector=>nodes.get(selector.slice(1)),activeElement:null};
   globalThis.localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)};
   globalThis.window={
@@ -46,7 +47,7 @@ function environment(href='https://example.test/f1/',saved={}){
   globalThis.AudioContext=class {constructor(){contexts.push(this);}resume(){this.resumed=true;return Promise.resolve();}close(){this.closed=true;return Promise.resolve();}};
   globalThis.requestAnimationFrame=fn=>frames.push(fn);
   globalThis.__loadMenuTestGame=async()=>({Game:class {constructor(viewport,hud,options){launches.push({viewport,hud,options});}}});
-  globalThis.__loadMenuTestBackdrop=async()=>({CircuitBackdrop:class {select(){}dispose(){}}});
+  globalThis.__loadMenuTestBackdrop=async()=>({CircuitBackdrop:class {setInteracting(){}select(){}dispose(){}}});
   globalThis.__loadMenuTestWheel=async()=>({openWheelSetup:()=>wheelViews++});
   return {root,app,nodes,storage,launches,contexts,frames,listeners,get reloads(){return reloads;},get wheelViews(){return wheelViews;},get href(){return locationURL.href;},
     async paint(){while(frames.length)await frames.shift()(0);},
@@ -78,7 +79,7 @@ stage.emit('pointerup',{pointerId:2,clientX:230,clientY:190});assert.equal(env.n
 console.log('PASS: gallery selection states, wraparound arrows, direct selection and horizontal-only touch navigation');
 env.nodes.get('circuit-spa').emit('change');
 assert.equal(env.nodes.get('selection-title').textContent,'벨기에 · 스파');assert.equal(previewsShown.at(-1),'spa');
-assert.equal(env.nodes.get('selection-record').textContent,'1:54.490');
+assert.equal(env.nodes.get('selection-record').textContent,'1:54.490');assert.equal(env.nodes.get('selection-summary').classList.contains('has-record'),true);assert.equal(env.nodes.get('prev-name').textContent,'실버스톤');assert.equal(env.nodes.get('next-name').textContent,'모나코');
 assert.equal(env.nodes.get('start-label').textContent,'스파에서 시작');
 assert.equal(env.nodes.get('circuit-spa').checked,true);assert.equal(env.nodes.get('circuit-monza').checked,false);
 assert.deepEqual(starts,[]);assert.equal(env.href,'https://example.test/f1/','Previewing must not navigate or begin a race');
@@ -87,7 +88,7 @@ assert.deepEqual(modes,['manual']);assert.deepEqual(starts,[['spa','manual']]);
 console.log('PASS: eight distinct geographic map cards, selected state, per-circuit record, no navigation on preview and one confirmed circuit/gearbox choice');
 
 env.key('ArrowRight');assert.equal(env.nodes.get('circuit-monaco').checked,true,'Arrow selection must include the newly added circuits');menu.select('montreal');env.key('ArrowRight');assert.equal(env.nodes.get('circuit-monza').checked,true,'Circuit arrows wrap around');
-assert.equal(document.activeElement,env.nodes.get('circuit-monza'));
+assert.equal(document.activeElement,env.nodes.get('circuit-monza'));assert.equal(env.nodes.get('selection-summary').classList.contains('has-record'),false);
 env.key('ArrowRight',document.activeElement);assert.equal(env.nodes.get('circuit-silverstone').checked,true);env.key('ArrowLeft',document.activeElement);assert.equal(env.nodes.get('circuit-monza').checked,true);
 env.key('Enter',env.nodes.get('start-transmission'));assert.equal(starts.length,1,'Enter in the gearbox dropdown must retain native behavior');
 env.key('Enter',{matches:()=>false,closest:()=>({})});assert.equal(starts.length,1,'Wheel setup input must not start the underlying race');

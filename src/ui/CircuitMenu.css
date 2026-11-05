@@ -129,3 +129,49 @@
  #front-menu .gallery-arrow:first-child{left:calc(11vw - var(--screen-gutter) - 36px)}
  #front-menu .gallery-arrow:nth-of-type(2){right:calc(11vw - var(--screen-gutter) - 36px)}
 }
+
+/* Clear route: circuit identity, light map, setup summary, launch. */
+.launch-race-facts,.gallery-neighbor{display:none}
+#front-menu .circuit-card.is-selected{background:none;border-color:transparent;box-shadow:none;backdrop-filter:none;padding:18px 25px}
+#front-menu .circuit-card::before{display:none}
+#front-menu .card-topline{justify-content:center;color:#c4d1da}
+#front-menu .card-choice{display:none}
+#front-menu .card-title{text-align:center;font-size:clamp(38px,4vw,64px);letter-spacing:2px;text-shadow:0 3px 24px #0009;margin-top:14px}
+#front-menu .card-title>small{color:#c0ced9;letter-spacing:1px}
+#front-menu .card-map{height:148px;width:min(300px,100%);align-self:center;margin:12px 0 0;background:none;filter:drop-shadow(0 3px 12px #000)}
+#front-menu .outline-road{stroke:#0a172ad9;stroke-width:10px}
+#front-menu .outline-line{stroke-width:3px}
+#front-menu .card-bottom{justify-content:center;border:0;padding:4px 0 0;margin:0}
+#front-menu .card-measure>b{font-size:16px;color:#bdcbd7}
+#front-menu .gallery-stage{background:radial-gradient(ellipse at center,#040b1b66,transparent 65%)}
+#front-menu .gallery-neighbor{display:block;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);width:110px;text-align:center;color:#c1cdd8;font:11px 'Noto Sans KR',sans-serif;white-space:nowrap;letter-spacing:0}
+#front-menu .gallery-arrow{background:none;color:#c9d6e2}
+#front-menu .gallery-arrow:hover{color:#fff;background:#ffffff0c}
+#front-menu .menu-setup-summary{position:absolute;left:50%;bottom:calc(22% + 46px);transform:translateX(-50%);width:min(460px,64%);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 4px}
+#front-menu .menu-setup-summary .menu-transmission{position:static;margin:0;width:auto;font-size:0;gap:0}
+#front-menu .menu-transmission select{font-size:12px;padding:8px 10px;background:#0a172585;border-color:#ffffff25;border-radius:5px}
+#front-menu .launch-race-facts{display:block;font:11px 'Noto Sans KR',sans-serif;color:#c4cfda;white-space:nowrap;text-shadow:0 2px 8px #000}
+#front-menu .menu-session>span:not(.menu-dry),#front-menu .menu-session>i{display:none}
+#front-menu .selected-circuit:not(.has-record){display:none}
+#front-menu .menu-heading h1{font-size:18px;font-weight:400;color:#9cabb9;top:62px}
+#front-menu .gallery-counter{color:#8e9dac;font-size:10px}
+@media(max-width:680px){
+ #front-menu .card-title{font-size:36px;letter-spacing:1px}
+ #front-menu .card-map{height:120px;margin-top:10px}
+ #front-menu .menu-setup-summary{bottom:calc(24% + 44px);width:78%;gap:8px}
+ #front-menu .gallery-neighbor{font-size:9px;width:76px}
+ #front-menu .gallery-arrow:first-child .gallery-neighbor{left:0;transform:none;text-align:left}
+ #front-menu .gallery-arrow:nth-of-type(2) .gallery-neighbor{left:auto;right:0;transform:none;text-align:right}
+ #front-menu .menu-heading h1{font-size:16px;top:47px}
+}
+@media(min-width:681px) and (max-height:800px){
+ #front-menu .circuit-card.is-selected{padding-top:10px;padding-bottom:10px}
+ #front-menu .card-title{font-size:36px;margin-top:10px}
+ #front-menu .card-map{height:120px;margin-top:8px}
+}
+#front-menu .menu-transmission select{min-height:40px}
+@media(max-width:680px){
+ #front-menu .menu-transmission select{min-height:44px}
+ #front-menu .gallery-arrow:first-child{left:max(calc(11vw - var(--screen-gutter) - 36px),calc(-1 * var(--screen-gutter)))}
+ #front-menu .gallery-arrow:nth-of-type(2){right:max(calc(11vw - var(--screen-gutter) - 36px),calc(-1 * var(--screen-gutter)))}
+}
