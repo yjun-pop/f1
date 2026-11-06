@@ -121,5 +121,9 @@ export function createCar(color:number):CarVisual {
   }
   group.traverse(child=>{if(child instanceof THREE.Mesh){child.castShadow=!(child.material as THREE.Material).alphaTest;child.receiveShadow=true;}});
   const contactShadow=new THREE.Mesh(new THREE.PlaneGeometry(2.8,5.8),new THREE.MeshBasicMaterial({map:contactShadowMap(),transparent:true,opacity:.32,depthWrite:false,toneMapped:false}));contactShadow.name='contact-shadow';contactShadow.rotation.x=-Math.PI/2;contactShadow.position.set(0,.042,-.1);contactShadow.renderOrder=-1;group.add(contactShadow);
+  // Parent poses still propagate every render. Only the immutable local
+  // transforms skip recomposition; steering, suspension and axle spin stay live.
+  const moving=new Set<THREE.Object3D>([group,chassis,rearFlap,...frontWheels,...tires]);
+  group.traverse(child=>{if(!moving.has(child)){child.updateMatrix();child.matrixAutoUpdate=false;}});
   return {group,chassis,frontWheels,tires,contactShadow,rearFlap};
 }

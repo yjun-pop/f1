@@ -31,7 +31,8 @@ export class CockpitCamera {
     this.wheel.add(mesh(.49,.24,.09,0,0,0));
     this.display.width=384;this.display.height=256;this.displayTexture=new THREE.CanvasTexture(this.display);this.displayTexture.colorSpace=THREE.SRGBColorSpace;
     const screen=new THREE.Mesh(new THREE.PlaneGeometry(.29,.19),new THREE.MeshBasicMaterial({map:this.displayTexture}));screen.position.set(0,.012,.052);this.wheel.add(screen);
-    this.wheel.position.set(0,-.30,-.95);this.cockpit.add(this.wheel);this.cockpit.position.y=-.3;this.camera.add(this.cockpit);scene.add(this.camera);this.resize();
+    this.wheel.position.set(0,-.30,-.95);this.cockpit.add(this.wheel);this.cockpit.position.y=-.3;this.camera.add(this.cockpit);scene.add(this.camera);
+    this.cockpit.traverse(child=>{if(child!==this.cockpit&&child!==this.wheel){child.updateMatrix();child.matrixAutoUpdate=false;}});this.resize();
   }
   toggle(){this.mode=1-this.mode;this.initialized=false;}
   update(vehicle:Vehicle,dt=1/60,feedback?:DrivingFeedbackFrame){

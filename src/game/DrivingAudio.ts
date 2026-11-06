@@ -4,7 +4,7 @@ import {EngineSoundState,ENGINE_TIMBRES,soundTelemetry} from './EngineSound';
 import type {StartSignal} from './StartSequence';
 export {soundTelemetry} from './EngineSound';
 interface Voice {
-  car:Vehicle;state:EngineSoundState;low:OscillatorNode;high:OscillatorNode;
+  sleeping?:boolean;car:Vehicle;state:EngineSoundState;low:OscillatorNode;high:OscillatorNode;
   lowGain:GainNode;highGain:GainNode;turbo:OscillatorNode;turboGain:GainNode;
   body:OscillatorNode;bodyGain:GainNode;bodyFilter:BiquadFilterNode;bodyShelf:BiquadFilterNode;
   pulse:OscillatorNode;pulseDepth:GainNode;previousLoad:number;previousCut:number;thump:number;
@@ -89,9 +89,15 @@ export class DrivingAudio {
     if(active!==this.active){this.active=active;this.lastUpdate=this.context?.currentTime??0;this.applyGain();}
     const context=this.context;if(!context||!active)return;
     const now=context.currentTime,dt=Math.max(1/240,Math.min(.1,now-this.lastUpdate||1/60));this.lastUpdate=now;
+    if(this.muted||this.volume===0)return;
     for(const voice of this.voices){
-      const car=voice.car,self=car===player,sample=self&&feedback?feedback.engine:voice.state.advance(car,dt);
+      const car=voice.car,self=car===player;
       const dx=car.position.x-player.position.x,dz=car.position.z-player.position.z,distance=Math.hypot(dx,dz);
+      // At this distance the rival was already below -50dB. Fade once rather
+      // than enqueueing a full engine's AudioParam automation every frame.
+      if(!self&&distance>(voice.sleeping?160:180)){if(!voice.sleeping)voice.gain.gain.setTargetAtTime(0,now,.08);voice.sleeping=true;continue;}
+      voice.sleeping=false;
+      const sample=self&&feedback?feedback.engine:voice.state.advance(car,dt);
       const attenuation=self?1:.4/(1+(distance/13)**2);
       // The measured reference has ~100Hz periodic spacing at high RPM;
       // upper harmonics, rather than two unrelated notes, carry its engine timbre.

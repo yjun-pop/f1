@@ -21,8 +21,8 @@ export class GraphicsQuality {
   get profile(){return GRAPHICS_PROFILES[this.tier];}
   select(mode:GraphicsMode){this.mode=mode;const tier=mode==='auto'?this.recommended:mode;const changed=tier!==this.tier||this.renderScale!==1;this.tier=tier;this.renderScale=1;this.resetSamples();return changed;}
   private resetSamples(){this.warmup=.75;this.elapsed=this.frames=this.slowWindows=this.heavyFrames=0;}
-  private reduce(){
-    if(this.tier==='low'){if(this.renderScale<=.65)return false;this.renderScale=Math.max(.65,this.renderScale*.9);}
+  private reduce(resolutionFirst=false){
+    if(this.tier==='low'||resolutionFirst&&this.renderScale>.82){const floor=this.tier==='low'?.65:.81;if(this.renderScale<=floor)return false;this.renderScale=Math.max(floor,this.renderScale*.9);}
     else this.tier=this.tier==='high'?'medium':'low';
     this.resetSamples();return true;
   }
@@ -33,8 +33,8 @@ export class GraphicsQuality {
     this.elapsed+=seconds;this.frames++;
     if(this.elapsed<.75)return false;
     const fps=this.frames/this.elapsed;this.elapsed=this.frames=0;
-    this.slowWindows=fps<50?this.slowWindows+1:0;
+    this.slowWindows=fps<55?this.slowWindows+1:0;
     if(this.slowWindows<2&&fps>=28)return false;
-    return this.reduce();
+    return this.reduce(fps>=45);
   }
 }

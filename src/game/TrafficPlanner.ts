@@ -97,12 +97,19 @@ export class TrafficPlanner {
       this.mode='wait';return backRoute(false);
     }
     const transition=merging?Math.max(24,car.speed):Math.min(Math.max(16,12+car.speed*.8),Math.max(5,(target?.gap??40)-7));
-    const referenceLane=(t:number)=>this.reference.point(t).sub(this.track.point(t)).dot(this.track.normal(t));
+    // All candidate corridors query the same immutable road samples. Cache
+    // exact progress keys within this decision, while returning owned points
+    // because route consumers offset/subtract them in place.
+    const geometry=new Map<number,{center:THREE.Vector3;normal:THREE.Vector3;bounds:{min:number;max:number};reference?:number}>();
+    const geometryAt=(t:number)=>{let row=geometry.get(t);if(!row){row={center:this.track.point(t),normal:this.track.normal(t),bounds:this.track.drivingBounds?.(t,7.1)??{min:-7.1,max:7.1}};geometry.set(t,row);}return row;};
+    const roadPoint=(t:number)=>geometryAt(t).center.clone();
+    const roadNormal=(t:number)=>geometryAt(t).normal;
+    const referenceLane=(t:number)=>{const row=geometryAt(t);return row.reference??=this.reference.point(t).sub(row.center).dot(row.normal);};
     const progressScale=(point:(t:number)=>THREE.Vector3,t:number)=>Math.max(.25,point(t+3/length).distanceTo(point(t-3/length))/6);
-    const targetScale=target?progressScale(t=>this.track.point(t).addScaledVector(this.track.normal(t),target.lane),target.sample.progress):1;
+    const targetScale=target?progressScale(t=>roadPoint(t).addScaledVector(roadNormal(t),target.lane),target.sample.progress):1;
     const makeRoute=(goal:number,merge=false)=>{
-      const laneAt=(progress:number)=>{const limits=this.track.drivingBounds?.(progress,7.1)??{min:-7.1,max:7.1};return THREE.MathUtils.clamp(merge?referenceLane(progress):goal,limits.min,limits.max);};
-      const point=(progress:number)=>this.track.point(progress).addScaledVector(this.track.normal(progress),laneAt(progress));
+      const laneAt=(progress:number)=>{const limits=geometryAt(progress).bounds;return THREE.MathUtils.clamp(merge?referenceLane(progress):goal,limits.min,limits.max);};
+      const point=(progress:number)=>roadPoint(progress).addScaledVector(roadNormal(progress),laneAt(progress));
       return {laneAt,point};
     };
     const goals=merging?[referenceLane(origin+40/length),from]:[
@@ -121,7 +128,7 @@ export class TrafficPlanner {
       const lookahead=tightObstacle?4:hazard?THREE.MathUtils.clamp(5+car.speed*.1,6,10):THREE.MathUtils.clamp(7+car.speed*.3,9,26);
       const travel=Math.max(12,lookahead*1.8);
       const predictedLane=(d:number)=>THREE.MathUtils.lerp(from,route.laneAt(origin+d/length),THREE.MathUtils.smoothstep(d,0,travel));
-      const predictedPoint=(d:number)=>this.track.point(origin+d/length).addScaledVector(this.track.normal(origin+d/length),predictedLane(d));
+      const predictedPoint=(d:number)=>roadPoint(origin+d/length).addScaledVector(roadNormal(origin+d/length),predictedLane(d));
       let speed=Math.min(desiredSpeed,hazard?32:merging?94:Math.min(94,car.speed+3)),blocked=false;
       if(tightObstacle)speed=Math.min(speed,Math.sqrt(3.5**2+2*brakingDeceleration(car.speed,false,car.gripScale)*.65*Math.max(0,target!.gap-18)));
       const aim=route.point(origin+lookahead/length).sub(car.position),heading=Math.atan2(aim.x,aim.z)-car.heading;
@@ -159,7 +166,7 @@ export class TrafficPlanner {
             const own=d===0?car.position:predictedPoint(d),near=predictedPoint(d+.6).sub(predictedPoint(Math.max(0,d-.6)));
             const ownHeading=d===0?car.heading:Math.atan2(near.x,near.z),otherProgress=other.sample.progress+other.forward*seconds/length;
             const position=Math.abs(other.forward)<3?other.sample.position.clone().addScaledVector(other.sample.velocity??other.sample.car.velocity,Math.min(.8,seconds)):
-              this.track.point(otherProgress).addScaledVector(this.track.normal(otherProgress),lateral);
+              roadPoint(otherProgress).addScaledVector(roadNormal(otherProgress),lateral);
             const f=this.track.tangent(otherProgress),startF=this.track.tangent(other.sample.progress);
             const otherHeading=(other.sample.heading??other.sample.car.heading)+(Math.abs(other.forward)>3?Math.atan2(f.x,f.z)-Math.atan2(startF.x,startF.z):0);
             let distance=Infinity;

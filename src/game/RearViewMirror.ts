@@ -8,7 +8,7 @@ export class RearViewMirror {
   private target=new THREE.WebGLRenderTarget(480,120,{depthBuffer:true});
   private overlay=new THREE.Scene();
   private overlayCamera=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
-  private viewport=new THREE.Vector4();
+  private viewport=new THREE.Vector4();private savedViewport=new THREE.Vector4();private savedScissor=new THREE.Vector4();
   private forward=new THREE.Vector3();private lookTarget=new THREE.Vector3();
   private quality=GRAPHICS_PROFILES.high as typeof GRAPHICS_PROFILES[GraphicsTier];private age=Infinity;
   constructor(private renderer:THREE.WebGLRenderer,private scene:THREE.Scene,private element:HTMLElement){
@@ -43,8 +43,8 @@ export class RearViewMirror {
     const interval=1/this.quality.mirrorFPS;
     this.age+=Math.max(0,dt);const refresh=this.age+1e-6>=interval;
     const previousTarget=this.renderer.getRenderTarget();
-    const previousViewport=this.renderer.getViewport(new THREE.Vector4());
-    const previousScissor=this.renderer.getScissor(new THREE.Vector4());
+    const previousViewport=this.renderer.getViewport(this.savedViewport);
+    const previousScissor=this.renderer.getScissor(this.savedScissor);
     const previousScissorTest=this.renderer.getScissorTest(),previousAutoClear=this.renderer.autoClear;
     const visible=vehicle.group.visible,shadowUpdate=this.renderer.shadowMap?.autoUpdate;
     try{

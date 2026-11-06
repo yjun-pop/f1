@@ -19,7 +19,7 @@ export class RacingLine {
   private brakeColor=new THREE.Color(0xff4436);
   private holdColor=new THREE.Color(0xffd85a);
   private accelerateColor=new THREE.Color(0x42ed80);
-  private sampleCount=0;
+  private sampleCount=0;private updateAge=Infinity;
   private engagedZone=-1;
   brakingCue:{distance:number;target:number}|null=null;
   visible=true;targetKmh=0;instruction='ACCELERATE';
@@ -75,7 +75,13 @@ export class RacingLine {
     return zones;
   }
   toggle(){this.visible=!this.visible;}
-  update(vehicle:Vehicle){
+  update(vehicle:Vehicle,dt=Infinity){
+    // Render guidance at display-friendly 60Hz, independently of 120Hz
+    // physics. Hidden guidance has no consumers after the panel was removed.
+    if(!this.visible&&Number.isFinite(dt)){this.ribbon.visible=this.markers.visible=false;this.updateAge=Infinity;return;}
+    this.updateAge+=dt;
+    if(this.updateAge+1e-8<1/60)return;
+    this.updateAge=Number.isFinite(this.updateAge)?this.updateAge%(1/60):0;
     const guidance=this.planner.guidance(vehicle.progress,vehicle.speed,vehicle.offRoad,1400),allowed=guidance.target;
     this.brakingCue=guidance.cue;
     this.targetKmh=Math.round(allowed*3.6);
