@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {PaceControl} from './PaceControl';
 import {Vehicle} from './Vehicle';
 import {DriverAgent,type DriverObservation} from './DriverAgent';
 import type {Track} from './Track';
@@ -19,6 +20,7 @@ type DriverProfile=(typeof DRIVER_PROFILES)[number];
  * Geometry/speed caches and a frame's observations may be shared; tactical
  * memory, energy decisions, incident penalties and clocks never are. */
 export class Opponent implements Rival {
+  readonly paceControl=new PaceControl();
   readonly id:string;readonly car:Vehicle;readonly agent:DriverAgent;
   name:string;personality:string;caution:number;launch:number;pace:number;aggression:number;reaction:number;lineBias:number;phase:number;
   distance=0;speed=0;collisionScore=0;collisionCount=0;avoidance=0;
@@ -38,7 +40,7 @@ export class Opponent implements Rival {
     this.lane=slot.lane-this.speedPlanner.point(progress).sub(this.track.point(progress)).dot(this.track.normal(progress));
     this.decision=this.stuck=0;this.rank=rank;this.speedCap=94;this.powerAssist=1;this.attack=0;
     this.passLane=undefined;this.passUntil=this.defendUntil=this.defendCooldown=this.defendLane=0;
-    this.agent.reset();this.collisionScore=this.collisionCount=this.avoidance=0;this.racePace=undefined;
+    this.paceControl.reset();this.agent.reset();this.collisionScore=this.collisionCount=this.avoidance=0;this.racePace=undefined;
     this.car.raceGripAssist=this.car.raceLaunchScale=undefined;this.car.boost=100;this.car.boosting=false;
     this.car.raceSpeedCap=this.car.raceCruiseCap=this.car.racePowerAssist=undefined;
     this.control={throttle:0,brake:0,steer:0};

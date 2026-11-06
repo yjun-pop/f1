@@ -952,13 +952,13 @@ function cornerObservation(mode='clean'){
     fake.lateralSpeed=mode==='spin'&&metres>entry+80&&metres<entry+86?15:0;
     fake.lateralAcceleration=mode==='telemetry-only'?0:20;
     if(mode==='stop'&&metres>entry+80&&metres<entry+86)fake.speed=0;
-    const result=observer.sample(fake,2/Math.max(1,fake.speed));if(result)observed=result;
+    const result=observer.sample(fake,2/Math.max(1,fake.speed),mode!=='traffic');if(result)observed=result;
     if(mode==='reset'&&metres>entry+120&&metres<entry+123)observer.reset();
   }
   return observed;
 }
 const cleanCorner=cornerObservation();assert.ok(cleanCorner&&cleanCorner.speed===24,'Learn the completed corner minimum, not its 70m/s approach');
-for(const mode of ['partial','grass','spin','stop','teleport','telemetry-only','reset'])assert.equal(cornerObservation(mode),null,'Invalid or incomplete passages must not teach a faster pace: '+mode);
+for(const mode of ['partial','grass','spin','stop','teleport','telemetry-only','reset','traffic'])assert.equal(cornerObservation(mode),null,'Invalid or incomplete passages must not teach a faster pace: '+mode);
 const cornerLearner=new PackDirector();cornerLearner.recordCorner(26,18);assert.ok(cornerLearner.referencePace>1.4,'A fast completed corner must be recognized before the first lap ends');
 for(let i=0;i<12;i++)cornerLearner.recordCorner(16,20);assert.equal(cornerLearner.referencePace,1,'Old fast corners must expire rather than permanently raise difficulty');
 cornerLearner.recordCorner(Infinity,18);assert.equal(cornerLearner.referencePace,1);cornerLearner.recordCorner(26,18);cornerLearner.reset();assert.equal(cornerLearner.referencePace,1);

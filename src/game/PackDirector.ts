@@ -23,14 +23,14 @@ export class PackDirector {
     this.lapPace=seconds<94?THREE.MathUtils.clamp(1.3+(100-flying)*.012,.75,1.47):.75;
   }
   reset(){this.pace=1;this.active=false;this.stopped=0;this.cornerPace=.75;this.lapPace=.75;this.completedCorners=[];this.completedPace=.75;}
-  observe(player:Vehicle,referenceSpeed:number,onTrack:boolean,dt:number){
+  observe(player:Vehicle,referenceSpeed:number,onTrack:boolean,dt:number,heldUp=false){
     if(!onTrack){this.active=false;return;}
     this.stopped=player.speed<5?this.stopped+dt:0;
     if(this.stopped>2){this.active=false;return;}
     if(player.speed>8)this.active=true;
     // Filter a normalized pace, so a chicane's 30m/s is not interpreted as a
     // request for every car to travel at 30m/s on a different straight.
-    if(this.active&&player.speed>15){
+    if(this.active&&player.speed>15&&!heldUp){
       const measured=THREE.MathUtils.clamp(player.speed/Math.max(18,referenceSpeed),.65,1.47);
       this.pace=THREE.MathUtils.damp(this.pace,measured,.12,dt);
       // Straights saturate at the car's speed cap and hide a fast driver's
@@ -47,7 +47,7 @@ export class PackDirector {
     const tier=THREE.MathUtils.clamp((fieldSize-playerRank)/Math.max(1,fieldSize-1),0,1);
     const separation=Math.max(0,Math.abs(rank-playerRank)-1),behind=rank>playerRank;
     const neighbour=behind?THREE.MathUtils.lerp(-.012,.020,tier):THREE.MathUtils.lerp(-.008,.016,tier);
-    const rankPenalty=separation*(behind?.004*(1-THREE.MathUtils.smoothstep(-gap,120,350)):.006);
+    const rankPenalty=separation*(behind?.004*(1-THREE.MathUtils.smoothstep(-gap,120,350)):THREE.MathUtils.lerp(.012,.006,tier));
     const pressure=behind?attack*.004*tier:0;
     // Broad distance bands allow duels and natural gaps, without assigning
     // each car a fixed slot relative to the player.
@@ -56,7 +56,9 @@ export class PackDirector {
     const skill=THREE.MathUtils.clamp(neighbour-rankPenalty+pressure+regroup,-.1,.032);
     // Near the front, completed corner ability matters more than the lower
     // normalized straight speed. Lower ranks keep the gentler overall match.
-    const reference=Math.max(this.referencePace,THREE.MathUtils.lerp(.75,this.completedPace,tier));
+    const overall=Math.max(this.pace,this.lapPace);
+    const corners=Math.max(this.cornerPace,this.completedPace);
+    const reference=Math.max(overall,THREE.MathUtils.lerp(overall,corners,tier));
     const pace=THREE.MathUtils.clamp(reference*(1+skill)+character,.65,1.47);
     // Tiny assistance is reserved for distant trailing cars. Race also checks
     // physical visibility and removes it while the player is using ERS.

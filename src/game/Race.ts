@@ -67,10 +67,16 @@ export class Race {
 
   start(){if(this.state==='ready'){this.bestAtStart=this.best;this.startSequence.arm();this.countdown=this.startSequence.remaining;this.state='countdown';}}
   private balanceRivals(player:Vehicle,dt:number){
-    const corner=this.cornerObserver.sample(player,dt);if(corner)this.pack.recordCorner(corner.speed,corner.reference);
+    const normal=this.track.normal(player.progress);
+    const heldUp=this.opponents.some(o=>{
+      let gap=o.car.progress-player.progress;if(gap<-.5)gap++;if(gap>.5)gap--;gap*=this.track.length;
+      const dx=o.car.position.x-player.position.x,dz=o.car.position.z-player.position.z;
+      return gap>0&&gap<45&&Math.abs(dx*normal.x+dz*normal.z)<3.5&&player.speed<o.car.speed+6;
+    });
+    const corner=this.cornerObserver.sample(player,dt,!heldUp);if(corner)this.pack.recordCorner(corner.speed,corner.reference);
     const sample=((player.progress%1+1)%1)*this.aiSpeeds.length,index=Math.floor(sample);
     const referenceSpeed=THREE.MathUtils.lerp(this.aiSpeeds[index],this.aiSpeeds[(index+1)%this.aiSpeeds.length],sample-index);
-    this.pack.observe(player,referenceSpeed,player.position.distanceToSquared(this.track.point(player.progress))<18*18,dt);
+    this.pack.observe(player,referenceSpeed,player.position.distanceToSquared(this.track.point(player.progress))<18*18,dt,heldUp);
     // Snapshot standings once, using total race distance across lap seams.
     const order:{distance:number;rival:Rival|null}[]=[{distance:player.distance,rival:null},...this.opponents.map(rival=>({distance:rival.car.distance,rival}))];
     order.sort((a,b)=>b.distance-a.distance);
@@ -93,6 +99,8 @@ export class Race {
         const allowed=!player.boosting&&!(player.throttle>.9&&player.speed>85);
         if(allowed){targetCap=94+(pack.cap-94)*unseen;targetPower=1+(pack.power-1)*unseen;}
       }
+      const clean=this.pack.active&&this.elapsed>12&&!player.offRoad&&!o.car.offRoad&&player.speed>12&&o.car.speed>8;
+      targetPace=o.paceControl.update(targetPace,gap,dt,clean);
       o.setDifficulty({pace:targetPace,cap:targetCap,power:targetPower},this.elapsed,dt);
     }
   }

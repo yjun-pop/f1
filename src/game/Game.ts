@@ -114,6 +114,7 @@ export class Game {
       this.sun.target.position.set(x,0,z);this.sun.position.set(x,0,z).add(this.lighting.sunOffset);this.renderer.shadowMap.needsUpdate=true;
     }
     this.cockpit.update(this.vehicle,dt,feedback);this.line.update(this.vehicle,dt);
+    this.hud.updateProximity(this.vehicle,this.race,this.paused);
     const hudStamp=`${this.race.state}/${this.paused}/${this.cockpit.mode}`;this.hudAge+=dt;
     if(this.hudAge>=.1||hudStamp!==this.hudStamp){this.hud.update(this.vehicle,this.race,this.paused,this.track,this.cockpit.mode);this.hud.setWheelStatus(this.input.wheel.status,!!this.input.wheel.profile?.enabled&&!this.input.wheel.armed&&!this.paused);this.hudAge=0;this.hudStamp=hudStamp;}
     // Paused/results scenes are static. Keep native UI/input responsive at

@@ -16,7 +16,7 @@ export class CornerPaceObserver {
     }
   }
   reset(){this.passage=undefined;this.previous=undefined;}
-  sample(car:Vehicle,dt:number):{speed:number;reference:number}|null{
+  sample(car:Vehicle,dt:number,freeAir=true):{speed:number;reference:number}|null{
     const metres=car.distance*this.track.length,lap=Math.floor(car.distance),at=metres-lap*this.track.length;
     const turn=this.turns.find(t=>at>=t.entry&&at<=t.exit),old=this.passage;
     const continuous=this.previous!==undefined&&metres>=this.previous-.01&&metres-this.previous<=Math.max(3,car.speed*dt*2);
@@ -29,7 +29,7 @@ export class CornerPaceObserver {
     if(turn){
       if(!this.passage)this.passage={turn,lap,entered:continuous&&(this.previous??Infinity)<=lap*this.track.length+turn.entry,clean:true,turning:false,speed:Infinity,reference:Infinity};
       const p=this.passage;
-      p.clean&&=continuous&&!car.offRoad&&car.speed>8&&Math.abs(Math.atan2(car.lateralSpeed,Math.max(8,car.speed)))<.15;
+      p.clean&&=freeAir&&continuous&&!car.offRoad&&car.speed>8&&Math.abs(Math.atan2(car.lateralSpeed,Math.max(8,car.speed)))<.15;
       p.turning||=Math.abs(car.lateralAcceleration)>8;
       p.speed=Math.min(p.speed,car.speed);p.reference=Math.min(p.reference,this.planner.cornerLimit(car.progress));
     }
