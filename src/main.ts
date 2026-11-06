@@ -24,7 +24,7 @@ function preview(id:CircuitId){
   }).catch(error=>console.warn('Menu background unavailable',error));
 }
 function start(id:CircuitId,transmission:TransmissionMode){
-  if(launching)return;launching=true;window.dispatchEvent?.(new Event('apex-race-launch'));backdrop?.dispose();backdrop=undefined;
+  if(launching)return;launching=true;backdrop?.dispose();backdrop=undefined;
   menu.setLoading(circuitById(id).label);
   try{localStorage.setItem('apex-circuit',id);localStorage.setItem('apex-transmission-mode',transmission);}catch{}
   try{window.history.replaceState(null,'',circuitURL(window.location.href,id));}catch{}
