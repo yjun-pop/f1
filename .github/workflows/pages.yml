@@ -33,7 +33,7 @@ jobs:
         run: |
           if [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
             changed=$(git diff --name-only "$BEFORE_SHA" HEAD)
-            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -Ev '^(src/ui/(CircuitMenu\.(ts|css)|CircuitBackdrop\.ts|BattleAwareness\.ts|HUD\.ts|RaceSessionPanel\.ts|LapTables\.ts|RaceTiming\.css)|src/game/(DrivingFeedback|DrivingVibration|WheelRumble)\.ts|src/main\.ts|tests/(driving-vibration|wheel-rumble|battle-awareness|circuit-(menu|backdrop)|race-session|circuits)\.mjs|README\.md|\.github/workflows/pages\.yml)$' > /dev/null; then
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -Ev '^(src/ui/(CircuitMenu\.(ts|css)|TitleScreen\.(ts|css)|CircuitBackdrop\.ts|BattleAwareness\.ts|HUD\.ts|RaceSessionPanel\.ts|LapTables\.ts|RaceTiming\.css)|src/game/(DrivingFeedback|DrivingVibration|WheelRumble)\.ts|src/main\.ts|src/style\.css|tests/(driving-vibration|wheel-rumble|battle-awareness|circuit-(menu|backdrop)|race-session|circuits)\.mjs|README\.md|\.github/workflows/pages\.yml)$' > /dev/null; then
               echo 'ui_only=true' >> "$GITHUB_OUTPUT"
             fi
             if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -Ev '^(src/game/(MonacoScenery|RegionalScenery|CircuitScenery|VenueArchitecture|NaturalScenery|RegionalWaters)\.ts|src/ui/CircuitBackdrop\.ts|tests/(regional-scenery|roadside-placement|monaco-scenery|venue-architecture)\.mjs|README\.md|docs/(MONACO_ENVIRONMENT|CIRCUIT_AUTHENTICITY|CIRCUIT_REFERENCES)\.md|\.github/workflows/pages\.yml)$' > /dev/null; then

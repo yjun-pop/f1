@@ -6,6 +6,7 @@ import {circuitById,circuitURL,selectedCircuit,type CircuitId} from './game/Circ
 import {transmissionMode,type TransmissionMode} from './game/Powertrain';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
+function quickRace(){
 app.innerHTML='<div id="viewport"></div><div id="hud"></div><div id="menu-backdrop" class="circuit-backdrop" aria-hidden="true"></div><div id="front-menu"></div>';
 const front=document.querySelector<HTMLElement>('#front-menu')!;
 let savedCircuit:unknown,savedTransmission:unknown;
@@ -23,7 +24,7 @@ function preview(id:CircuitId){
   }).catch(error=>console.warn('Menu background unavailable',error));
 }
 function start(id:CircuitId,transmission:TransmissionMode){
-  if(launching)return;launching=true;backdrop?.dispose();backdrop=undefined;
+  if(launching)return;launching=true;window.dispatchEvent?.(new Event('apex-race-launch'));backdrop?.dispose();backdrop=undefined;
   menu.setLoading(circuitById(id).label);
   try{localStorage.setItem('apex-circuit',id);localStorage.setItem('apex-transmission-mode',transmission);}catch{}
   try{window.history.replaceState(null,'',circuitURL(window.location.href,id));}catch{}
@@ -62,4 +63,10 @@ dialogObserver.observe(document.body,{subtree:true,childList:true,attributes:tru
 if(new URLSearchParams(window.location.search).get('race')==='start')start(selected.id,mode);
 else preview(selected.id);
 
-window.addEventListener('apex-settings-change',()=>{try{menu.setTransmission(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}});
+const syncSettings=()=>{try{menu.setTransmission(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}};
+window.addEventListener('apex-settings-change',syncSettings);
+
+return ()=>{window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
+}
+if(new URLSearchParams(window.location.search).has('circuit')||new URLSearchParams(window.location.search).get('race')==='start')quickRace();
+else void import('./ui/TitleScreen').then(({TitleScreen})=>new TitleScreen(app,quickRace));
