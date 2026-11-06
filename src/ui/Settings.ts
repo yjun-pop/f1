@@ -1,4 +1,5 @@
 import './Settings.css';
+import './Glass.css';
 import {transmissionMode} from '../game/Powertrain';
 import {graphicsMode} from '../game/Graphics';
 const keys={volume:'apex-audio-volume',motion:'apex-motion-strength',hud:'apex-hud-scale',graphics:'apex-graphics-quality',transmission:'apex-transmission-mode'};

@@ -1,0 +1,73 @@
+/* Shared frosted-glass material. Blur is limited to menu surfaces, not the driving view. */
+:root{
+  --glass-surface:linear-gradient(135deg,rgba(223,240,255,.13),rgba(25,44,64,.56) 48%,rgba(9,22,38,.72));
+  --glass-border:rgba(223,240,255,.25);
+  --glass-shadow:0 18px 55px #020a163d,inset 0 1px 0 #ffffff24,inset 0 -1px 0 #ffffff06;
+  --glass-control:linear-gradient(135deg,#ffffff12,#ffffff05);
+}
+/* A single pane behind the title choices, with clear text and restrained highlights. */
+.title-screen .title-content nav{
+  padding:12px;margin-left:-12px;max-width:414px;border:1px solid var(--glass-border);border-radius:18px;
+  background:var(--glass-surface);box-shadow:var(--glass-shadow);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+}
+.title-screen .title-content nav button{border-radius:8px}
+.title-screen .title-content nav button:hover:not(:disabled),.title-screen .title-content nav button:focus-visible{background:linear-gradient(90deg,#ffffff1c,#ffffff04)}
+.title-screen .title-content nav #title-quick{background:linear-gradient(90deg,#ff957b2b,#ffffff07)}
+.title-screen .title-content nav button:disabled{opacity:.5}
+.title-screen .title-content nav button span{color:#c2d0dc}
+/* Keep the existing gallery layout and the text-only return link. */
+#front-menu .circuit-card.is-selected{
+  background:var(--glass-surface);border:1px solid var(--glass-border);border-radius:18px;
+  box-shadow:var(--glass-shadow),0 0 0 1px color-mix(in srgb,var(--circuit-accent) 35%,transparent);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+}
+#front-menu .menu-start{background:linear-gradient(125deg,#ff9d84e8,#ff785ee0);border:1px solid #ffd8c85c;border-radius:10px;box-shadow:0 8px 28px #ff765126,inset 0 1px 0 #ffffff40}
+#front-menu .menu-wheel-button,#front-menu .menu-transmission select{background:var(--glass-control);border:1px solid var(--glass-border);border-radius:8px;box-shadow:inset 0 1px 0 #ffffff12;color:#edf4fa}
+#front-menu .gallery-arrow{background:#ffffff09;border-radius:12px}
+#front-menu .gallery-arrow:hover{background:#ffffff20}
+/* Modal surfaces carry the blur; their full-screen shades stay cheap. */
+dialog.settings-dialog,dialog.confirm-dialog,dialog.wheel-dialog,.pause-shade .pause-panel,.overlay .race-session-panel{
+  background:var(--glass-surface);border:1px solid var(--glass-border);border-top-color:#e3efff70;border-radius:18px;
+  box-shadow:var(--glass-shadow);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);
+  color:#f0f5fb;
+}
+dialog.settings-dialog::backdrop,dialog.confirm-dialog::backdrop,dialog.wheel-dialog::backdrop{background:#02091366;-webkit-backdrop-filter:none;backdrop-filter:none}
+#hud .pause-shade{background:#02091370;-webkit-backdrop-filter:none;backdrop-filter:none}
+#hud .overlay.race-session-overlay{background:#02091370}
+.settings-dialog .settings-head,.wheel-dialog .wheel-top{background:#ffffff04}
+.settings-dialog .settings-bottom,.wheel-dialog .wheel-bottom{background:#08132260;border-color:#ffffff20}
+.settings-dialog .settings-tabs{border-color:#ffffff20}
+.settings-dialog .settings-tabs [aria-pressed=true],.wheel-dialog .wheel-stages [aria-pressed=true]{background:linear-gradient(135deg,#d5c4ff35,#bca5ff12);border-color:#d8caff88;color:#f3edff}
+.settings-dialog .setting-row select,.wheel-dialog select,.race-session-panel .race-session-gearbox select{background:#0b192b80;border-color:var(--glass-border);border-radius:8px;color:#f0f5fb}
+.settings-dialog button,.confirm-dialog button,.wheel-dialog button,.pause-panel button,.race-session-panel .race-session-actions button{background:var(--glass-control);border-color:var(--glass-border);border-radius:8px;box-shadow:inset 0 1px 0 #ffffff12}
+.settings-dialog .ui-primary,.confirm-dialog .ui-primary,.wheel-dialog .wheel-primary,.pause-panel button.primary{background:linear-gradient(125deg,#d5c5fff0,#bca5ffe0);border:1px solid #efe7ff70;color:#151c2b;box-shadow:inset 0 1px 0 #ffffff40,0 5px 20px #bca5ff14}
+.settings-dialog .settings-content p,.settings-dialog .settings-bottom p,.wheel-dialog p,.pause-panel p{color:#c6d5e2}
+.wheel-dialog .wheel-notice,.wheel-dialog .wheel-calibration,.wheel-dialog .wheel-content>.wheel-meters,.wheel-dialog .wheel-direct-usb,.wheel-dialog .wheel-connection-help{background:#e2efff08;border-color:#e2efff30;border-radius:8px}
+.wheel-dialog .wheel-message{background:#0a172c70;border-radius:8px}
+.wheel-dialog fieldset{border-color:#ffffff26;border-radius:10px}
+.wheel-dialog #wheel-save-hint{background:#09152640}
+.overlay .has-results .race-session-actions{background:#0d1c30e8;border-radius:10px;padding:12px;box-shadow:0 -8px 24px #030b1626}
+.overlay .race-session-actions button:first-child{background:linear-gradient(125deg,#ff9d84ef,#ff795fe0);border-color:#ffe0d255;color:#101722}
+.race-session-results>div:nth-child(4){border-radius:10px;padding:8px}
+/* Fast-moving scenery remains readable without live backdrop blur on HUD panels. */
+#hud .timing,#hud .mapbox{
+  background:linear-gradient(135deg,#b6d4f518,#0b172bbd 65%);border:1px solid #e1efff38;border-radius:12px;
+  box-shadow:inset 0 1px 0 #ffffff20,0 6px 24px #0002;-webkit-backdrop-filter:none;backdrop-filter:none;
+}
+#hud .timing{border-top-color:#d1c0ffb3}
+#hud .timing .eyebrow,#hud .timingrow span,#hud .interval-row>span{color:#c0d0df}
+#hud footer{background:linear-gradient(0deg,#0b172bc9,#162c415c);border-top:1px solid #ffffff18}
+#hud .aero-status{background:linear-gradient(135deg,#e2efff10,#0b172bbd);border-radius:8px;box-shadow:inset 0 1px 0 #ffffff14}
+#hud .wheel-input-notice{background:linear-gradient(135deg,#233c53cf,#0b172be8);border-radius:10px}
+/* Opaque native options and a darker fallback keep unsupported browsers usable. */
+select option{background:#172739;color:#eef4fa}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  :root{--glass-surface:linear-gradient(135deg,#283e50f5,#0e1d30ed)}
+}
+@media(max-width:680px){
+  .title-screen .title-content nav{margin-left:0;padding:8px;max-width:100%}
+  dialog.settings-dialog,dialog.confirm-dialog,dialog.wheel-dialog,.pause-shade .pause-panel,.overlay .race-session-panel{-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+}
+dialog.settings-dialog,dialog.confirm-dialog,dialog.wheel-dialog{color-scheme:dark}
+.settings-content,.wheel-content,.race-session-panel.has-results{scrollbar-width:thin;scrollbar-color:#d9e8f14d transparent}
