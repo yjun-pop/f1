@@ -66,7 +66,7 @@ else preview(selected.id);
 const syncSettings=()=>{try{menu.setTransmission(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}};
 window.addEventListener('apex-settings-change',syncSettings);
 
-return ()=>{window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
+return ()=>{launching=true;window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
 }
 if(new URLSearchParams(window.location.search).has('circuit')||new URLSearchParams(window.location.search).get('race')==='start')quickRace();
 else void import('./ui/TitleScreen').then(({TitleScreen})=>new TitleScreen(app,quickRace));
