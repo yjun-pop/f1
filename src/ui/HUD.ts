@@ -10,7 +10,8 @@ import {DEFAULT_FIELD_SIZE} from '../game/RaceRoster';
 import {formatInterval} from '../game/RaceTiming';
 export class HUD {
   private root:HTMLElement;
-  private proximityMap:CanvasRenderingContext2D;
+  private proximityRoot:HTMLElement;
+  private proximityMarkers=new Map<string,HTMLElement>();
   private map:CanvasRenderingContext2D;
   private path:Path2D;
   private wasPaused=false;private session:RaceSessionPanel;private sessionState='';
@@ -22,7 +23,7 @@ export class HUD {
     <div class="rearview-frame" role="img" aria-label="차량 뒤쪽 실시간 백미러"><div id="rearview-viewport"></div><span>REAR VIEW</span></div>
     <aside class="timing"><div class="eyebrow">RACE CLASSIFICATION</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>POSITION</small></span></div><div class="intervals" aria-label="앞뒤 차량 시간 차"><div class="interval-row"><span>앞차 <b id="gap-ahead-name">—</b></span><strong id="gap-ahead">—</strong></div><div class="interval-row"><span>뒤차 <b id="gap-behind-name">—</b></span><strong id="gap-behind">—</strong></div></div><div class="timingrow"><span>LAP</span><b id="lap">1 / 3</b></div><div class="timingrow"><span>CURRENT</span><b id="current"></b></div><div class="timingrow"><span>LAST</span><b id="last"></b></div><div class="timingrow best"><span title="개인 최고 랩">PB</span><b id="best"></b></div></aside>
     <div class="mapbox"><canvas id="map" width="240" height="190"></canvas><span>${track.name} · ${track.country} · ${(track.length/1000).toFixed(2)} KM</span></div>
-<div class="aero-status" aria-label="DRS와 슬립스트림 상태"><b id="drs-status">DRS · 선두 첫 랩 후</b><span id="draft-status"></span></div><div id="warning"></div><div id="battle-left" class="battle-side battle-left" hidden><b>❮</b><span id="battle-left-label"></span></div><div id="battle-right" class="battle-side battle-right" hidden><b>❯</b><span id="battle-right-label"></span></div><div id="proximity-radar" class="proximity-radar" hidden aria-label="실시간 주변 차량 위치"><small>주변 차량</small><canvas id="proximity-map" width="144" height="144" aria-hidden="true"></canvas><span>앞 ↑ · 뒤 ↓</span></div><div id="wheel-notice" class="wheel-input-notice" role="status" hidden></div><footer><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> 주행</span><span><kbd>Q / E</kbd> 기어 ↓ / ↑ · <kbd>T</kbd> <b id="gearbox-label">자동</b></span><span><kbd>F</kbd> DRS</span><span><kbd>C</kbd> 시점</span><span><kbd>G</kbd> 라인</span><span><kbd>R</kbd> 트랙 복귀</span><span><kbd>ESC</kbd> 일시정지</span><span id="audio-state"><kbd>M</kbd> 음소거</span><button id="camera">시점 변경</button><button id="restart">다시 시작</button></footer>
+<div class="aero-status" aria-label="DRS와 슬립스트림 상태"><b id="drs-status">DRS · 선두 첫 랩 후</b><span id="draft-status"></span></div><div id="warning"></div><div id="proximity-ring" class="proximity-ring" hidden role="group" aria-label="주변 차량 접근 방향"></div><div id="wheel-notice" class="wheel-input-notice" role="status" hidden></div><footer><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> 주행</span><span><kbd>Q / E</kbd> 기어 ↓ / ↑ · <kbd>T</kbd> <b id="gearbox-label">자동</b></span><span><kbd>F</kbd> DRS</span><span><kbd>C</kbd> 시점</span><span><kbd>G</kbd> 라인</span><span><kbd>R</kbd> 트랙 복귀</span><span><kbd>ESC</kbd> 일시정지</span><span id="audio-state"><kbd>M</kbd> 음소거</span><button id="camera">시점 변경</button><button id="restart">다시 시작</button></footer>
     <div class="overlay race-session-overlay" id="overlay" hidden>${raceSessionMarkup()}</div>
     <div class="pause-shade" id="pause-menu" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden><section class="pause-panel"><div class="eyebrow">APEX FORMULA / SESSION CONTROL</div><h2 id="pause-title">일시정지</h2><p>레이스와 랩 타이머가 멈췄습니다.</p><button id="resume" class="primary">레이스 계속 <span>ESC →</span></button><button id="recover">트랙으로 복귀 후 계속</button><button id="pause-camera">시점 변경 <span>C</span></button><button type="button" id="pause-wheel-settings">레이싱 휠 · 입력 설정 <span>→</span></button><p id="controller-state" role="status"></p><label for="transmission-mode">변속 방식</label><select id="transmission-mode" aria-describedby="transmission-hint"><option value="auto">자동</option><option value="manual">수동 · Q 내리기 / E 올리기</option></select><p id="transmission-hint">T 자동·수동 전환 · 수동은 Q / E로 변속합니다.<br>너무 높은 회전수가 되는 하향 변속은 보호됩니다.</p><label for="motion-strength">주행 진동 <output id="motion-value"></output></label><input id="motion-strength" type="range" min="0" max="100" step="5" aria-label="제동·연석·변속 화면 움직임 강도"/><label for="audio-volume">주행 사운드 <output id="audio-value"></output></label><input id="audio-volume" type="range" min="0" max="100" step="1" aria-label="주행 사운드 음량"/><label for="graphics-quality">그래픽 품질 <output id="graphics-value"></output></label><select id="graphics-quality" aria-describedby="graphics-hint"><option value="auto">자동</option><option value="low">낮음 · 성능 우선</option><option value="medium">보통 · 균형</option><option value="high">높음 · 화질 우선</option></select><p id="graphics-hint">자동 설정은 주행 성능에 맞춰 화질을 조절합니다.</p><div class="pause-controls">W / ↑ 가속 · S / ↓ 제동<br>A D / ← → 조향 · SHIFT 부스트 · F DRS · G 유도선<br>DRS: 선두 첫 랩 후 감지선에서 앞차 1초 이내 · 구간 안에서 F</div><details class="rival-summary"><summary>AI 성향 · 충돌 감점</summary><div id="rival-scores"></div></details><button id="change-circuit" class="secondary">다른 서킷 선택 <span>→</span></button><p class="change-circuit-hint">현재 레이스를 종료하고 서킷 선택 화면으로 돌아갑니다.</p><button id="pause-restart" class="secondary">레이스 다시 시작</button></section></div>`;
     const restartRace=()=>{(document.activeElement as HTMLElement)?.blur?.();actions.restart();actions.start(track.circuit.id);};
@@ -44,7 +45,7 @@ export class HUD {
     });
     this.setGraphics(actions.graphicsMode,actions.graphicsTier);
     root.querySelector('#graphics-quality')!.addEventListener('change',event=>actions.graphics(graphicsMode((event.target as HTMLSelectElement).value)));
-    this.proximityMap=(root.querySelector('#proximity-map') as HTMLCanvasElement).getContext('2d')!;
+    this.proximityRoot=root.querySelector<HTMLElement>('#proximity-ring')!;
     this.map=(root.querySelector('#map') as HTMLCanvasElement).getContext('2d')!;
     const bounds=track.bounds,padding=18,width=240,height=190,scale=Math.min((width-padding*2)/(bounds.max.x-bounds.min.x),(height-padding*2)/(bounds.max.z-bounds.min.z));
     const centerX=(bounds.min.x+bounds.max.x)/2,centerZ=(bounds.min.z+bounds.max.z)/2;
@@ -70,21 +71,20 @@ export class HUD {
   setMuted(muted:boolean){this.root.querySelector('#audio-state')!.innerHTML=`<kbd>M</kbd> ${muted?'소리 켜기':'음소거'}`;}
   private text(id:string,value:string){let node=this.textNodes.get(id);if(!node){node=this.root.querySelector('#'+id)!;this.textNodes.set(id,node);}if(node.textContent!==value)node.textContent=value;}
   updateProximity(v:Vehicle,r:Race,paused:boolean){
-    const cues=r.state==='racing'&&!paused&&v.position?proximityCues(v,r.opponents):{left:'',right:'',cars:[]};
-    for(const side of ['left','right'] as const){
-      const node=this.root.querySelector<HTMLElement>('#battle-'+side)!,hidden=!cues[side];
-      if(node.hidden!==hidden)node.hidden=hidden;
-      node.classList.toggle('is-close',cues[side]==='근접');
-      this.text('battle-'+side+'-label',cues[side]?`${side==='left'?'왼쪽':'오른쪽'} ${cues[side]}`:'');
+    const cues=r.state==='racing'&&!paused&&v.position?proximityCues(v,r.opponents):{cars:[]};
+    const visible=new Set(cues.cars.map(other=>other.id));
+    if(this.proximityRoot.hidden!==!visible.size)this.proximityRoot.hidden=!visible.size;
+    for(const [id,node] of this.proximityMarkers)if(!visible.has(id)&&!node.hidden)node.hidden=true;
+    for(const other of cues.cars){
+      let node=this.proximityMarkers.get(other.id);
+      if(!node){node=document.createElement('span');node.className='proximity-marker';this.proximityRoot.append(node);this.proximityMarkers.set(other.id,node);}
+      if(node.hidden)node.hidden=false;
+      node.style.setProperty('--bearing',`${other.bearing*180/Math.PI}deg`);
+      node.classList.toggle('is-close',other.close);node.classList.toggle('is-approaching',other.approaching);
+      const side=Math.abs(other.lateral)<.75?'':other.lateral<0?'왼쪽 ':'오른쪽 ';
+      const longitudinal=other.forward>3?'앞 ':other.forward < -3?'뒤 ':'';
+      node.setAttribute('aria-label',`${side}${longitudinal}차량 ${other.close?'근접':other.approaching?'접근':'주변'}`);
     }
-    const radar=this.root.querySelector<HTMLElement>('#proximity-radar')!;
-    if(radar.hidden!==!cues.cars.length)radar.hidden=!cues.cars.length;
-    if(!cues.cars.length)return;
-    const ctx=this.proximityMap;ctx.clearRect(0,0,144,144);
-    ctx.strokeStyle='#a8c7db20';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(72,8);ctx.lineTo(72,136);ctx.moveTo(12,72);ctx.lineTo(132,72);ctx.stroke();
-    ctx.strokeStyle='#ffffff28';ctx.strokeRect(63,56,18,32);
-    for(const other of cues.cars){ctx.save();ctx.translate(72+other.lateral*4.6,72-other.forward*1.45);ctx.rotate(other.angle);ctx.fillStyle=other.close?'#ff806b':other.approaching?'#ffd078':'#c5dbe7';ctx.fillRect(-4,-8,8,16);ctx.restore();}
-    ctx.fillStyle='#7ce3c2';ctx.fillRect(68,64,8,16);
   }
   update(v:Vehicle,r:Race,paused:boolean,track:Track,cameraMode:number){
     if(paused||r.state!=='racing')this.updateProximity(v,r,paused);

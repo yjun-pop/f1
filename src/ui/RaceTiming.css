@@ -15,9 +15,11 @@
 .table-scroll-hint{display:none}@media(max-width:700px){.table-scroll-hint{display:block;margin:0 0 10px;font-size:11px;color:#9bb0c3}}
 
 
-/* Situational cues stay clear of the racing line and instrument panel. */
-.battle-side{position:absolute;top:48%;display:flex;flex-direction:column;align-items:center;gap:6px;color:#ffd078;pointer-events:none;text-shadow:0 2px 8px #000}.battle-left{left:clamp(24px,18vw,350px)}.battle-right{right:clamp(24px,18vw,350px)}.battle-side>b{font-size:46px;line-height:1}.battle-side>span{font-size:14px;font-weight:700;background:#101c29d9;padding:5px 9px;border-radius:4px}.battle-side.is-close{color:#ff806b}.battle-side[hidden]{display:none}
-@media(max-width:700px){.battle-side{top:54%}.battle-left{left:15px}.battle-right{right:15px}.battle-side>b{font-size:32px}.battle-side>span{font-size:12px}}
-
-.proximity-radar{position:absolute;right:30px;bottom:86px;width:164px;padding:8px;background:#0b1726cf;border:1px solid #accbd52b;pointer-events:none;border-radius:8px;text-align:center}.proximity-radar[hidden]{display:none}.proximity-radar small{display:block;color:#c5dbe7;font-size:12px;letter-spacing:1px}.proximity-radar canvas{display:block;width:144px;height:144px}.proximity-radar>span{font-size:11px;color:#9bb0c3}@media(max-width:700px){.proximity-radar{right:12px;bottom:62px;width:122px;padding:5px}.proximity-radar canvas{width:108px;height:108px}}
-@media(max-height:600px){.proximity-radar{right:190px;top:88px;bottom:auto;width:100px;padding:5px}.proximity-radar canvas{width:88px;height:88px}.proximity-radar>span{display:none}}
+/* Vehicle-relative bearings orbit the clear centre of the driving view.
+   No transform transition: crossing +/-180 degrees must never spin a marker. */
+.proximity-ring{position:absolute;inset:0;--proximity-radius:clamp(76px,27vmin,300px);pointer-events:none;overflow:hidden}
+.proximity-ring[hidden],.proximity-marker[hidden]{display:none}
+.proximity-marker{position:absolute;left:50%;top:50%;width:36px;height:9px;margin:-4.5px 0 0 -18px;color:#d7e5ed;transform:rotate(var(--bearing)) translateY(calc(-1 * var(--proximity-radius)));transform-origin:50% 50%;z-index:1}
+.proximity-marker::after{content:'';position:absolute;inset:0;border-top:4px solid currentColor;border-radius:50%;filter:drop-shadow(0 1px 3px #000b);opacity:.8}
+.proximity-marker.is-approaching{color:#ffd078;z-index:2}.proximity-marker.is-close{color:#ff806b;z-index:3}.proximity-marker.is-close::after{border-top-width:6px;opacity:1}
+@media(max-width:700px){.proximity-marker{width:28px;margin-left:-14px}}
