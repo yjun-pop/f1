@@ -16,7 +16,10 @@ export function proximityCues(player:ProximityPose,cars:readonly ProximityCar[])
     const approaching=ttc>0&&ttc<3&&(forward<0?closing>1:closing < -1);
     const close=Math.abs(forward)<6&&Math.abs(lateral)<4;
     if(Math.abs(forward)>12&&!approaching&&!close)continue;
-    nearby.push({id,forward,lateral,bearing:Math.atan2(lateral,forward),close,approaching});
+    const bearing=Math.atan2(lateral,forward);
+    // Rear-centred 270-degree fan; leave the forward +/-45 degrees clear.
+    if(Math.abs(bearing)<Math.PI/4)continue;
+    nearby.push({id,forward,lateral,bearing,close,approaching});
   }
   return {cars:nearby};
 }

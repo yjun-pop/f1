@@ -1,3 +1,4 @@
+import {drivingVibrationGain} from './DrivingVibration';
 import type {WheelDevice} from './WheelInput';
 import type {DrivingFeedbackFrame} from './DrivingFeedback';
 
@@ -128,7 +129,7 @@ export class WheelHaptics {
     this.sentAt=this.clock;
     const moving=clamp(car.speed/12),slip=clamp((Math.abs(Math.atan2(car.lateralSpeed,Math.max(8,car.speed)))-.035)/.12);
     const strong=Math.min(.9,this.shift+this.impact+feedback.kerb*.4*moving+slip*.25*moving+(car.offRoad?.14*moving:0));
-    const weak=Math.min(.85,this.shift*.5+this.impact*.6+feedback.kerb*.55*moving+slip*.3*moving+(.02+feedback.engine.load*.045)*moving);
+    const weak=Math.min(.85,this.shift*.5+this.impact*.6+feedback.kerb*.55*moving+slip*.3*moving+(.02+feedback.engine.load*.045)*moving*drivingVibrationGain(feedback.engine.gear));
     void output.play(strong*this.strength,weak*this.strength);
   }
 }

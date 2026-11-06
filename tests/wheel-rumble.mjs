@@ -101,3 +101,6 @@ const silentDevice=capabilityWheel();let silentCalls=0;silentDevice.controlTrans
 const errorDevice=capabilityWheel();errorDevice.controlTransferIn=async()=>{throw new Error('Control read rejected');};const errorTransport=new USBWheel(api(errorDevice));await errorTransport.request();errorDevice.emit(packet());await settle();assert.equal((await errorTransport.checkRumbleCapabilities(errorTransport.devices[0].id)).state,'error');assert.equal(errorTransport.devices[0].inputsReady,true);await errorTransport.disconnect();
 let finishProbe;const probeGate=new Promise(resolve=>{finishProbe=resolve;});const beforeCount=doubleEvents.length,probing=double.test(doublePad,()=>probeGate);await settle();assert.equal(doubleEvents.length,beforeCount,'A gated test must await its read-only preflight');double.stop('지원 조회 중 창 닫힘');finishProbe();assert.equal(await probing,false);assert.equal(doubleEvents.length,beforeCount,'Closing during preflight must not start motors when the query finishes');
 console.log('PASS: documented read-only XInput motor capability query, byte offsets, cached/deduplicated reads, zero/invalid/stalled/error/timeout responses and safe cancellation during preflight');
+
+// Continuous vibration is also checked against the shared camera telemetry.
+await import('./driving-vibration.mjs');

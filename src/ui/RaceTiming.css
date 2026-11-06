@@ -17,9 +17,9 @@
 
 /* Vehicle-relative bearings orbit the clear centre of the driving view.
    No transform transition: crossing +/-180 degrees must never spin a marker. */
-.proximity-ring{position:absolute;inset:0;--proximity-radius:clamp(76px,27vmin,300px);pointer-events:none;overflow:hidden}
+.proximity-ring{position:absolute;inset:0;--proximity-radius:clamp(90px,33vmin,380px);pointer-events:none;overflow:hidden}
 .proximity-ring[hidden],.proximity-marker[hidden]{display:none}
-.proximity-marker{position:absolute;left:50%;top:50%;width:36px;height:9px;margin:-4.5px 0 0 -18px;color:#d7e5ed;transform:rotate(var(--bearing)) translateY(calc(-1 * var(--proximity-radius)));transform-origin:50% 50%;z-index:1}
+.proximity-marker{position:absolute;left:50%;top:50%;width:48px;height:9px;margin:-4.5px 0 0 -24px;color:#d7e5ed;transform:rotate(var(--bearing)) translateY(calc(-1 * var(--proximity-radius)));transform-origin:50% 50%;z-index:1}
 .proximity-marker::after{content:'';position:absolute;inset:0;border-top:4px solid currentColor;border-radius:50%;filter:drop-shadow(0 1px 3px #000b);opacity:.8}
 .proximity-marker.is-approaching{color:#ffd078;z-index:2}.proximity-marker.is-close{color:#ff806b;z-index:3}.proximity-marker.is-close::after{border-top-width:6px;opacity:1}
-@media(max-width:700px){.proximity-marker{width:28px;margin-left:-14px}}
+@media(max-width:700px){.proximity-marker{width:36px;margin-left:-18px}}
