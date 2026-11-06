@@ -5,6 +5,7 @@ import * as THREE from 'three';
 const threeURL=new URL('../node_modules/three/build/three.module.js',import.meta.url).href;
 const cache=new Map();
 function moduleURL(name){
+  if(name==='../ui/Settings')return 'data:text/javascript,'+encodeURIComponent('export function readSettings(){return {}};export function openSettings(){};export function applyHUDScale(){};export function confirmRaceAction(message,action){action()}');
   if(cache.has(name))return cache.get(name);
   const source=fs.readFileSync(new URL(`../src/game/${name}.ts`,import.meta.url),'utf8');
   let js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;

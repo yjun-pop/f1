@@ -5,6 +5,7 @@ import * as THREE from 'three';
 const threeURL=new URL('../node_modules/three/build/three.module.js',import.meta.url).href;
 const cache=new Map();
 function moduleURL(name){
+  if(name==='../ui/Settings')return 'data:text/javascript,'+encodeURIComponent('export function readSettings(){return {}};export function openSettings(){};export function applyHUDScale(){};export function confirmRaceAction(message,action){action()}');
   if(cache.has(name))return cache.get(name);
   const source=fs.readFileSync(new URL(`../src/game/${name}.ts`,import.meta.url),'utf8');
   let js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
@@ -15,7 +16,7 @@ function moduleURL(name){
   const url=`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;cache.set(name,url);return url;
 }
 globalThis.window={innerWidth:1280,innerHeight:720};
-globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
+globalThis.document={querySelector:()=>null,documentElement:{dataset:{}},createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
 const {Vehicle}=await import(moduleURL('Vehicle'));
 const {CockpitCamera}=await import(moduleURL('Camera'));
 const {Track,ROAD_HALF_WIDTH}=await import(moduleURL('Track'));
@@ -1456,14 +1457,14 @@ const hudRoot={innerHTML:'',classList:{toggle:()=>{}},querySelector:selector=>{i
 const savedPath=globalThis.Path2D;globalThis.Path2D=class {moveTo(){}lineTo(){}};
 const noop=()=>{};const signalHUD=new HUD(hudRoot,track,{start:noop,restart:noop,camera:noop,resume:noop,recover:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop,transmission:mode=>signalPlayer.setTransmissionMode(mode)});
 nodes.get('#start-transmission').events.get('change')({target:{value:'manual'}});
-assert.equal(signalPlayer.transmission.mode,'manual');assert.equal(nodes.get('#transmission-mode').value,'manual');assert.equal(nodes.get('#gearbox-label').textContent,'수동');
-nodes.get('#transmission-mode').events.get('change')({target:{value:'auto'}});
+assert.equal(signalPlayer.transmission.mode,'manual');assert.equal(nodes.get('#start-transmission').value,'manual');assert.equal(nodes.get('#gearbox-label').textContent,'수동');
+nodes.get('#start-transmission').events.get('change')({target:{value:'auto'}});
 assert.equal(signalPlayer.transmission.mode,'auto');assert.equal(nodes.get('#start-transmission').value,'auto');assert.equal(nodes.get('#gearbox-label').textContent,'자동');
-assert.ok(hudRoot.innerHTML.includes('Q / E')&&hudRoot.innerHTML.includes('transmission-hint'));
+assert.ok(hudRoot.innerHTML.includes('Q / E')&&hudRoot.innerHTML.includes('pause-settings'));
 const {Game}=await import(moduleURL('Game'));const savedStorage=globalThis.localStorage,transmissionWrites=new Map();
 globalThis.localStorage={setItem:(key,value)=>transmissionWrites.set(key,value)};
 Game.prototype.selectTransmission.call({vehicle:signalPlayer,hud:signalHUD},'manual');
-assert.equal(transmissionWrites.get('apex-transmission-mode'),'manual');assert.equal(signalPlayer.transmission.mode,'manual');assert.equal(nodes.get('#transmission-mode').value,'manual');
+assert.equal(transmissionWrites.get('apex-transmission-mode'),'manual');assert.equal(signalPlayer.transmission.mode,'manual');assert.equal(nodes.get('#start-transmission').value,'manual');
 Game.prototype.selectTransmission.call({vehicle:signalPlayer,hud:signalHUD},'auto');
 assert.equal(transmissionWrites.get('apex-transmission-mode'),'auto');
 if(savedStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=savedStorage;

@@ -48,7 +48,7 @@ function environment(href='https://example.test/f1/',saved={}){
   globalThis.requestAnimationFrame=fn=>frames.push(fn);
   globalThis.__loadMenuTestGame=async()=>({Game:class {constructor(viewport,hud,options){launches.push({viewport,hud,options});}}});
   globalThis.__loadMenuTestBackdrop=async()=>({CircuitBackdrop:class {setInteracting(){}select(){}dispose(){}}});
-  globalThis.__loadMenuTestWheel=async()=>({openWheelSetup:()=>wheelViews++});
+  globalThis.__loadMenuTestWheel=async()=>({openSettings:()=>wheelViews++});
   return {root,app,nodes,storage,launches,contexts,frames,listeners,get reloads(){return reloads;},get wheelViews(){return wheelViews;},get href(){return locationURL.href;},
     async paint(){while(frames.length)await frames.shift()(0);},
     key(code,target={matches:()=>false},repeat=false){for(const fn of listeners.get('keydown')??[])fn({code,target,repeat,preventDefault(){}});}};
@@ -111,7 +111,7 @@ async function bootstrap(unique){
   js=js.replace(/import '\.\/[^']+\.css';/g,'').replace(/from '\.\/((?:ui|game)\/\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
   js=js.replace("import('./ui/CircuitBackdrop')",'globalThis.__loadMenuTestBackdrop()');
   js=js.replace("import('./game/Game')",'globalThis.__loadMenuTestGame()');
-  js=js.replace("import('./ui/WheelSetup')",'globalThis.__loadMenuTestWheel()');
+  js=js.replace("import('./ui/Settings')",'globalThis.__loadMenuTestWheel()');
   await import(`data:text/javascript;base64,${Buffer.from(js+'\n// '+unique).toString('base64')}`);
 }
 env=environment('https://example.test/f1/?circuit=silverstone',{'apex-circuit':'spa','apex-transmission-mode':'manual'});

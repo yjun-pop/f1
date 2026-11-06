@@ -5,6 +5,7 @@ import * as THREE from 'three';
 const threeURL=new URL('../node_modules/three/build/three.module.js',import.meta.url).href;
 const cache=new Map();
 function moduleURL(name){
+  if(name==='../ui/Settings')return 'data:text/javascript,'+encodeURIComponent('export function readSettings(){return {}};export function openSettings(){};export function applyHUDScale(){};export function confirmRaceAction(message,action){globalThis.pendingConfirmation=action;}');
   if(cache.has(name))return cache.get(name);
   const source=fs.readFileSync(new URL(`../src/game/${name}.ts`,import.meta.url),'utf8');
   let js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
@@ -24,7 +25,7 @@ function fixture(){
  const node=id=>({id,events:new Map(),value:'auto',textContent:'',hidden:false,disabled:false,style:{values:new Map(),setProperty(k,v){this.values.set(k,v);},getPropertyValue(k){return this.values.get(k);}},classList:{toggle(){}},setAttribute(){},replaceChildren(){},append(...children){this.children=children;},addEventListener(n,f){this.events.set(n,f);},focus(){document.activeElement=this;},blur(){document.activeElement=null;},closest(){return null;},getContext:()=>new Proxy({},{get:()=>noop,set:()=>true})});
  const root={classList:{toggle(){}},querySelector:q=>nodes.get(q.slice(1))??null,querySelectorAll:()=>[],contains:n=>[...nodes.values()].includes(n),get innerHTML(){return markup;},set innerHTML(s){markup=s;for(const m of s.matchAll(/id="([^"]+)"/g))nodes.set(m[1],node(m[1]));}};
  globalThis.window={location:{href:'https://example.test/f1/?circuit=silverstone',assign:url=>navigation=url}};
- globalThis.document={activeElement:null,createElement:()=>node('new')};globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)};
+ globalThis.document={documentElement:{dataset:{}},activeElement:null,createElement:()=>node('new')};globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)};
  const track={name:'SILVERSTONE',country:'GREAT BRITAIN',length:5891,circuit:{id:'silverstone'},bounds:{min:{x:0,z:0},max:{x:100,z:100}},point:t=>({x:t*100,z:t*100})};
  const vehicle={transmission:{mode:'manual'},lap:3,progress:.3,aero:{active:false,available:false,wake:0},reset(){trace.push('vehicle-reset');}};
  const samples=[{id:'PLAYER',name:'YOU',distance:-.096},...DRIVER_PROFILES.map((p,i)=>({id:`ai:${p.name.toLowerCase()}`,name:p.name,distance:-(i+1)*.008}))],starts=samples.map(s=>s.distance),clock=new RaceLaps(1000);clock.reset(samples);
@@ -39,7 +40,7 @@ function fixture(){
 }
 let f=fixture();
 assert.ok(!f.root.innerHTML.includes('circuit-card')&&!f.root.innerHTML.includes('gallery-stage'),'The race must never contain the old circuit-selection menu');
-assert.equal(f.nodes.get('start-transmission').value,'manual');f.nodes.get('start-transmission').events.get('change')({target:{value:'auto'}});assert.equal(f.vehicle.transmission.mode,'auto');assert.equal(f.nodes.get('transmission-mode').value,'auto');
+assert.equal(f.nodes.get('start-transmission').value,'manual');f.nodes.get('start-transmission').events.get('change')({target:{value:'auto'}});assert.equal(f.vehicle.transmission.mode,'auto');assert.equal(f.nodes.get('start-transmission').value,'auto');
 f.update('ready');assert.equal(f.nodes.get('overlay').hidden,false);assert.equal(f.nodes.get('race-session-title').textContent,'출발 준비');assert.equal(f.nodes.get('race-session-results').hidden,true);
 f.hud.startSelectedCircuit();assert.equal(f.race.state,'countdown');f.update();assert.equal(f.nodes.get('overlay').hidden,true);
 f.update('racing');assert.equal(f.nodes.get('overlay').hidden,true);
@@ -47,7 +48,7 @@ f.update('finished');assert.equal(f.nodes.get('overlay').hidden,false);assert.eq
 f.nodes.get('race-session-start').focus();f.trace.length=0;f.click('race-session-start');assert.equal(f.race.state,'countdown');assert.ok(f.trace.indexOf('race-reset')<f.trace.indexOf('start'));assert.equal(document.activeElement,null);f.update();assert.equal(f.nodes.get('overlay').hidden,true);
 console.log('PASS: dedicated results without circuit cards, correct lap/rank values, transmission settings, and results restart directly into countdown');
 for(const id of['restart','pause-restart']){
- f.update('racing',id==='pause-restart');f.game.paused=true;f.trace.length=0;f.click(id);assert.equal(f.race.state,'countdown');assert.equal(f.game.paused,false);assert.equal(f.game.accumulator,0);assert.ok(f.trace.includes('clear-input'));assert.ok(f.trace.indexOf('race-reset')<f.trace.indexOf('start'));f.update();assert.equal(f.nodes.get('overlay').hidden,true);
+ f.update('racing',id==='pause-restart');f.game.paused=true;f.trace.length=0;f.click(id);assert.equal(f.race.state,'racing');assert.equal(typeof globalThis.pendingConfirmation,'function');globalThis.pendingConfirmation();assert.equal(f.race.state,'countdown');assert.equal(f.game.paused,false);assert.equal(f.game.accumulator,0);assert.ok(f.trace.includes('clear-input'));assert.ok(f.trace.indexOf('race-reset')<f.trace.indexOf('start'));f.update();assert.equal(f.nodes.get('overlay').hidden,true);
 }
 f.update('finished');f.hud.startSelectedCircuit();assert.equal(f.race.state,'countdown');console.log('PASS: footer, pause and Enter restarts reset once and start the signal without reopening any main/legacy menu');
 f=fixture();f.update('finished');f.click('race-session-menu');assert.equal(new URL(f.navigation).searchParams.get('circuit'),'silverstone');assert.equal(new URL(f.navigation).searchParams.has('race'),false);assert.equal(f.game.changingCircuit,true);assert.equal(f.game.paused,true);assert.ok(f.trace.includes('silence'));assert.equal(f.nodes.get('race-session-title').textContent,'화면 전환 중');assert.equal(f.nodes.get('race-session-results').hidden,true);assert.equal(f.nodes.get('race-session-start').disabled,true);assert.ok(!f.root.innerHTML.includes('circuit-card'));

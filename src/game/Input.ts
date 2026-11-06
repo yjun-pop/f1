@@ -18,5 +18,5 @@ export class Input {
   analog(){return this.wheel.controls;}
   clear(){this.keys.clear();this.justPressed.clear();this.wheel.suspend();}
   down(...codes: string[]) { return codes.some(c => this.keys.has(c)||(c==='ShiftLeft'||c==='ShiftRight')&&this.wheel.down('boost')); }
-  consume(code: string) { const wheelHit=WHEEL_KEYS[code]?this.wheel.consume(WHEEL_KEYS[code]):false,hit=this.justPressed.has(code)||wheelHit;this.justPressed.delete(code);return hit; }
+  consume(code: string) { if(document.querySelector('dialog[open]')){this.justPressed.delete(code);if(WHEEL_KEYS[code])this.wheel.consume(WHEEL_KEYS[code]);return false;} const wheelHit=WHEEL_KEYS[code]?this.wheel.consume(WHEEL_KEYS[code]):false,hit=this.justPressed.has(code)||wheelHit;this.justPressed.delete(code);return hit; }
 }

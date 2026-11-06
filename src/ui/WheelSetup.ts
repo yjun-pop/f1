@@ -14,6 +14,7 @@ const STEPS=[
 ];
 export class WheelSetup {
   readonly element:HTMLDialogElement;
+  private returnFocus?:HTMLElement;private calibrationBackup?:WheelProfile;
   private frame=0;private lastPaint=-Infinity;private deviceStamp?:string;private step=-1;private usbBusy=false;
   private listedDevices:{id:string;index:number}[]=[];
   private center:number[]=[];private throttleRest:number[]=[];private brakeRest:number[]=[];
@@ -38,22 +39,23 @@ export class WheelSetup {
       <details class="wheel-help"><summary>브라우저 입력 진단</summary><p>브라우저의 입력 기능·접근 오류·표시된 장치 정보만 포함합니다. 자동 전송하지 않습니다.</p><textarea id="wheel-diagnostic" readonly rows="7" aria-label="복사할 브라우저 입력 진단"></textarea><button type="button" id="wheel-copy-diagnostic">진단 내용 복사</button></details>
       <div class="wheel-bottom"><button type="button" id="wheel-keyboard">키보드로 사용</button><button type="button" id="wheel-save" class="wheel-primary" disabled>설정 저장</button></div>`;
     document.body.appendChild(this.element);
-    this.element.addEventListener('keydown',event=>event.stopPropagation());
     this.node('wheel-close').addEventListener('click',()=>this.element.close());
     this.node('wheel-rescan').addEventListener('click',()=>{this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;this.message(this.wheel.detectionStatus);void this.restoreUSB();});
+    this.organize();
     this.node('wheel-copy-diagnostic').addEventListener('click',()=>void this.copyText(currentWheelDiagnostic(this.wheel),this.node<HTMLTextAreaElement>('wheel-diagnostic')));
     this.node('wheel-copy-url').addEventListener('click',()=>void this.copyText(window.location.href));
     this.node('wheel-usb-connect').addEventListener('click',()=>void this.connectUSB());
     this.node('wheel-usb-find').addEventListener('click',()=>void this.connectUSB(true));
     this.node('wheel-raw-connect').addEventListener('click',()=>void this.connectRawUSB());
     this.node('wheel-usb-disconnect').addEventListener('click',()=>{void Promise.all([this.wheel.usb?.disconnect(),this.wheel.rawUSB?.disconnect()]).then(()=>{this.wheel.poll();this.refreshDevices();this.lastPaint=-Infinity;this.message('USB 직접 연결을 해제했습니다.');});});
-    this.element.addEventListener('close',()=>{this.wheel.haptics.stop();this.wheel.configuring=false;this.wheel.suspend();cancelAnimationFrame(this.frame);this.learning=undefined;});
+    this.element.addEventListener('keydown',e=>e.stopPropagation());this.element.addEventListener('keyup',e=>e.stopPropagation());
+    this.element.addEventListener('close',()=>{queueMicrotask(()=>this.returnFocus?.isConnected&&this.returnFocus.focus());this.wheel.haptics.stop();this.wheel.configuring=false;this.wheel.suspend();cancelAnimationFrame(this.frame);this.learning=undefined;});
     for(const id of ['wheel-device','wheel-pedals'])this.node(id).addEventListener('change',()=>{
       this.wheel.haptics.stop();
       if(id==='wheel-device')this.node<HTMLSelectElement>('wheel-pedals').value=this.node<HTMLSelectElement>('wheel-device').value;
       this.draft=undefined;this.step=-1;this.learning=undefined;this.showStep();this.message('장치 선택이 바뀌었습니다. 입력을 다시 보정하세요.');
     });
-    this.node('wheel-calibrate').addEventListener('click',()=>{this.learning=undefined;this.step=0;this.showStep();this.message('');});
+    this.node('wheel-calibrate').addEventListener('click',()=>{this.calibrationBackup=this.draft?structuredClone(this.draft):undefined;this.learning=undefined;this.step=0;this.showStep();this.stage(1);this.message('');});
     this.node('wheel-next').addEventListener('click',()=>this.capture());
     for(const action of WHEEL_ACTIONS){
       this.node('wheel-bind-'+action).addEventListener('click',()=>{
@@ -78,6 +80,28 @@ export class WheelSetup {
     });
     this.node('wheel-keyboard').addEventListener('click',()=>{if(this.wheel.profile)this.wheel.save({...this.wheel.profile,enabled:false});this.element.close();});
   }
+  private organize(){
+    const body=document.createElement('div');body.className='wheel-content';
+    const top=this.element.querySelector('.wheel-top')!,bottom=this.element.querySelector('.wheel-bottom')!;
+    for(const node of Array.from(this.element.children))if(node!==top&&node!==bottom)body.append(node);
+    this.element.insertBefore(body,bottom);
+    this.element.querySelector('.wheel-intro')!.textContent='연결 → 입력 보정 → 버튼 지정 → 테스트. 보정값은 저장할 때 확정됩니다.';
+    const nav=document.createElement('nav');nav.className='wheel-stages';nav.setAttribute('aria-label','휠 설정 단계');
+    ['연결','입력 보정','버튼 지정','테스트'].forEach((label,index)=>{const b=document.createElement('button');b.textContent=`${index+1}. ${label}`;b.dataset.stage=String(index);b.onclick=()=>this.stage(index);nav.append(b);});body.prepend(nav);
+    const advanced=document.createElement('details');advanced.className='wheel-help';advanced.innerHTML='<summary>고급 연결 및 문제 해결</summary>';
+    for(const selector of ['.wheel-direct-usb','.wheel-connection-help','.wheel-help'])for(const n of Array.from(body.querySelectorAll(selector)))if(n!==advanced&&!advanced.contains(n))advanced.append(n);
+    const connect=document.createElement('button');connect.textContent='Wired Wheel 연결';connect.className='wheel-primary';connect.onclick=()=>void this.connectRawUSB();
+    const connection=document.createElement('section');connection.dataset.wheelStage='0';connection.append(connect,body.querySelector('.wheel-devices')!,advanced);const go=document.createElement('button');go.textContent='입력 보정으로 →';go.onclick=()=>this.stage(1);connection.append(go);body.append(connection);
+    const calibration=document.createElement('section');calibration.dataset.wheelStage='1';calibration.append(body.querySelector('.wheel-calibration')!);body.querySelector('#wheel-detection')!.after(body.querySelector('.wheel-meters')!);body.append(calibration);
+    const stepButtons=calibration.querySelector('.wheel-step-buttons')!;
+    for(const [id,label,handler]of [['wheel-back','이전',()=>{if(this.step>0){this.step--;this.showStep();}}],['wheel-cancel-calibration','보정 취소',()=>{this.draft=this.calibrationBackup?structuredClone(this.calibrationBackup):undefined;this.step=-1;this.learning=undefined;this.showStep();this.message('보정을 취소했습니다. 이전 보정값을 유지합니다.');}]] as const){const button=document.createElement('button');button.id=id;button.textContent=label;button.onclick=handler;stepButtons.append(button);}
+    const bindings=document.createElement('section');bindings.dataset.wheelStage='2';bindings.innerHTML='<h3>버튼 지정</h3><p>입력 보정을 완료하면 패들과 버튼을 지정할 수 있습니다.</p>';bindings.append(body.querySelector('#wheel-bindings')!,body.querySelector('.wheel-tuning')!);body.append(bindings);
+    const test=document.createElement('section');test.dataset.wheelStage='3';test.append(Array.from(body.querySelectorAll('.wheel-tuning')).find(n=>!bindings.contains(n))!);test.innerHTML+='<p>테스트 명령의 전송 성공은 모터 동작을 보장하지 않습니다. 실제 진동을 확인한 뒤 저장하세요.</p>';body.append(test);
+    for(const [id,value]of [['wheel-deadzone','2'],['wheel-sensitivity','100'],['wheel-rumble','60']] as const){const reset=document.createElement('button');reset.textContent='기본값 복원';reset.onclick=()=>{const input=this.node<HTMLInputElement>(id);input.value=value;input.dispatchEvent(new Event('input'));};this.node(id).after(reset);}
+    const next=document.createElement('button');next.textContent='버튼 지정 완료 · 테스트 →';next.onclick=()=>this.stage(3);bindings.append(next);
+    const hint=document.createElement('p');hint.id='wheel-save-hint';hint.setAttribute('role','status');bottom.before(hint);
+  }
+  private stage(index:number){this.element.querySelectorAll<HTMLElement>('[data-wheel-stage]').forEach(n=>n.hidden=Number(n.dataset.wheelStage)!==index);this.element.querySelectorAll<HTMLElement>('[data-stage]').forEach(n=>n.setAttribute('aria-pressed',String(Number(n.dataset.stage)===index)));this.element.querySelector('.wheel-content')!.scrollTop=0;}
   private node<T extends HTMLElement=HTMLElement>(id:string){return this.element.querySelector<T>('#'+id)!;}
   private selected(id:string){const value=this.node<HTMLSelectElement>(id).value;if(value==='')return;const index=Number(value);return this.wheel.devices.find(p=>p.index===index);}
   private message(text:string){this.node('wheel-message').textContent=text;}
@@ -103,9 +127,9 @@ export class WheelSetup {
   }
   open(){
     if(this.element.open){this.node('wheel-close').focus();return;}
-    this.wheel.configuring=true;this.wheel.suspend();this.wheel.poll();this.deviceStamp=undefined;this.step=-1;this.draft=this.wheel.profile?JSON.parse(JSON.stringify(this.wheel.profile)):undefined;
+    this.returnFocus=document.activeElement as HTMLElement;this.wheel.configuring=true;this.wheel.suspend();this.wheel.poll();this.deviceStamp=undefined;this.step=-1;this.draft=this.wheel.profile?JSON.parse(JSON.stringify(this.wheel.profile)):undefined;
     this.node<HTMLInputElement>('wheel-deadzone').value=String(Math.round((this.draft?.deadzone??.02)*100));this.node<HTMLInputElement>('wheel-sensitivity').value=String(Math.round((this.draft?.sensitivity??1)*100));this.node<HTMLInputElement>('wheel-enabled').checked=this.draft?.enabled??true;
-    this.message('');this.refreshDevices();this.showStep();this.showTuning();this.element.showModal();this.lastPaint=-Infinity;this.tick(performance.now());
+    this.message('');this.refreshDevices();this.showStep();this.showTuning();this.element.showModal();this.stage(0);this.lastPaint=-Infinity;this.tick(performance.now());
     void this.restoreUSB();
   }
   private refreshDevices(){
@@ -132,6 +156,7 @@ export class WheelSetup {
     this.node('wheel-step-title').textContent=step?.[0]??(this.draft?'보정된 입력을 확인하세요':'장치를 선택해 주세요');
     this.node('wheel-step-description').textContent=step?.[1]??(this.draft?'페달과 휠을 움직여 아래 표시를 확인하고 패들·버튼을 지정하세요.':'보정 시작을 누른 뒤 화면 안내에 따라 휠과 페달을 움직이세요.');
     this.node('wheel-next').hidden=!step;this.node('wheel-calibrate').textContent=this.draft?'다시 보정':'보정 시작';
+    this.node('wheel-back').hidden=!step;this.node<HTMLButtonElement>('wheel-back').disabled=this.step<=0;this.node('wheel-cancel-calibration').hidden=!step;
     this.node('wheel-bindings').hidden=!this.draft;this.node<HTMLButtonElement>('wheel-save').disabled=!this.draft||!validWheelProfile(this.draft)||!!step;this.showBindings();
   }
   private capture(){
@@ -155,7 +180,7 @@ export class WheelSetup {
       if(!validWheelProfile(draft)){this.message('가속과 브레이크가 같은 입력으로 기록됐습니다. 올바른 페달을 각각 밟고 다시 보정하세요.');return;}
       this.draft=draft;
     }
-    this.step++;this.message(this.step===7?'보정 완료 · 페달을 놓고 버튼을 지정한 뒤 저장하세요.':'');this.showStep();
+    this.step++;if(this.step===7)this.stage(2);this.message(this.step===7?'보정 완료 · 페달을 놓고 버튼을 지정한 뒤 저장하세요.':'');this.showStep();
   }
   private tick=(now:number)=>{
     if(!this.element.open)return;this.wheel.poll();this.refreshDevices();const wheel=this.selected('wheel-device'),pedals=this.selected('wheel-pedals');
@@ -169,7 +194,7 @@ export class WheelSetup {
       }else if(now>this.learning.until){this.message('버튼 지정 시간이 지났습니다. ‘지정’을 눌러 다시 시도하세요.');this.learning=undefined;}else this.learning.held=held;
     }
     if(now-this.lastPaint>80){
-      this.lastPaint=now;this.node('wheel-detection').textContent=wheel?`${wheel.source==='usb'?'WebUSB':wheel.source==='hid'?'USB 직접':'브라우저'} 입력 연결됨 · 축 ${wheel.axes.length}개 / 버튼 ${wheel.buttons.length}개`:this.wheel.detectionStatus;
+      this.lastPaint=now;this.node('wheel-detection').textContent=wheel?`${wheel.displayName??wheel.id} · 입력 연결됨 · ${this.draft?'보정값 있음':'보정 필요'}`:this.wheel.detectionStatus;
       const capability=wheel?.source==='usb'?this.wheel.rawUSB?.rumbleCapabilities(wheel.id):undefined;
       this.node('wheel-rumble-status').textContent=this.wheel.haptics.status(wheel)+(capability?` · ${capability.message}`:'');
       this.node('wheel-rumble-test').textContent=wheel?`${wheel.displayName??wheel.id} 진동 테스트 · 2회`:'진동 테스트 · 장치 선택';
@@ -186,12 +211,14 @@ export class WheelSetup {
       this.node<HTMLButtonElement>('wheel-calibrate').disabled=!wheel||!pedals||waiting;
       this.node<HTMLButtonElement>('wheel-next').disabled=!wheel||!pedals||waiting;
       this.node<HTMLButtonElement>('wheel-save').disabled=!wheel||!pedals||waiting||!this.draft||!validWheelProfile(this.draft)||!!STEPS[this.step];
+      this.node('wheel-save-hint').textContent=!wheel||!pedals?'저장하려면 휠과 페달을 연결하세요.':waiting?'장치의 휠·페달·버튼을 움직여 입력을 활성화하세요.':STEPS[this.step]?'보정을 완료한 뒤 저장할 수 있습니다.':!this.draft?'입력 보정이 필요합니다.':'보정·버튼·감도는 설정 저장으로 확정됩니다. 휠 진동은 즉시 적용·자동 저장됩니다.';
       if(wheel&&pedals&&this.draft){
         const p=this.draft,steer=steeringValue(wheel.axes[p.steering.axis]??p.steering.center,{...p,deadzone:Number(this.node<HTMLInputElement>('wheel-deadzone').value)/100,sensitivity:Number(this.node<HTMLInputElement>('wheel-sensitivity').value)/100});
         for(const [name,value] of [['steer',steer],['throttle',pedalValue(pedalRaw(pedals,p.throttle)??p.throttle.rest,p.throttle)],['brake',pedalValue(pedalRaw(pedals,p.brake)??p.brake.rest,p.brake)]] as const){
           this.node<HTMLMeterElement>('wheel-'+name).value=value;this.node('wheel-'+name+'-value').textContent=(name==='steer'?(value>.01?'좌 ':value<-.01?'우 ':''):'')+Math.round(Math.abs(value)*100)+'%';
         }
       }
+      if(wheel&&!this.draft){for(const [name,value] of [['steer',wheel.axes[this.steering?.axis??0]??0],['throttle',this.throttle&&pedals?pedalValue(pedalRaw(pedals,this.throttle)??this.throttle.rest,this.throttle):0],['brake',0]] as const){this.node<HTMLMeterElement>('wheel-'+name).value=value;this.node('wheel-'+name+'-value').textContent=Math.round(Math.abs(value)*100)+'%';}}
       this.node('wheel-raw').textContent=wheel?`휠: ${Array.from(wheel.axes).slice(0,16).map((v,i)=>`${i+1}: ${v.toFixed(2)}`).join(' · ')}\n페달: ${Array.from(pedals?.axes??[]).slice(0,16).map((v,i)=>`${i+1}: ${v.toFixed(2)}`).join(' · ')}`:'';
     }
     this.frame=requestAnimationFrame(this.tick);

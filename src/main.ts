@@ -43,7 +43,7 @@ function start(id:CircuitId,transmission:TransmissionMode){
 }
 const menu=new CircuitMenu(front,{selected:selected.id,mode,prefix:'front-',start,preview,wheel:()=>{
   previewInteraction=true;backdrop?.setInteracting(true);
-  void import('./ui/WheelSetup').then(module=>module.openWheelSetup()).catch(error=>{console.error(error);const status=front.querySelector<HTMLElement>('#front-menu-status')!;status.textContent='휠 설정을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.';status.hidden=false;updatePreviewInteraction();});
+  void import('./ui/Settings').then(module=>module.openSettings());
 },transmission:value=>{try{localStorage.setItem('apex-transmission-mode',value);}catch{}}});
 // Defer tour cuts while the user reads settings; camera drift stays active.
 const updatePreviewInteraction=()=>{
@@ -61,3 +61,5 @@ dialogObserver.observe(document.body,{subtree:true,childList:true,attributes:tru
 // The intent is consumed by replaceState; refreshing returns to selection.
 if(new URLSearchParams(window.location.search).get('race')==='start')start(selected.id,mode);
 else preview(selected.id);
+
+window.addEventListener('apex-settings-change',()=>{try{menu.setTransmission(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}});

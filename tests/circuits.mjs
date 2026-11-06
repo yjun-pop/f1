@@ -5,6 +5,7 @@ import * as THREE from 'three';
 const threeURL=new URL('../node_modules/three/build/three.module.js',import.meta.url).href;
 const cache=new Map();
 function moduleURL(name){
+  if(name==='../ui/Settings')return 'data:text/javascript,'+encodeURIComponent('export function readSettings(){return {}};export function openSettings(){};export function applyHUDScale(){};export function confirmRaceAction(message,action){action()}');
   if(cache.has(name))return cache.get(name);
   const source=fs.readFileSync(new URL(`../src/game/${name}.ts`,import.meta.url),'utf8');
   let js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
@@ -15,7 +16,7 @@ function moduleURL(name){
   const url=`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;cache.set(name,url);return url;
 }
 globalThis.window={innerWidth:1280,innerHeight:720};
-globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
+globalThis.document={querySelector:()=>null,documentElement:{dataset:{}},createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
 const {Track}=await import(moduleURL('Track'));
 const {Vehicle}=await import(moduleURL('Vehicle'));
 const {Race}=await import(moduleURL('Race'));

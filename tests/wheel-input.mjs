@@ -4,6 +4,7 @@ import ts from 'typescript';
 import * as THREE from 'three';
 const cache=new Map(),threeURL=new URL('../node_modules/three/build/three.module.js',import.meta.url).href;
 function moduleURL(name){
+  if(name==='ui/Settings')return 'data:text/javascript,'+encodeURIComponent('export function readSettings(){return {}};export function openSettings(){};export function applyHUDScale(){};export function confirmRaceAction(message,action){action()}');
   if(cache.has(name))return cache.get(name);
   let js=ts.transpileModule(fs.readFileSync(new URL(`../src/${name}.ts`,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   const folder=name.slice(0,name.lastIndexOf('/'));
@@ -75,7 +76,7 @@ const visible=JSON.parse(wheelDiagnosticReport(f.wheel,context));assert.equal(vi
 console.log('PASS: empty browser lists, blocked access and unsupported/insecure APIs produce distinct local diagnostic reports without raw input/history');
 
 globalThis.window={innerWidth:1280,innerHeight:720,addEventListener:()=>{}};
-globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
+globalThis.document={querySelector:()=>null,createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
 const {Input}=await import(moduleURL('game/Input')),{Track}=await import(moduleURL('game/Track')),{Vehicle}=await import(moduleURL('game/Vehicle'));
 const events=new Map();window.addEventListener=(name,fn)=>events.set(name,fn);
 const driver=fixture(),input=new Input(driver.wheel),track=new Track(new THREE.Scene()),car=new Vehicle(track,new THREE.Scene());input.poll();driver.device.axes=[-.4,0,.5];input.poll();
@@ -103,13 +104,15 @@ let now=performance.now(),rafId=0;const frames=new Map();globalThis.requestAnima
 function node(tag='div'){
  const events=new Map(),nodes=new Map();let html='';const el={tagName:tag.toUpperCase(),value:'',checked:false,disabled:false,hidden:false,open:false,textContent:'',children:[],attributes:{},
   setAttribute:(key,value)=>el.attributes[key]=value,addEventListener:(type,fn)=>{const list=events.get(type)??[];list.push(fn);events.set(type,list);},
-  querySelector:selector=>nodes.get(selector.slice(1)),appendChild:child=>el.children.push(child),replaceChildren:(...children)=>el.children=children,focus:()=>{},closest:()=>null,select:()=>{el.selected=true;},
+  querySelector:selector=>{const id=selector.slice(1);if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);},appendChild:child=>el.children.push(child),replaceChildren:(...children)=>el.children=children,focus:()=>{},closest:()=>null,select:()=>{el.selected=true;},
   emit(type){for(const fn of events.get(type)??[])fn({target:el,stopPropagation(){}});},click(){if(!el.disabled)el.emit('click');},showModal(){el.open=true;},close(){el.open=false;el.emit('close');},
   get innerHTML(){return html;},set innerHTML(value){html=value;for(const match of value.matchAll(/<([a-z][\w-]*)\b([^>]*\bid="([^"]+)"[^>]*)>/g)){const child=node(match[1]),attrs=match[2];child.value=/\bvalue="([^"]+)"/.exec(attrs)?.[1]??'';child.checked=/\bchecked\b/.test(attrs);child.hidden=/\bhidden\b/.test(attrs);child.disabled=/\bdisabled\b/.test(attrs);nodes.set(match[3],child);}}
  };return el;
 }
-globalThis.document={createElement:node,body:node('body')};
+globalThis.document={querySelector:()=>null,createElement:node,body:node('body')};
 const {WheelSetup}=await import(moduleURL('ui/WheelSetup'));
+// Layout uses real DOM grouping; verified separately by the browser UI suite.
+WheelSetup.prototype.organize=function(){};WheelSetup.prototype.stage=function(){};
 const pump=()=>{now+=100;const batch=[...frames.values()];frames.clear();for(const fn of batch)fn(now);};
 function wizard(device=pad()){let devices=[device];const saved=new Map(),wheel=new WheelInput(()=>devices,{getItem:key=>saved.get(key)??null,setItem:(key,value)=>saved.set(key,value)}),ui=new WheelSetup(wheel);ui.open();return {device,wheel,ui,saved,setDevices:value=>devices=value,n:id=>ui.element.querySelector('#'+id)};}
 function calibrate(w){

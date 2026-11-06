@@ -23,3 +23,4 @@
 .proximity-marker::after{content:'';position:absolute;inset:0;border-top:4px solid currentColor;border-radius:50%;filter:drop-shadow(0 1px 3px #000b);opacity:.8}
 .proximity-marker.is-approaching{color:#ffd078;z-index:2}.proximity-marker.is-close{color:#ff806b;z-index:3}.proximity-marker.is-close::after{border-top-width:6px;opacity:1}
 @media(max-width:700px){.proximity-marker{width:36px;margin-left:-18px}}
+.has-results .race-session-actions{position:sticky;bottom:-1px;z-index:2;background:#101c2bf5;padding:16px 0 4px;border-top:1px solid #ffffff26;margin-top:20px}.race-session-actions button{min-height:46px;border-radius:6px}.race-session-results>div:first-child b{font-size:44px}.race-session-results>div:nth-child(4){border-color:#bca5ff88;background:#bca5ff12}.race-session-panel p,.race-session-panel small{font-size:13px}.race-session-panel h3{font-size:18px}.race-result-note{line-height:1.7}

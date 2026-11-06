@@ -1,3 +1,4 @@
+import {readSettings} from '../ui/Settings';
 import * as THREE from 'three';
 import {DrivingAudio} from './DrivingAudio';
 import {DrivingFeedback} from './DrivingFeedback';
@@ -46,6 +47,10 @@ export class Game {
     this.mirror=new RearViewMirror(this.renderer,this.scene,hudRoot.querySelector<HTMLElement>('#rearview-viewport')!);
     this.applyGraphics();
     const unlockAudio=()=>this.audio.unlock([this.vehicle,...this.race.opponents.map(o=>o.car)]);
+    window.addEventListener('apex-settings-change',()=>{
+      const settings=readSettings();this.audio.setVolume(settings.volume);this.feedback.strength=settings.motion;
+      this.selectGraphics(settings.graphics);this.selectTransmission(settings.transmission);
+    });
     window.addEventListener('pointerdown',unlockAudio);window.addEventListener('keydown',unlockAudio);
     window.addEventListener('resize',()=>{this.applyGraphics();this.cockpit.resize();});
     window.addEventListener('blur',()=>this.pause());document.addEventListener('visibilitychange',()=>{if(document.hidden)this.pause();});
@@ -65,7 +70,7 @@ export class Game {
   private selectTransmission(mode:TransmissionMode){this.vehicle.setTransmissionMode(mode);this.hud.setTransmissionMode(mode);try{localStorage.setItem('apex-transmission-mode',mode);}catch{}}
   private openWheelSettings(){
     this.pause();this.input.clear();
-    void import('../ui/WheelSetup').then(module=>module.openWheelSetup()).catch(error=>{console.error(error);this.hud.setWheelStatus('휠 설정을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.');});
+    void import('../ui/Settings').then(module=>module.openSettings()).catch(error=>{console.error(error);this.hud.setWheelStatus('휠 설정을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.');});
   }
   private selectGraphics(mode:GraphicsMode){this.graphics.select(mode);try{localStorage.setItem('apex-graphics-quality',mode);}catch{}this.applyGraphics();}
   private applyGraphics(resized=true){
@@ -92,6 +97,7 @@ export class Game {
     if(this.changingCircuit)return;
     const elapsed=(now-this.previous)/1000,dt=Math.max(0,Math.min(elapsed,.04));this.previous=now;
     this.pollWheel();
+    if(document.querySelector('dialog[open]')){this.input.clear();this.pause();}
     if(this.input.consume('Escape')){if(this.paused)this.resume();else this.pause();}
     if(this.input.consume('Enter')){if(this.paused)this.resume();else if(this.race.state==='ready'||this.race.state==='finished')this.hud.startSelectedCircuit();}
     if(this.input.consume('KeyR')&&!this.paused&&this.race.state==='racing'){this.vehicle.recover();this.feedback.reset();this.input.wheel.haptics.stop();}

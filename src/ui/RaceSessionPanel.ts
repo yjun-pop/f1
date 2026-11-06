@@ -20,7 +20,7 @@ export function raceSessionMarkup(){
       <section aria-labelledby="player-laps-title"><h3 id="player-laps-title">내 랩 기록</h3><div class="player-laps" id="race-session-laps"></div></section>
     </div>
     <label class="race-session-gearbox" id="race-session-gearbox">변속 방식<select id="start-transmission"><option value="auto">자동 변속</option><option value="manual">수동 변속 · Q / E</option></select></label>
-    <div class="race-session-actions"><button type="button" id="race-session-start">레이스 시작</button><button type="button" id="race-session-menu">메인 화면</button></div>
+    <div class="race-session-actions"><button type="button" id="race-session-start">레이스 시작</button><button type="button" id="race-session-menu">서킷 선택</button></div>
     <p id="race-session-status" role="status" hidden></p>
   </section>`;
 }
