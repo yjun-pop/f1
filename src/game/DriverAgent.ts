@@ -10,6 +10,7 @@ import {engineAcceleration} from './Powertrain';
 import {aerodynamicDrag} from './Aerodynamics';
 import {RaceStrategy} from './RaceStrategy';
 import {TrafficPlanner} from './TrafficPlanner';
+import {contactWithin} from './CollisionForecast';
 import {RacecraftBehavior} from './RacecraftBehavior';
 
 export interface TrafficSample {
@@ -415,6 +416,19 @@ export class DriverAgent {
       demand=Math.min(demand,drag+available);
     }
     if(demand>drag)demand=drag+(demand-drag)*strategy.driveScale;
+    // A trailing car yields briefly when the actual bodies are about to
+    // converge. Progress gaps alone overestimate room on different chicane
+    // radii. The physically leading car keeps moving; neither car is assigned
+    // a lane, a rank slot, or a stop while a clear parallel corridor exists.
+    for(const other of traffic){
+      const dx=other.position.x-car.position.x,dz=other.position.z-car.position.z;
+      const forward=dx*Math.sin(car.heading)+dz*Math.cos(car.heading);
+      if(forward<-.75||Math.abs(forward)<=.75&&(other.distance??other.car.distance)<=car.distance)continue;
+      const heading=other.heading??other.car.heading;
+      const lateral=other.velocity?other.velocity.x*Math.cos(heading)-other.velocity.z*Math.sin(heading):other.car.lateralSpeed;
+      const contact=contactWithin(car,{position:other.position,heading,speed:other.speed,lateralSpeed:lateral,yawRate:other.yawRate??other.car.yawRate});
+      if(contact!==null)demand=Math.min(demand,-Math.min(brakingDeceleration(car.speed,car.offRoad,car.gripScale)*.8,Math.max(6,(.5-contact)*60)));
+    }
     const boost=wantsBoost&&demand>0;
     const pursuit=1+(o.powerAssist-1)*THREE.MathUtils.smoothstep(car.speed,45,75);
     const engine=engineAcceleration(car.speed,boost,car.transmission.sample.drive)*car.powerScale*(car.raceLaunchScale??1)*pursuit;

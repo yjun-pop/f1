@@ -1,0 +1,13 @@
+import fs from 'node:fs';import ts from 'typescript';import assert from 'node:assert/strict';
+const js=ts.transpileModule(fs.readFileSync(new URL('../src/game/CollisionForecast.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const {contactWithin}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const car=(x,z,speed=40,y=0)=>({position:{x,y,z},heading:0,speed,lateralSpeed:0,yawRate:0});
+assert.equal(contactWithin(car(0,0),car(2.3,0)),null,'A close, clear parallel battle must stay free');
+assert.equal(contactWithin(car(0,0),car(0,25)),null);
+assert.ok(contactWithin(car(0,0,70),car(0,10,40))!==null,'A rapidly closing nose must brake before the body contact');
+assert.equal(contactWithin(car(0,0,40),car(0,10,70)),null,'A pulling-away car needs no predictive braking');
+assert.equal(contactWithin(car(0,0,70),car(0,10,40,7)),null);
+const rear={position:{x:-490.1216539431115,y:0,z:-277.44266409493383},heading:1.6807354794658331,speed:20.602466815421714,lateralSpeed:-1.2121627887494306,yawRate:-1.03};
+const leading={position:{x:-487.55588933445614,y:0,z:-279.57891150339407},heading:1.4477002098975527,speed:30.45992127353232,lateralSpeed:-.3224900603091823,yawRate:-.79};
+assert.ok(contactWithin(rear,leading)!==null,'The observed Suzuka chicane body convergence must be caught despite its track-progress gap');
+console.log('PASS: imminent body-space convergence, rear closing, clear parallel racing, separating traffic and bridge separation');
