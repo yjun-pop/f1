@@ -22,11 +22,11 @@ const oldRoad=Math.sin(123/12*Math.PI*2)*.003+Math.sin(123/7.7*Math.PI*2)*.0015;
 let previous=0;
 for(let gear=1;gear<=8;gear++){
  const car=telemetry(gear),before=JSON.stringify(car),motion=new DrivingFeedback(),frame=motion.update(car,track,1/120,true),gain=drivingVibrationGain(gear);
- assert.ok(gain>previous);previous=gain;assert.ok(Math.abs(frame.heave/(oldRoad*.6)-gain)<1e-10);assert.ok(Math.abs(frame.surfaceHeave-oldRoad*.6)<1e-10,'Engine vibration must not turn flat painted kerbs into large chassis bounces');assert.equal(frame.engine.gear,gear);assert.equal(JSON.stringify(car),before);
+ assert.ok(gain>previous);previous=gain;assert.ok(Math.abs(frame.heave/(oldRoad*.6)-gain*.5)<1e-10);assert.ok(Math.abs(frame.surfaceHeave-oldRoad*.6)<1e-10,'Engine vibration must not turn flat painted kerbs into large chassis bounces');assert.equal(frame.engine.gear,gear);assert.equal(JSON.stringify(car),before);
  motion.strength=0;assert.equal(motion.update(car,track,1/120,true).surfaceHeave,0);motion.strength=.6;assert.equal(motion.update(car,track,1/120,false).surfaceHeave,0);
  const sent=[],output=new RumbleOutput('usb',async(strong,weak)=>sent.push({strong,weak})),haptic=new WheelHaptics();haptic.strength=1;
  const device={id:'test',connected:true,inputsReady:true,rumble:output};haptic.update(device,car,frame,.1,true);await new Promise(r=>setImmediate(r));
  assert.ok(Math.abs(sent[0].weak-(.02+.5*.045)*gain)<1e-10);haptic.update(device,car,frame,.1,false);await new Promise(r=>setImmediate(r));assert.equal(sent.at(-1).weak,0);haptic.stop();
 }
 assert.equal(drivingVibrationGain(1),3);assert.equal(drivingVibrationGain(8),6);assert.equal(drivingVibrationGain(NaN),3);assert.equal(drivingVibrationGain(99),6);
-console.log('PASS: 3x first-gear continuous vibration, linear 1–8 gear growth, matching screen/wheel gain, unchanged telemetry, disabled settings and pause stop');
+console.log('PASS: 3x first-gear continuous vibration, linear 1–8 gear growth, half-strength screen shake independent of wheel gain, unchanged telemetry, disabled settings and pause stop');

@@ -40,7 +40,7 @@ export class DrivingFeedback {
     const metres=vehicle.distance*track.length,phase=metres/8*Math.PI*2;
     const bump=this.kerb*(Math.sin(phase)*.010+Math.sin(phase*.73)*.004);
     const road=(Math.sin(metres/12*Math.PI*2)*.003+Math.sin(metres/7.7*Math.PI*2)*.0015)*Math.min(1,vehicle.speed/70);
-    const vibration=road*drivingVibrationGain(this.engine.gear);
+    const vibration=road*drivingVibrationGain(this.engine.gear)*.5;
     return {pitch:(this.pitch+kick*.3+bump*.45+vibration*.3)*strength,roll:this.roll*strength,
       heave:(this.dive+bump+vibration)*strength,sway:this.sway*strength,
       longitudinal:(clamp(-vehicle.acceleration*.002,-.05,.08)+kick)*moving*strength,
