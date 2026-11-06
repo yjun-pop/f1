@@ -1,7 +1,6 @@
 import './style.css';
 import './ui/CircuitMenu.css';
 import './ui/RaceTiming.css';
-import './ui/Glass.css';
 import {CircuitMenu} from './ui/CircuitMenu';
 import {circuitById,circuitURL,selectedCircuit,type CircuitId} from './game/Circuits';
 import {transmissionMode,type TransmissionMode} from './game/Powertrain';
