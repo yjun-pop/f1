@@ -6,6 +6,7 @@ import {CircuitMenu} from './ui/CircuitMenu';
 import {circuitById,circuitURL,selectedCircuit,type CircuitId} from './game/Circuits';
 import {transmissionMode,type TransmissionMode} from './game/Powertrain';
 
+const accountReady=import('./account/Account').then(async({account})=>{await account.initialize();return account;});
 const app=document.querySelector<HTMLDivElement>('#app')!;
 function quickRace(){
 app.innerHTML='<div id="viewport"></div><div id="hud"></div><div id="menu-backdrop" class="circuit-backdrop" aria-hidden="true"></div><div id="front-menu"></div>';
@@ -35,18 +36,19 @@ function start(id:CircuitId,transmission:TransmissionMode){
   try{audioContext=new AudioContext();void audioContext.resume().catch(()=>{});}catch{}
   requestAnimationFrame(()=>requestAnimationFrame(async()=>{
     try{
+      const activeAccount=await accountReady;await activeAccount.sync();
       const {Game}=await import('./game/Game');
       new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext});
       // Game queues its first rendered frame first. Keep loading visible until
       // that frame, rather than briefly revealing an empty canvas or old menu.
-      requestAnimationFrame(()=>{dialogObserver.disconnect();menu.dispose();front.remove();});
+      requestAnimationFrame(()=>{dialogObserver.disconnect();window.removeEventListener('apex-account-change',refreshRecords);menu.dispose();front.remove();});
     }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();}
   }));
 }
 const menu=new CircuitMenu(front,{selected:selected.id,mode,prefix:'front-',start,preview,wheel:()=>{
   previewInteraction=true;backdrop?.setInteracting(true);
   void import('./ui/Settings').then(module=>module.openSettings());
-},transmission:value=>{try{localStorage.setItem('apex-transmission-mode',value);}catch{}}});
+},account:()=>{void import('./ui/AccountPanel').then(m=>m.openAccount());},transmission:value=>{try{localStorage.setItem('apex-transmission-mode',value);}catch{}}});
 // Defer tour cuts while the user reads settings; camera drift stays active.
 const updatePreviewInteraction=()=>{
   const focused=document.activeElement as HTMLElement|null;
@@ -64,10 +66,11 @@ dialogObserver.observe(document.body,{subtree:true,childList:true,attributes:tru
 if(new URLSearchParams(window.location.search).get('race')==='start')start(selected.id,mode);
 else preview(selected.id);
 
+const refreshRecords=()=>menu.refreshRecords();window.addEventListener('apex-account-change',refreshRecords);
 const syncSettings=()=>{try{menu.setTransmission(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}};
 window.addEventListener('apex-settings-change',syncSettings);
 
-return ()=>{launching=true;window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
+return ()=>{launching=true;window.removeEventListener('apex-account-change',refreshRecords);window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
 }
 if(new URLSearchParams(window.location.search).has('circuit')||new URLSearchParams(window.location.search).get('race')==='start')quickRace();
 else void import('./ui/TitleScreen').then(({TitleScreen})=>new TitleScreen(app,quickRace));

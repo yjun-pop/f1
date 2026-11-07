@@ -1,3 +1,4 @@
+import {readBest,writeBest,recordOwner} from './RecordStore';
 import * as THREE from 'three';
 import {Track} from './Track';
 import {Vehicle,resolveCollision} from './Vehicle';
@@ -17,6 +18,7 @@ import {gridSlot} from './StartingGrid';
 import {Opponent,type Rival} from './Opponent';
 export type {Rival} from './Opponent';
 export class Race {
+  private readonly recordUser=recordOwner();
   readonly aerodynamics:RaceAerodynamics;private aeroPreparedAt=-Infinity;
   prepareAerodynamics(player:Vehicle){this.aerodynamics.update([player,...this.opponents.map(o=>o.car)],this.elapsed,this.state==='racing');this.aeroPreparedAt=this.elapsed;}
   state:'ready'|'countdown'|'racing'|'finished'='ready';
@@ -57,7 +59,7 @@ export class Race {
     this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
     const profiles=DRIVER_PROFILES.slice(0,Math.max(1,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
     profiles.forEach((profile,i)=>this.opponents.push(new Opponent(profile,i,track,scene,planner,this.aiSpeeds,this.speedPlanner)));this.reset();
-    try{const best=Number(localStorage.getItem(this.storageKey)||0);this.best=Number.isFinite(best)&&best>0?best:0;}catch{}this.bestAtStart=this.best;
+    this.best=readBest(this.storageKey,this.recordUser);this.bestAtStart=this.best;
   }
   reset(){this.laps.reset();this.bestAtStart=this.best;this.aerodynamics.reset();this.aeroPreparedAt=-Infinity;this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
     // Bind the playable car before arming the start so paint, poses and timing
@@ -128,7 +130,7 @@ export class Race {
     if(this.aeroPreparedAt!==this.elapsed)this.prepareAerodynamics(player);this.aeroPreparedAt=-Infinity;
     this.elapsed+=dt;this.lapTime=this.elapsed-this.lapStart;
     const done=Math.floor(player.distance+1e-6);
-    if(done>this.completed){this.laps.update([{id:'PLAYER',name:'YOU',distance:player.distance}],this.elapsed);const recorded=this.laps.lap('PLAYER',done);this.lastLap=recorded?.seconds??this.lapTime;this.pack.recordLap(this.lastLap*88/(this.track.circuit?.referenceLap??88),this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;try{localStorage.setItem(this.storageKey,String(this.best));}catch{}}
+    if(done>this.completed){this.laps.update([{id:'PLAYER',name:'YOU',distance:player.distance}],this.elapsed);const recorded=this.laps.lap('PLAYER',done);this.lastLap=recorded?.seconds??this.lapTime;this.pack.recordLap(this.lastLap*88/(this.track.circuit?.referenceLap??88),this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;writeBest(this.storageKey,this.best,this.recordUser);}
       this.completed=done;this.lapStart=recorded?.elapsed??this.elapsed;this.lapTime=this.elapsed-this.lapStart;if(done>=3){this.laps.update(this.lapSamples(player),this.elapsed);this.position=this.classification.find(row=>row.id==='PLAYER')?.position??this.position;this.timing.update(this.timingSamples(player),this.elapsed);this.state='finished';this.aerodynamics.reset();return;}}
     this.balanceRivals(player,dt);
     // All drivers observe the same instant, before any car advances.

@@ -49,6 +49,9 @@ jobs:
       - name: Check racing and game systems
         if: steps.checks.outputs.ui_only != 'true' && steps.checks.outputs.scenery_only != 'true'
         run: npm test
+      - name: Check account data access rules
+        if: steps.checks.outputs.ui_only != 'true' && steps.checks.outputs.scenery_only != 'true'
+        run: bash tests/account-database.sh
       - run: npm run build -- --base=/f1/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

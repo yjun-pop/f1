@@ -48,6 +48,7 @@ function environment(href='https://example.test/f1/',saved={}){
   globalThis.requestAnimationFrame=fn=>frames.push(fn);
   globalThis.__loadMenuTestGame=async()=>({Game:class {constructor(viewport,hud,options){launches.push({viewport,hud,options});}}});
   globalThis.__loadMenuTestBackdrop=async()=>({CircuitBackdrop:class {setInteracting(){}select(){}dispose(){}}});
+  globalThis.__loadMenuTestAccount=async()=>({account:{initialize:async()=>{},sync:async()=>{}}});
   globalThis.__loadMenuTestWheel=async()=>({openSettings:()=>wheelViews++});
   return {root,app,nodes,storage,launches,contexts,frames,listeners,get reloads(){return reloads;},get wheelViews(){return wheelViews;},get href(){return locationURL.href;},
     async paint(){while(frames.length)await frames.shift()(0);},
@@ -110,6 +111,7 @@ async function bootstrap(unique){
   let js=ts.transpileModule(fs.readFileSync(new URL('../src/main.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   js=js.replace(/import '\.\/[^']+\.css';/g,'').replace(/from '\.\/((?:ui|game)\/\w+)'/g,(_,dep)=>`from '${moduleURL(dep)}'`);
   js=js.replace("import('./ui/CircuitBackdrop')",'globalThis.__loadMenuTestBackdrop()');
+  js=js.replace("import('./account/Account')",'globalThis.__loadMenuTestAccount()');
   js=js.replace("import('./game/Game')",'globalThis.__loadMenuTestGame()');
   js=js.replace("import('./ui/Settings')",'globalThis.__loadMenuTestWheel()');
   await import(`data:text/javascript;base64,${Buffer.from(js+'\n// '+unique).toString('base64')}`);

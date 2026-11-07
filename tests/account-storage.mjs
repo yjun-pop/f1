@@ -1,0 +1,12 @@
+import fs from 'node:fs';import ts from 'typescript';import assert from 'node:assert/strict';
+const compile=path=>'data:text/javascript;base64,'+Buffer.from(ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
+const {readBest,writeBest,setRecordOwner,recordKey}=await import(compile('src/game/RecordStore.ts'));
+const values=new Map();globalThis.localStorage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};
+globalThis.window=new EventTarget();let events=[];window.addEventListener('apex-record-updated',e=>events.push(e.detail));
+const key='apex-best-monza-v3';writeBest(key,90);setRecordOwner('A');assert.equal(readBest(key),0);writeBest(key,88);writeBest(key,91);assert.equal(readBest(key),88);assert.equal(events[0].owner,'A');setRecordOwner('B');assert.equal(readBest(key),0);writeBest(key,92);assert.equal(readBest(key),92);assert.equal(readBest(key,'A'),88);assert.equal(readBest(key,null),90);
+writeBest(key,87,'A',false);assert.equal(readBest(key,'A'),87);assert.equal(readBest(key,'B'),92);for(const bad of[NaN,Infinity,-1,0])assert.equal(writeBest(key,bad),false);
+const original=localStorage.setItem;localStorage.setItem=()=>{throw Error('blocked')};assert.equal(writeBest(key,85,'A'),false);assert.equal(events.at(-1).seconds,85);localStorage.setItem=original;
+const {accountConfig}=await import(compile('src/account/Config.ts'));assert.equal(accountConfig({supabaseUrl:'',publishableKey:''}),null);assert.ok(accountConfig({supabaseUrl:'https://test.supabase.co',publishableKey:'sb_publishable_example'}));
+for(const key of['sb_secret_private','invalid','eyJ.'+Buffer.from(JSON.stringify({role:'service_role'})).toString('base64url')+'.x'])assert.throws(()=>accountConfig({supabaseUrl:'https://test.supabase.co',publishableKey:key}));
+for(const url of['http://test.supabase.co','https://evil.example','https://test.supabase.co/path','https://user:password@test.supabase.co'])assert.throws(()=>accountConfig({supabaseUrl:url,publishableKey:'sb_publishable_example'}));
+console.log('PASS: guest/A/B isolation, per-account minimums, owner-pinned writes, offline failure event, public config and secret-key rejection');
