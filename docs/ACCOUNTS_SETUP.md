@@ -12,7 +12,7 @@
 5. 프로젝트 Settings의 API 항목에서 프로젝트 URL과 **publishable key**를 확인해 [account-config.json](../public/account-config.json)의 `supabaseUrl`, `publishableKey`에 넣습니다. 기존 프로젝트의 `anon` 공개 키도 허용합니다. 이 두 값은 브라우저에 공개됩니다. `service_role`, `sb_secret_` 키나 DB 비밀번호는 절대 넣지 않습니다.
 6. 빌드·배포 후 두 개의 테스트 계정으로 가입, 이메일 인증, 로그인, 비밀번호 재설정, 로그아웃, 다른 기기의 기록 복원을 확인합니다. PKCE 이메일 링크는 요청했던 브라우저에서 여는 것이 기본입니다.
 
-Supabase 기본 이메일 발송은 테스트 제한이 있습니다. 공개 운영 전 본인 발송 도메인/SMTP를 연결하고 Auth의 가입·로그인·이메일 발송 제한과 CAPTCHA를 설정합니다. 프로젝트 비용과 이용 한도는 Supabase 대시보드에서 관리합니다.
+Supabase 기본 이메일 발송은 테스트 제한이 있습니다. 공개 운영 전 본인 발송 도메인/SMTP를 연결하고 Auth의 가입·로그인·이메일 발송 제한을 확인합니다. CAPTCHA는 현재 화면에 연결되지 않았으므로, 사용하려면 별도 토큰 입력 연동이 필요합니다. 프로젝트 비용과 이용 한도는 Supabase 대시보드에서 관리합니다.
 
 ## 저장 범위
 
