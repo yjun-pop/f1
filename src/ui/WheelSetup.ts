@@ -1,4 +1,5 @@
 import './WheelSetup.css';
+import './RacingTheme.css';
 import {currentWheelDiagnostic} from './WheelDiagnostics';
 import {wheelInput,changedAxis,changedPedal,validWheelProfile,steeringValue,pedalValue,pedalRaw,findWheelDevice,WHEEL_ACTIONS,type WheelAction,type WheelInput,type WheelProfile,type WheelDevice} from '../game/WheelInput';
 
