@@ -192,3 +192,14 @@ for(const [metres,elapsed,gap,speed,slowSpeed] of [[300,5,30,65,30],[740,8,35,50
  rival.position.x=1;assert.equal(corner.update(driver,sample(),true,false),null,'Overlapping corridors must still cancel the manoeuvre');
  console.log('PASS: established corner corridor survives safe side-by-side overlap and yields to actual lateral conflict');
 }
+
+// Returning from a passing lane must use the transition that was validated.
+{
+ const returning=new TrafficPlanner(straight,{aggression:.8,caution:.3,phase:1,lineBias:0},straight);returning.mergeUntil=52;
+ const mergingCar={...car,position:straight.point(.1).add(new THREE.Vector3(1,0,0))};
+ const route=returning.update(mergingCar,[],50,60,true,()=>60,true);
+ assert.equal(route?.mode,'merge');assert.equal(route.holdLane,false);
+ assert.ok(route.point(.1).distanceTo(mergingCar.position)<1e-8,'Merge begins at the current corridor');
+ assert.ok(route.laneAt(.1+5/6000)>.9,'Merge must not aim immediately at the reference line');
+ console.log('PASS: continuous merge origin and gradual near-field steering target');
+}
