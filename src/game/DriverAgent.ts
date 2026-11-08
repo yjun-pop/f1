@@ -122,7 +122,7 @@ export class DriverAgent {
     const crowdedField=fieldSize>6;
     // Keep the validated launch speed envelope, but do not switch off racing
     // decisions for the whole grid until a fixed point on the map.
-    const racingField=fieldSize>1;
+    const racingField=fieldSize>2;
     const launchEnvelope=racingField&&this.elapsed<40&&car.distance*this.track.length<(this.track.circuit?.formationEnd??1300);
     // A multi-car squeeze has no reliable independent lateral escape room.
     // Each driver reassesses its own immediate neighbours, so a clear car can
@@ -130,7 +130,7 @@ export class DriverAgent {
     const occupied=traffic.filter(other=>Math.abs(gapTo(other))<55&&Math.abs(biasAt(other)-currentBias)<8).length>=3;
     const steeringRoom=[0,60,120,180,240].every(distance=>this.speedPlanner.cornerLimit(car.progress+distance/this.track.length,o.racePace??o.pace,car.gripScale)>Math.max(40,car.speed*.9));
     const manoeuvreRoom=!occupied||steeringRoom;
-    const canRace=racingField&&manoeuvreRoom;
+    const canRace=fieldSize>1&&manoeuvreRoom;
     // This selects the validated high-speed control calibration, not permission
     // to compete: independent local racing is enabled separately by canRace.
     const competitive=racingField&&!launchEnvelope;
@@ -298,7 +298,7 @@ export class DriverAgent {
       return lane>Math.min(currentBias,desiredLane)-clearance&&lane<Math.max(currentBias,desiredLane)+clearance;
     })){desiredLane=currentBias;if(!passing)this.intent='yield';}
     const availableSpeed=Math.min(plannedTarget,strategy.deploy&&car.boost>strategy.reserve?o.speedCap:o.speedCap*87/94);
-    const candidate=this.trafficPlanner.update(car,traffic,this.elapsed,availableSpeed,canRace&&!settling&&!cornerPlan&&this.corner.mayChangeRacingLine(car.distance)&&!passing,speedAt);
+    const candidate=this.trafficPlanner.update(car,traffic,this.elapsed,availableSpeed,canRace&&strategy.allowAttack&&!settling&&!cornerPlan&&this.corner.mayChangeRacingLine(car.distance)&&!passing,speedAt);
     // A stale merge from the previous pass cannot cancel a fresh, legal
     // defensive move. Actual obstacle avoidance still takes priority.
     const localRoute=this.intent==='defend'&&(candidate?.mode==='merge'||candidate?.mode==='attack'||candidate?.longitudinalOnly)?null:candidate;
