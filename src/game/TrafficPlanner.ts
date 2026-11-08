@@ -191,7 +191,7 @@ export class TrafficPlanner {
       // Compare usable track progress and passing gain; raw outside-lane speed can mislead.
       const c=this.character,sidePreference=Math.sin(c.phase*1.7+c.lineBias)*.2;
       const switchCost=this.commitment&&Math.abs(goal-this.commitment.lane)>1.5?2+c.caution*2:0;
-      const score=(crowded?speed:ownRate)*(.24+c.aggression*.12)+(crowded?0:Math.min(12,Math.max(0,ownRate-targetRate)))*(.25+c.aggression*.35)-Math.abs(goal-from)*(.45+c.caution*.3)-switchCost+goal*sidePreference+(rejoining?3:0)+(hazard&&this.commitment&&Math.abs(goal-this.commitment.lane)<.3?10:0);
+      const score=(crowded||merging?speed:ownRate)*(.24+c.aggression*.12)+(crowded||merging?0:Math.min(12,Math.max(0,ownRate-targetRate)))*(.25+c.aggression*.35)-Math.abs(goal-from)*(.45+c.caution*.3)-switchCost+goal*sidePreference+(rejoining?3:0)+(hazard&&this.commitment&&Math.abs(goal-this.commitment.lane)<.3?10:0);
       if(!best||score>best.score)best={lane:goal,speed,score,route};
     }
     if(!best){
