@@ -20,7 +20,7 @@ let savedCircuit:unknown,savedTransmission:unknown;
 try{savedCircuit=localStorage.getItem('apex-circuit');savedTransmission=localStorage.getItem('apex-transmission-mode');}catch{}
 const selected=selectedCircuit(window.location.search,savedCircuit),mode=transmissionMode(savedTransmission);
 let rivals=opponentCount(new URLSearchParams(window.location.search).get('opponents'));
-let launching=false;
+let launching=false,lobbyOpening=false;let lobby:import('./ui/RaceLobby').RaceLobby|undefined;
 let previewInteraction=false;
 let backdrop:import('./ui/CircuitBackdrop').CircuitBackdrop|undefined,previewId=selected.id;
 let bootObserver:MutationObserver|undefined;
@@ -62,7 +62,13 @@ function start(id:CircuitId,transmission:TransmissionMode){
     }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();bootScreen.finish();}
   }));
 }
-const menu=new CircuitMenu(front,{selected:selected.id,mode,totalLaps,opponents:rivals,opponentsChanged:value=>{rivals=value;},prefix:'front-',start,preview,wheel:()=>{
+function configure(id:CircuitId,transmission:TransmissionMode){
+  if(launching||lobbyOpening||lobby)return;lobbyOpening=true;
+  void import('./ui/RaceLobby').then(({RaceLobby})=>{if(launching)return;lobbyOpening=false;backdrop?.setInteracting(true);
+    lobby=new RaceLobby(circuitById(id).label,totalLaps,rivals,{start:count=>{lobby=undefined;rivals=count;start(id,transmission);},back:()=>{lobby=undefined;updatePreviewInteraction();}});
+  }).catch(error=>{lobbyOpening=false;console.error('Participant screen unavailable',error);menu.setError();});
+}
+const menu=new CircuitMenu(front,{selected:selected.id,mode,totalLaps,opponents:rivals,configure,prefix:'front-',start,preview,wheel:()=>{
   previewInteraction=true;backdrop?.setInteracting(true);
   void import('./ui/Settings').then(module=>module.openSettings());
 },account:()=>{void import('./ui/AccountPanel').then(m=>m.openAccount());},transmission:value=>{try{localStorage.setItem('apex-transmission-mode',value);}catch{}}});
@@ -87,7 +93,7 @@ const refreshRecords=()=>menu.refreshRecords();window.addEventListener('apex-acc
 const syncSettings=()=>{try{menu.setTransmission(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}};
 window.addEventListener('apex-settings-change',syncSettings);
 
-return ()=>{launching=true;bootObserver?.disconnect();window.removeEventListener('apex-account-change',refreshRecords);window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
+return ()=>{launching=true;lobby?.dispose();bootObserver?.disconnect();window.removeEventListener('apex-account-change',refreshRecords);window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
 }
 if(new URLSearchParams(window.location.search).has('circuit')||new URLSearchParams(window.location.search).get('race')==='start')quickRace();
 else void import('./ui/TitleScreen').then(({TitleScreen})=>{const title=new TitleScreen(app,quickRace);void title.ready.then(()=>{if(title.active)bootScreen.finish();});}).catch(error=>{console.error('Title screen unavailable',error);bootScreen.fail();});

@@ -50,6 +50,7 @@ function environment(href='https://example.test/f1/',saved={}){
   globalThis.__loadMenuTestBackdrop=async()=>({CircuitBackdrop:class {setInteracting(){}select(){}dispose(){}}});
   globalThis.__loadMenuTestAccount=async()=>({account:{initialize:async()=>{},sync:async()=>{}}});
   globalThis.__loadMenuTestWheel=async()=>({openSettings:()=>wheelViews++});
+  globalThis.__menuLobby=undefined;globalThis.__loadMenuTestLobby=async()=>({RaceLobby:class{constructor(label,laps,count,actions){globalThis.__menuLobby={label,laps,count,actions};}dispose(){}}});
   return {root,app,nodes,storage,launches,contexts,frames,listeners,get reloads(){return reloads;},get wheelViews(){return wheelViews;},get href(){return locationURL.href;},
     async paint(){while(frames.length)await frames.shift()(0);},
     key(code,target={matches:()=>false},repeat=false){for(const fn of listeners.get('keydown')??[])fn({code,target,repeat,preventDefault(){}});}};
@@ -114,6 +115,7 @@ async function bootstrap(unique){
   js=js.replace("import('./account/Account')",'globalThis.__loadMenuTestAccount()');
   js=js.replace("import('./game/Game')",'globalThis.__loadMenuTestGame()');
   js=js.replace("import('./ui/Settings')",'globalThis.__loadMenuTestWheel()');
+  js=js.replace("import('./ui/RaceLobby')",'globalThis.__loadMenuTestLobby()');
   await import(`data:text/javascript;base64,${Buffer.from(js+'\n// '+unique).toString('base64')}`);
 }
 env=environment('https://example.test/f1/?circuit=silverstone',{'apex-circuit':'spa','apex-transmission-mode':'manual'});
@@ -125,10 +127,11 @@ console.log('PASS: wheel settings opens lazily from the real start screen withou
 env.nodes.get('front-circuit-spa').emit('change');env.nodes.get('front-circuit-monza').emit('change');
 assert.equal(env.launches.length,0);assert.equal(env.frames.length,0);
 env.nodes.get('front-start').emit('click');env.nodes.get('front-start').emit('click');
+for(let i=0;i<4;i++)await Promise.resolve();assert.equal(env.contexts.length,0,'Circuit confirmation opens the lobby without audio or race');assert.equal(globalThis.__menuLobby.laps,3);globalThis.__menuLobby.actions.start(2);
 assert.equal(env.contexts.length,1);assert.equal(env.contexts[0].resumed,true,'Audio must be unlocked before asynchronous world setup');
 assert.equal(env.launches.length,0,'Loading must be allowed to paint before construction');
 await env.paint();assert.equal(env.launches.length,1);
-assert.equal(env.launches[0].options.circuit,'monza');assert.equal(env.launches[0].options.transmission,'manual');assert.equal(env.launches[0].options.autoStart,true);
+assert.equal(env.launches[0].options.circuit,'monza');assert.equal(env.launches[0].options.opponentCount,2);assert.equal(env.launches[0].options.transmission,'manual');assert.equal(env.launches[0].options.autoStart,true);
 assert.equal(env.launches[0].options.audioContext,env.contexts[0]);assert.equal(env.nodes.get('front-menu').removed,true);
 assert.equal(env.storage.get('apex-circuit'),'monza');assert.equal(env.listeners.get('keydown').size,0);
 console.log('PASS: actual application bootstrap defers racing world/audio setup, previews without reloads, paints loading and launches the confirmed map once with gesture-unlocked audio');

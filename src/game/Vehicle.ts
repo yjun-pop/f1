@@ -24,7 +24,7 @@ export class Vehicle {
   impactSerial=0;impactStrength=0;
   recordImpact(strength:number){if(strength>.5){this.impactSerial++;this.impactStrength=strength;}}
   distance=0;throttle=0;brake=0;boost=100;boosting=false;
-  private lastProgress=0;
+  private lastProgress=0;private reverseHold=0;
   constructor(private track:Track,scene:THREE.Scene,private color=0x8c969f,performance={grip:1,power:1}){
     this.baseGrip=THREE.MathUtils.clamp(performance.grip,1,1.5);
     this.powerScale=THREE.MathUtils.clamp(performance.power,1,1.5);
@@ -32,7 +32,7 @@ export class Vehicle {
   }
   reset(){this.resetAt(0,0);this.boost=100;}
   resetAt(progress:number,lane=0){
-    this.impactSerial=0;this.impactStrength=0;
+    this.impactSerial=0;this.impactStrength=0;this.reverseHold=0;
     this.transmission.reset();this.aero.reset();this.drsRequested=false;
     this.progress=((progress%1)+1)%1;this.lastProgress=this.progress;this.distance=progress;this.lap=1+Math.max(0,Math.floor(progress));
     this.position.copy(this.track.point(progress)).addScaledVector(this.track.normal(progress),lane);
@@ -55,7 +55,10 @@ export class Vehicle {
     if(down!==up){if(down)this.shiftGear(-1);else if(up)this.shiftGear(1);}
     const analog=input.analog?.(),keyBrake=input.down('KeyS','ArrowDown'),keySteer=input.down('KeyA','ArrowLeft','KeyD','ArrowRight');
     const brake=keyBrake?1:analog?.brake??0,steer=keySteer?(input.down('KeyA','ArrowLeft')?1:0)-(input.down('KeyD','ArrowRight')?1:0):analog?.steer??0;
-    this.drive(dt,{throttle:keyBrake?0:Math.max(analog?.throttle??0,input.down('KeyW','ArrowUp')?1:0),brake,steer,boost:brake===0&&input.down('ShiftLeft','ShiftRight'),keyboard:!analog||keySteer});
+    const requestedThrottle=Math.max(analog?.throttle??0,input.down('KeyW','ArrowUp')?1:0),throttle=keyBrake?0:requestedThrottle;
+    this.reverseHold=brake>.5&&requestedThrottle<.1&&this.speed<.5?this.reverseHold+dt:0;
+    const reverse=brake>.5&&requestedThrottle<.1&&(this.speed<-.025||this.reverseHold>=.4);
+    this.drive(dt,{throttle,brake,steer,reverse,boost:brake===0&&input.down('ShiftLeft','ShiftRight'),keyboard:!analog||keySteer});
   }
   drive(dt:number,control:Controls){
     if(!this.aero.available||control.brake>0)this.drsRequested=false;

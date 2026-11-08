@@ -75,3 +75,12 @@ for(const step of [1/30,1/60,1/120,.037]){
 }
 const solo=new Race(track,scene,new LinePlanner(track),{opponentCount:0});assert.equal(solo.opponents.length,0);
 console.log('PASS: solo racing, four-step-rate moving approaches, exact zero-distance/zero-time five-light handoff, continuous speed and reset without a phantom lap');
+
+const reversing=new Vehicle(track,scene);reversing.resetAt(.3);const keys=new Set(['KeyS']);const input={down:(...names)=>names.some(n=>keys.has(n)),consume:()=>false};
+for(let i=0;i<30;i++)reversing.update(1/120,input);assert.equal(reversing.speed,0,'A short brake press at rest must not reverse');
+for(let i=0;i<240;i++)reversing.update(1/120,input);assert.ok(reversing.speed<-.5&&reversing.speed>=-2.2);assert.ok(reversing.distance<.3,'Reverse must move backwards along the real track');
+keys.clear();keys.add('KeyW');for(let i=0;i<400;i++)reversing.update(1/120,input);assert.ok(reversing.speed>0,'Throttle stops reverse and returns to forward travel');
+reversing.resetAt(.3);reversing.speed=20;keys.clear();keys.add('KeyS');for(let i=0;i<30;i++)reversing.update(1/120,input);assert.ok(reversing.speed>0,'Braking at speed must not engage reverse');
+console.log('PASS: deliberate brake-hold reverse, actual backward progress, bounded reverse speed, forward recovery and unchanged high-speed braking');
+
+reversing.resetAt(.3);keys.clear();keys.add('KeyW');keys.add('KeyS');for(let i=0;i<120;i++)reversing.update(1/120,input);assert.equal(reversing.speed,0,'Overlapping throttle and brake must not engage reverse');
