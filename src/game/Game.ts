@@ -10,6 +10,7 @@ import {Vehicle} from './Vehicle';
 import {CockpitCamera} from './Camera';
 import {RacingLine} from './RacingLine';
 import {Race} from './Race';
+import {quickRaceLaps} from './RaceLaps';
 import {HUD} from '../ui/HUD';
 import {RearViewMirror} from './RearViewMirror';
 import {WorldLighting} from './WorldLighting';
@@ -26,7 +27,7 @@ export class Game {
   private appliedTier?:string;private graphics:GraphicsQuality;private lighting:WorldLighting;
   private paused=false;private changingCircuit=false;private previous=performance.now();private accumulator=0;
   private shadows=new ShadowBudget();private sceneAge=Infinity;private scenePosition=new THREE.Vector3(Infinity,0,0);private hudAge=Infinity;private hudStamp='';private renderAge=Infinity;private renderStamp='';
-  constructor(container:HTMLElement,hudRoot:HTMLElement,options:{circuit?:CircuitId;autoStart?:boolean;transmission?:TransmissionMode;audioContext?:AudioContext}={}){
+  constructor(container:HTMLElement,hudRoot:HTMLElement,options:{circuit?:CircuitId;autoStart?:boolean;transmission?:TransmissionMode;audioContext?:AudioContext;totalLaps?:number}={}){
     this.renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.7));this.renderer.setSize(window.innerWidth,window.innerHeight);this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=.95;this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;container.appendChild(this.renderer.domElement);
     let savedGraphics:unknown;try{savedGraphics=localStorage.getItem('apex-graphics-quality');}catch{}
     this.graphics=new GraphicsQuality(graphicsMode(savedGraphics),recommendedTier({memory:(navigator as Navigator&{deviceMemory?:number}).deviceMemory,cores:navigator.hardwareConcurrency,maxTextureSize:this.renderer.capabilities.maxTextureSize,width:window.innerWidth}));
@@ -35,7 +36,7 @@ export class Game {
     const environment=environmentFor(circuit.id);this.renderer.toneMappingExposure=environment.exposure;
     this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier,!!circuit.night,environment);this.sun=this.lighting.sun;
     this.renderer.shadowMap.autoUpdate=false;
-    this.track=new Track(this.scene,circuit);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle});
+    this.track=new Track(this.scene,circuit);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle,totalLaps:quickRaceLaps(options.totalLaps??new URLSearchParams(window.location.search).get('laps'))});
     try{localStorage.setItem('apex-circuit',this.track.circuit.id);}catch{}
     try{
       const saved=localStorage.getItem('apex-motion-strength');
@@ -43,7 +44,7 @@ export class Game {
     }catch{this.feedback.strength=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?0:.6;}
     try{this.vehicle.setTransmissionMode(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}
     if(options.transmission)this.vehicle.setTransmissionMode(options.transmission);
-    this.hud=new HUD(hudRoot,this.track,{start:id=>{if(id!==this.track.circuit.id){this.selectCircuit(id,true);return;}if(this.race.state==='finished')this.restart();this.race.start();},restart:()=>this.restart(),camera:()=>this.cockpit.toggle(),resume:()=>this.resume(),recover:()=>{this.vehicle.recover();this.feedback.reset();this.resume();},volume:value=>this.audio.setVolume(value),audioLevel:this.audio.level,motionLevel:this.feedback.strength,motion:value=>{this.feedback.strength=value;try{localStorage.setItem('apex-motion-strength',String(value));}catch{}},graphicsMode:this.graphics.mode,graphicsTier:this.graphics.tier,graphics:mode=>this.selectGraphics(mode),transmissionMode:this.vehicle.transmission.mode,transmission:mode=>this.selectTransmission(mode),menu:()=>this.selectCircuit(this.track.circuit.id),wheel:()=>this.openWheelSettings()});
+    this.hud=new HUD(hudRoot,this.track,{totalLaps:this.race.laps.totalLaps,start:id=>{if(id!==this.track.circuit.id){this.selectCircuit(id,true);return;}if(this.race.state==='finished')this.restart();this.race.start();},restart:()=>this.restart(),camera:()=>this.cockpit.toggle(),resume:()=>this.resume(),recover:()=>{this.vehicle.recover();this.feedback.reset();this.resume();},volume:value=>this.audio.setVolume(value),audioLevel:this.audio.level,motionLevel:this.feedback.strength,motion:value=>{this.feedback.strength=value;try{localStorage.setItem('apex-motion-strength',String(value));}catch{}},graphicsMode:this.graphics.mode,graphicsTier:this.graphics.tier,graphics:mode=>this.selectGraphics(mode),transmissionMode:this.vehicle.transmission.mode,transmission:mode=>this.selectTransmission(mode),menu:()=>this.selectCircuit(this.track.circuit.id),wheel:()=>this.openWheelSettings()});
     this.mirror=new RearViewMirror(this.renderer,this.scene,hudRoot.querySelector<HTMLElement>('#rearview-viewport')!);
     this.applyGraphics();
     const unlockAudio=()=>this.audio.unlock([this.vehicle,...this.race.opponents.map(o=>o.car)]);

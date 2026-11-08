@@ -51,3 +51,17 @@ const visual=new RacingLine(track,scene);visual.zones=[{start:track.length-40,en
 function markerPositions(metres){player.resetAt(metres/track.length);player.speed=70;visual.update(player);const result=new Set(),matrix=new THREE.Matrix4();for(let i=0;i<visual.markers.count;i++){visual.markers.getMatrixAt(i,matrix);result.add([matrix.elements[12],matrix.elements[14]].map(v=>v.toFixed(3)).join(','));}assert.equal(visual.targetKmh,Math.round(visual.planner.advice(player.progress,player.speed)*3.6));assert.deepEqual(visual.brakingCue,visual.planner.brakingCue(player.progress,player.speed));return result;}
 const before=markerPositions(track.length-2),after=markerPositions(1);assert.ok(before.size>3&&after.size>3);assert.ok([...before].filter(key=>after.has(key)).length>=Math.min(before.size,after.size)-2,'Markers must stay at their world positions across a lap seam');
 console.log('PASS: shared HUD/line target and braking cue, fixed world-space arrow spacing across the start/finish seam');
+
+const {QUICK_RACE_LAPS,quickRaceLaps}=await import(moduleURL('game/RaceLaps'));
+for(const n of QUICK_RACE_LAPS){
+ assert.equal(quickRaceLaps(String(n)),n);const clock=new RaceLaps(1000,n),sample={id:'PLAYER',name:'YOU',distance:0};clock.reset([sample]);
+ for(let second=1;second<=n*100+100;second++){sample.distance=second/100;clock.update([sample],second);}
+ const row=clock.standings([sample],n*100+100)[0];assert.equal(row.finish,n*100);assert.equal(row.lapTimes.length,n);assert.equal((playerLapCards(row,n).match(/class="player-lap /g)||[]).length,n);assert.ok(resultTable([{...row,finish:null}],n).includes(` / ${n}랩`));
+}
+for(const invalid of [null,undefined,'0','2','7','11','-1','NaN'])assert.equal(quickRaceLaps(invalid),3);
+for(const n of [1,10]){
+ const driver=new Vehicle(track,scene),session=new Race(track,scene,new LinePlanner(track),{player:driver,opponentCount:1,totalLaps:n});session.start();session.update(session.countdown+.01,driver);driver.resetAt(0);driver.position.set(1e6,0,1e6);session.opponents[0].plan=()=>{};session.opponents[0].advance=()=>{};session.balanceRivals=()=>{};session.update(0,driver);
+ for(let second=1;second<=n*100;second++){driver.distance=second/100;session.update(1,driver);if(second<n*100)assert.equal(session.state,'racing');}
+ assert.equal(session.state,'finished');assert.equal(session.laps.totalLaps,n);assert.equal(session.classification.find(r=>r.id==='PLAYER').lapTimes.length,n);session.reset();assert.equal(session.laps.totalLaps,n);
+}
+console.log('PASS: 1/3/5/10 lap clocks, bounded URL choices, variable result rows/cards and real Race finish/restart at 1 and 10 laps');

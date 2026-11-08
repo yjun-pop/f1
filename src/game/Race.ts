@@ -9,7 +9,7 @@ import {PackDirector} from './PackDirector';
 import {StartSequence,type StartSignal} from './StartSequence';
 import {DEFAULT_FIELD_SIZE,DRIVER_PROFILES} from './RaceRoster';
 import {RaceTiming} from './RaceTiming';
-import {RaceLaps} from './RaceLaps';
+import {RaceLaps,quickRaceLaps} from './RaceLaps';
 export {formatTime} from './RaceLaps';
 import {AISpeedPlanner} from './AISpeedPlanner';
 import {CornerPaceObserver} from './CornerPaceObserver';
@@ -39,9 +39,9 @@ export class Race {
   private lapSamples(player:Vehicle){return [{id:'PLAYER',name:'YOU',distance:player.distance},...this.opponents.map(o=>({id:o.id,name:o.name,distance:o.car.distance}))];}
   get classification(){return this.player?this.laps.standings(this.lapSamples(this.player),this.elapsed):[];}
   private gridPlayer?:Vehicle;
-  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number;player?:Vehicle}={}){
+  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number;player?:Vehicle;totalLaps?:number}={}){
     this.gridPlayer=options.player;
-    this.timing=new RaceTiming(track.length);this.laps=new RaceLaps(track.length);this.aerodynamics=new RaceAerodynamics(track,planner);track.details.addDRSBoards(track,this.aerodynamics.zones);
+    this.timing=new RaceTiming(track.length);this.laps=new RaceLaps(track.length,quickRaceLaps(options.totalLaps));this.aerodynamics=new RaceAerodynamics(track,planner);track.details.addDRSBoards(track,this.aerodynamics.zones);
     // Rivals retain fixed steering/grip calibration, but share the player's
     // engine output, ERS and speed limits. Difficulty adjusts driving targets.
     this.aiSpeeds=Float64Array.from(planner.cornerSpeeds);
@@ -131,7 +131,7 @@ export class Race {
     this.elapsed+=dt;this.lapTime=this.elapsed-this.lapStart;
     const done=Math.floor(player.distance+1e-6);
     if(done>this.completed){this.laps.update([{id:'PLAYER',name:'YOU',distance:player.distance}],this.elapsed);const recorded=this.laps.lap('PLAYER',done);this.lastLap=recorded?.seconds??this.lapTime;this.pack.recordLap(this.lastLap*88/(this.track.circuit?.referenceLap??88),this.completed===0);if(!this.best||this.lastLap<this.best){this.best=this.lastLap;writeBest(this.storageKey,this.best,this.recordUser);}
-      this.completed=done;this.lapStart=recorded?.elapsed??this.elapsed;this.lapTime=this.elapsed-this.lapStart;if(done>=3){this.laps.update(this.lapSamples(player),this.elapsed);this.position=this.classification.find(row=>row.id==='PLAYER')?.position??this.position;this.timing.update(this.timingSamples(player),this.elapsed);this.state='finished';this.aerodynamics.reset();return;}}
+      this.completed=done;this.lapStart=recorded?.elapsed??this.elapsed;this.lapTime=this.elapsed-this.lapStart;if(done>=this.laps.totalLaps){this.laps.update(this.lapSamples(player),this.elapsed);this.position=this.classification.find(row=>row.id==='PLAYER')?.position??this.position;this.timing.update(this.timingSamples(player),this.elapsed);this.state='finished';this.aerodynamics.reset();return;}}
     this.balanceRivals(player,dt);
     // All drivers observe the same instant, before any car advances.
     const observation=observeTraffic([player,...this.opponents.map(o=>o.car)]);

@@ -1,3 +1,5 @@
+export const QUICK_RACE_LAPS=[1,3,5,10] as const;
+export function quickRaceLaps(value:unknown){return QUICK_RACE_LAPS.find(laps=>String(laps)===String(value))??3;}
 export interface LapSample {id:string;name:string;distance:number}
 export interface LapRecord {lap:number;seconds:number|null;elapsed:number}
 interface LapHistory {distance:number;time:number;next:number;start:number;valid:boolean;laps:LapRecord[]}

@@ -18,11 +18,11 @@ export class HUD {
   private raceActive=false;private wasPaused=false;private session:RaceSessionPanel;private sessionState='';
   private textNodes=new Map<string,Element>();
   private mapPoint:(p:{x:number;z:number})=>{x:number;y:number};
-  constructor(root:HTMLElement,track:Track,actions:{start:(id:CircuitId)=>void,restart:()=>void,camera:()=>void;resume:()=>void;recover:()=>void;volume:(value:number)=>void;audioLevel:number;motionLevel:number;motion:(value:number)=>void;graphicsMode:GraphicsMode;graphicsTier:GraphicsTier;graphics:(mode:GraphicsMode)=>void;transmissionMode?:TransmissionMode;transmission?:(mode:TransmissionMode)=>void;menu?:()=>void;wheel?:()=>void}) {
+  constructor(root:HTMLElement,track:Track,actions:{totalLaps?:number;start:(id:CircuitId)=>void,restart:()=>void,camera:()=>void;resume:()=>void;recover:()=>void;volume:(value:number)=>void;audioLevel:number;motionLevel:number;motion:(value:number)=>void;graphicsMode:GraphicsMode;graphicsTier:GraphicsTier;graphics:(mode:GraphicsMode)=>void;transmissionMode?:TransmissionMode;transmission?:(mode:TransmissionMode)=>void;menu?:()=>void;wheel?:()=>void}) {
     this.root=root;
-    root.innerHTML=`<header><div class="brand"><i>Λ</i> APEX<span>FORMULA</span><small>OPEN WHEEL RACING / 01</small></div><div class="session"><b>${track.name} · ${track.country}</b><small>RACE · 3 LAPS · DRY · ${track.circuit?.night?'NIGHT':'DAYLIGHT'}</small></div></header>
+    root.innerHTML=`<header><div class="brand"><i>Λ</i> APEX<span>FORMULA</span><small>OPEN WHEEL RACING / 01</small></div><div class="session"><b>${track.name} · ${track.country}</b><small>RACE · ${actions.totalLaps??3} LAPS · DRY · ${track.circuit?.night?'NIGHT':'DAYLIGHT'}</small></div></header>
     <div class="rearview-frame" role="img" aria-label="차량 뒤쪽 실시간 백미러"><div id="rearview-viewport"></div><span>REAR VIEW</span></div>
-    <aside class="timing"><div class="eyebrow">레이스 순위</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>순위</small></span></div><div class="intervals" aria-label="앞뒤 차량 시간 차"><div class="interval-row"><span>앞차 <b id="gap-ahead-name">—</b></span><strong id="gap-ahead">—</strong></div><div class="interval-row"><span>뒤차 <b id="gap-behind-name">—</b></span><strong id="gap-behind">—</strong></div></div><div class="timingrow"><span>LAP</span><b id="lap">1 / 3</b></div><div class="timingrow"><span>현재 랩</span><b id="current"></b></div><div class="timingrow"><span>이전 랩</span><b id="last"></b></div><div class="timingrow best"><span title="개인 최고 랩">최고 랩</span><b id="best"></b></div></aside>
+    <aside class="timing"><div class="eyebrow">레이스 순위</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>순위</small></span></div><div class="intervals" aria-label="앞뒤 차량 시간 차"><div class="interval-row"><span>앞차 <b id="gap-ahead-name">—</b></span><strong id="gap-ahead">—</strong></div><div class="interval-row"><span>뒤차 <b id="gap-behind-name">—</b></span><strong id="gap-behind">—</strong></div></div><div class="timingrow"><span>LAP</span><b id="lap">1 / ${actions.totalLaps??3}</b></div><div class="timingrow"><span>현재 랩</span><b id="current"></b></div><div class="timingrow"><span>이전 랩</span><b id="last"></b></div><div class="timingrow best"><span title="개인 최고 랩">최고 랩</span><b id="best"></b></div></aside>
     <div class="mapbox"><canvas id="map" width="240" height="190"></canvas><span>${track.name} · ${track.country} · ${(track.length/1000).toFixed(2)} KM</span></div>
 <div class="aero-status" aria-label="DRS와 슬립스트림 상태"><b id="drs-status">DRS · 선두 첫 랩 후</b><span id="draft-status"></span></div><div id="warning"></div><div id="proximity-ring" class="proximity-ring" hidden role="group" aria-label="주변 차량 접근 방향"></div><div id="wheel-notice" class="wheel-input-notice" role="status" hidden></div><footer><span id="gearbox-label">자동</span><span id="audio-state"></span><button id="camera">시점 변경 · C</button><button id="hud-settings">설정 / 도움말</button><button id="restart">다시 시작</button></footer>
     <div class="overlay race-session-overlay" id="overlay" hidden>${raceSessionMarkup()}</div>
@@ -89,7 +89,7 @@ export class HUD {
     this.wasPaused=paused;this.setTransmissionMode(v.transmission.mode);
     this.root.classList.toggle('cockpit-view',cameraMode===1);
     this.text('field-size',String(r.fieldSize).padStart(2,'0'));this.text('driver-count',String(r.fieldSize).padStart(2,'0'));
-    this.text('position',String(playerStanding?.position??r.position).padStart(2,'0'));this.text('lap',`${Math.min(v.lap,3)} / 3`);this.text('current',formatTime(r.lapTime));this.text('last',formatTime(r.lastLap));this.text('best',formatTime(r.best));
+    this.text('position',String(playerStanding?.position??r.position).padStart(2,'0'));this.text('lap',`${Math.min(v.lap,r.laps?.totalLaps??3)} / ${r.laps?.totalLaps??3}`);this.text('current',formatTime(r.lapTime));this.text('last',formatTime(r.lastLap));this.text('best',formatTime(r.best));
     const intervals=r.intervals,active=r.state==='racing'||r.state==='finished';
     this.text('gap-ahead-name',active?intervals.ahead?.name??'—':'—');this.text('gap-behind-name',active?intervals.behind?.name??'—':'—');
     this.text('gap-ahead',formatInterval(intervals.ahead,true,active));this.text('gap-behind',formatInterval(intervals.behind,false,active));
@@ -99,7 +99,7 @@ export class HUD {
     (this.root.querySelector('#overlay') as HTMLElement).hidden=paused||r.state!=='ready'&&r.state!=='finished';
     if(this.sessionState!==r.state){
       if(r.state==='ready')this.session.ready(track.name);
-      if(r.state==='finished')this.session.result(track.name,playerStanding?.position??r.position,r.fieldSize,formatTime(playerStanding?.finish??r.elapsed),formatTime(playerStanding?playerStanding.best:r.best),{rows:standings,previousBest:r.bestAtStart??0});
+      if(r.state==='finished')this.session.result(track.name,playerStanding?.position??r.position,r.fieldSize,formatTime(playerStanding?.finish??r.elapsed),formatTime(playerStanding?playerStanding.best:r.best),{rows:standings,previousBest:r.bestAtStart??0,totalLaps:r.laps?.totalLaps??3});
       this.sessionState=r.state;
     }
     const ctx=this.map;ctx.clearRect(0,0,240,190);ctx.lineWidth=7;ctx.strokeStyle='#ffffff18';ctx.stroke(this.path);ctx.lineWidth=2;ctx.strokeStyle='#b7c7c5';ctx.stroke(this.path);

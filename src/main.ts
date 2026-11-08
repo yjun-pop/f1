@@ -4,13 +4,16 @@ import './ui/RaceTiming.css';
 import './ui/RacingTheme.css';
 import {bootScreen} from './ui/BootScreen';
 import {CircuitMenu} from './ui/CircuitMenu';
+import {quickRaceLaps} from './game/RaceLaps';
 import {circuitById,circuitURL,selectedCircuit,type CircuitId} from './game/Circuits';
 import {transmissionMode,type TransmissionMode} from './game/Powertrain';
 
 bootScreen.stage('메뉴를 준비하는 중…',1);
 const accountReady=import('./account/Account').then(async({account})=>{await account.initialize();return account;});
 const app=document.querySelector<HTMLDivElement>('#app')!;
-function quickRace(){
+function quickRace(totalLaps:number=quickRaceLaps(new URLSearchParams(window.location.search).get('laps'))){
+totalLaps=quickRaceLaps(totalLaps);
+const sessionURL=new URL(window.location.href);sessionURL.searchParams.set('laps',String(totalLaps));window.history.replaceState(null,'',sessionURL.href);
 app.innerHTML='<div id="viewport"></div><div id="hud"></div><div id="menu-backdrop" class="circuit-backdrop" aria-hidden="true"></div><div id="front-menu"></div>';
 const front=document.querySelector<HTMLElement>('#front-menu')!;
 let savedCircuit:unknown,savedTransmission:unknown;
@@ -50,14 +53,14 @@ function start(id:CircuitId,transmission:TransmissionMode){
     try{
       const activeAccount=await accountReady;await activeAccount.sync();
       const {Game}=await import('./game/Game');
-      new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext});
+      new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext,totalLaps});
       // Game queues its first rendered frame first. Keep loading visible until
       // that frame, rather than briefly revealing an empty canvas or old menu.
       requestAnimationFrame(()=>{dialogObserver.disconnect();window.removeEventListener('apex-account-change',refreshRecords);menu.dispose();front.remove();bootScreen.finish();});
     }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();bootScreen.finish();}
   }));
 }
-const menu=new CircuitMenu(front,{selected:selected.id,mode,prefix:'front-',start,preview,wheel:()=>{
+const menu=new CircuitMenu(front,{selected:selected.id,mode,totalLaps,prefix:'front-',start,preview,wheel:()=>{
   previewInteraction=true;backdrop?.setInteracting(true);
   void import('./ui/Settings').then(module=>module.openSettings());
 },account:()=>{void import('./ui/AccountPanel').then(m=>m.openAccount());},transmission:value=>{try{localStorage.setItem('apex-transmission-mode',value);}catch{}}});

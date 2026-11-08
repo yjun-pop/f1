@@ -16,7 +16,7 @@ export function raceSessionMarkup(){
     <div id="race-session-details" class="race-session-details" hidden>
       <div class="race-fastest"><span>전체 패스티스트 랩</span><b id="race-session-fastest"></b></div>
 
-      <section aria-labelledby="race-classification-title"><h3 id="race-classification-title">전체 차량 결과</h3><p class="table-scroll-hint">좌우로 밀어 전체 랩 기록을 확인하세요.</p><div class="result-table-scroll" tabindex="0" role="region" aria-label="전체 차량 랩 기록 표"><table class="result-classification"><thead><tr><th scope="col">순위</th><th scope="col">차량</th><th scope="col">LAP 01</th><th scope="col">LAP 02</th><th scope="col">LAP 03</th><th scope="col">최고 랩</th><th scope="col">완주 시간 / 진행</th></tr></thead><tbody id="race-session-classification"></tbody></table></div><p class="race-result-note" id="race-session-note"></p></section>
+      <section aria-labelledby="race-classification-title"><h3 id="race-classification-title">전체 차량 결과</h3><p class="table-scroll-hint">좌우로 밀어 전체 랩 기록을 확인하세요.</p><div class="result-table-scroll" tabindex="0" role="region" aria-label="전체 차량 랩 기록 표"><table class="result-classification"><thead id="race-session-columns"><tr><th scope="col">순위</th><th scope="col">차량</th><th scope="col">LAP 01</th><th scope="col">LAP 02</th><th scope="col">LAP 03</th><th scope="col">최고 랩</th><th scope="col">완주 시간 / 진행</th></tr></thead><tbody id="race-session-classification"></tbody></table></div><p class="race-result-note" id="race-session-note"></p></section>
       <section aria-labelledby="player-laps-title"><h3 id="player-laps-title">내 랩 기록</h3><div class="player-laps" id="race-session-laps"></div></section>
     </div>
     <label class="race-session-gearbox" id="race-session-gearbox">변속 방식<select id="start-transmission"><option value="auto">자동 변속</option><option value="manual">수동 변속 · Q / E</option></select></label>
@@ -48,7 +48,7 @@ export class RaceSessionPanel {
     this.node('race-session-title').textContent='출발 준비';this.node('race-session-start').textContent='레이스 시작';
     this.node('race-session-results').hidden=true;this.node('race-session-details').hidden=true;this.node('race-session-record').hidden=true;this.node('race-session-panel').classList.toggle('has-results',false);this.node('race-session-gearbox').hidden=false;
   }
-  result(label:string,position:number,fieldSize:number,elapsed:string,best:string,report?:{rows:readonly RaceStanding[];previousBest:number}){
+  result(label:string,position:number,fieldSize:number,elapsed:string,best:string,report?:{rows:readonly RaceStanding[];previousBest:number;totalLaps?:number}){
     this.unlock();this.finished=true;this.node('race-session-circuit').textContent=label;
     this.node('race-session-title').textContent='레이스 완료';this.node('race-session-start').textContent='다시 레이스';
     this.node('race-session-position').textContent=`P${String(position).padStart(2,'0')}`;this.node('driver-count').textContent=String(fieldSize);
@@ -59,9 +59,10 @@ export class RaceSessionPanel {
     this.node('race-session-previous').textContent=previous>0?`이전 ${formatTime(previous)}`:'';
     this.node('race-session-delta').classList.toggle('is-improved',delta!==null&&delta<0);
     this.node('race-session-record').hidden=!newRecord;this.node('race-session-record').textContent=previous>0?'새 개인 최고 기록':'첫 랩 기록 저장';
-    this.node('race-session-fastest').textContent=fastestLapLabel(rows);this.node('race-session-laps').innerHTML=playerLapCards(player);
-    this.node('race-session-classification').innerHTML=resultTable(rows);
-    this.node('race-session-note').textContent=rows.some(row=>row.finish===null)?'플레이어 완주 시점 기준 · 미완료 차량은 진행 거리순으로 분류합니다.':'모든 차량이 3랩을 완주했습니다.';
+    this.node('race-session-fastest').textContent=fastestLapLabel(rows);this.node('race-session-laps').innerHTML=playerLapCards(player,report?.totalLaps??3);
+    this.node('race-session-columns').innerHTML='<tr><th scope="col">순위</th><th scope="col">차량</th>'+Array.from({length:report?.totalLaps??3},(_,i)=>`<th scope="col">LAP ${String(i+1).padStart(2,'0')}</th>`).join('')+'<th scope="col">최고 랩</th><th scope="col">완주 시간 / 진행</th></tr>';
+    this.node('race-session-classification').innerHTML=resultTable(rows,report?.totalLaps??3);
+    this.node('race-session-note').textContent=rows.some(row=>row.finish===null)?'플레이어 완주 시점 기준 · 미완료 차량은 진행 거리순으로 분류합니다.':`모든 차량이 ${report?.totalLaps??3}랩을 완주했습니다.`;
     this.node('race-session-details').hidden=rows.length===0;this.node('race-session-panel').classList.toggle('has-results',rows.length>0);
     this.node('race-session-results').hidden=false;this.node('race-session-gearbox').hidden=true;this.node('race-session-title').focus({preventScroll:true});
   }

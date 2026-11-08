@@ -45,7 +45,7 @@ for(const [width,height]of[[1920,1080],[1280,720],[2560,1080],[390,844]]){
 await ev(`document.querySelector('#title-settings').focus();document.querySelector('#title-settings').click()`);await until(`!!document.querySelector('dialog[open]')`,'settings');
 await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
 await until(`!document.querySelector('dialog[open]')&&document.activeElement.id==='title-settings'`,'settings focus return');
-await ev(`document.querySelector('#title-quick').click()`);await until(`!!document.querySelector('#front-menu')`,'quick race');
+await ev(`document.querySelector('#title-quick').click();document.querySelector('[data-laps="3"]').click()`);await until(`!!document.querySelector('#front-menu')`,'quick race');
 assert.equal(await ev(`document.querySelectorAll('.title-race-canvas').length`),0,'Entering quick race must release the film canvas');
 console.log('PASS: first-frame reveal, responsive menus, settings/Esc focus return and quick-race transition',layouts);
 
