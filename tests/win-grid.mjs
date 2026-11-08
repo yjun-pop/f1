@@ -110,4 +110,4 @@ for(const circuit of CIRCUITS.slice(0,3)){
   race.elapsed=259;player.resetAt(3,3);race.update(1/120,player);assert.equal(race.state,'finished');
   console.log(`PASS: ${circuit.id} P1–P12 staggered standing grid, aligned paint, frozen lights, ${seconds.toFixed(2)}s clean opening, reset and three full laps`);
 }
-assert.match(fs.readFileSync(new URL('../src/game/Game.ts',import.meta.url),'utf8'),/new Race\([^;]+\{player:this.vehicle\}/,'The playable game must bind its actual player to the standing grid');
+assert.match(fs.readFileSync(new URL('../src/game/Game.ts',import.meta.url),'utf8'),/new Race\([^;]+\{player:this.vehicle(?:,|\})/,'The playable game must bind its actual player to the standing grid');
