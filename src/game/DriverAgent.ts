@@ -300,7 +300,7 @@ export class DriverAgent {
     // Independent corridors validate their own curvature and braking envelope.
     const powerLimit=strategy.deploy&&car.boost>strategy.reserve?o.speedCap:o.speedCap*87/94;
     const availableSpeed=occupied?Math.min(plannedTarget,powerLimit):powerLimit;
-    const candidate=this.trafficPlanner.update(car,traffic,this.elapsed,availableSpeed,canRace&&strategy.allowAttack&&!settling&&!cornerPlan&&this.corner.mayChangeRacingLine(car.distance)&&!passing,speedAt,!occupied,strategy.mode==='attack'&&strategy.deploy);
+    const candidate=this.trafficPlanner.update(car,traffic,this.elapsed,availableSpeed,canRace&&strategy.allowAttack&&!settling&&!cornerPlan&&this.corner.mayChangeRacingLine(car.distance)&&!passing,speedAt,!occupied,!launchEnvelope&&strategy.mode==='attack'&&strategy.deploy);
     // A stale merge from the previous pass cannot cancel a fresh, legal
     // defensive move. Actual obstacle avoidance still takes priority.
     const localRoute=this.intent==='defend'&&(candidate?.mode==='merge'||candidate?.mode==='attack'||candidate?.longitudinalOnly)?null:candidate;
