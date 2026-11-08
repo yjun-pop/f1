@@ -6,6 +6,7 @@ import {createSkyBackdrop} from '../game/WorldLighting';
 interface FilmCar {group:THREE.Group;visual?:CarVisual;offset:number;lane:number}
 const mod=(v:number)=>((v%1)+1)%1;
 const frame=()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+const OPENING_SECONDS=6,RACE_SHOT_SECONDS=12;
 /** Original, scripted race photography. No gameplay physics, AI or lap timers run here. */
 export class TitleRaceScene {
  readonly targetFPS=120;
@@ -22,7 +23,7 @@ export class TitleRaceScene {
  private sky?:THREE.DataTexture;private environment?:THREE.WebGLRenderTarget;
  private readonly p=new THREE.Vector3();private readonly t=new THREE.Vector3();private readonly n=new THREE.Vector3();
  private visibility=()=>{this.last=this.rendered=0;cancelAnimationFrame(this.raf);if(!document.hidden&&!this.stopped&&!this.reduced.matches)this.raf=requestAnimationFrame(this.animate);};
- private resize=()=>{const w=innerWidth,h=innerHeight;this.renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.2,Math.sqrt(1800000/(w*h)))*this.scale);this.renderer.setSize(w,h);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();if(this.host.classList.contains('has-live-race')&&this.reduced.matches&&!this.stopped)this.render();};
+ private resize=()=>{const w=innerWidth,h=innerHeight;this.renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.2,Math.sqrt(1800000/(w*h)))*this.scale);this.renderer.setSize(w,h);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();if(this.host.classList.contains('has-live-race')&&this.reduced.matches&&!this.stopped){this.pose(this.elapsed);this.render();}};
  private motion=()=>{this.last=this.rendered=0;cancelAnimationFrame(this.raf);if(this.reduced.matches)this.render();else if(!document.hidden&&!this.stopped)this.raf=requestAnimationFrame(this.animate);};
  private lost=(event:Event)=>{event.preventDefault();this.dispose();this.host.dataset.background='poster';};
  constructor(private host:HTMLElement){
@@ -141,10 +142,23 @@ export class TitleRaceScene {
    car.group.position.copy(this.at(distance+offset,lane));car.group.rotation.y=Math.atan2(this.t.x,this.t.z);
    if(car.visual){for(const tire of car.visual.tires)tire.rotation.x=-seconds*74/.49;for(const wheel of car.visual.frontWheels)wheel.rotation.y=.012*Math.sin(seconds*.6);car.visual.chassis.position.y=Math.sin(seconds*30+i)*.003;}
   });
-  const cameraD=this.shot===0?distance+10: this.shot===1?distance-14:distance+5;
-  const cameraLane=this.shot===0?-5.8:this.shot===1?6.7:-10.5;
-  this.camera.position.copy(this.at(cameraD,cameraLane+(Math.sin(seconds*.15)*.25),this.shot===2?3.3:1.7));
-  const target=this.at(distance+(this.shot===1?8:-13),this.shot===1?1:0,this.shot===2?.85:.72);this.camera.lookAt(target);
+  if(this.shot===0){
+   // Track the actual right-front axle from behind and outside the car. A
+   // car-relative rig keeps the tyre framed through bends and lateral movement.
+   const car=this.cars[0],wheel=car.visual!.frontWheels.find(pivot=>pivot.position.x>0)!;
+   const target=wheel.getWorldPosition(new THREE.Vector3()),push=THREE.MathUtils.smoothstep(seconds,0,OPENING_SECONDS);
+   const localOffset=new THREE.Vector3(3.15-.45*push-wheel.position.x,.84-wheel.position.y,-.9+.35*push-wheel.position.z);
+   localOffset.multiplyScalar(Math.max(1,Math.min(1.5,1/this.camera.aspect))).applyQuaternion(car.group.quaternion);
+   this.camera.position.copy(target).add(localOffset);this.camera.lookAt(target);
+  }else{
+   const cameraD=this.shot===1?distance+10:this.shot===2?distance-14:distance+5;
+   const cameraLane=this.shot===1?-5.8:this.shot===2?6.7:-10.5;
+   this.camera.position.copy(this.at(cameraD,cameraLane+(Math.sin(seconds*.15)*.25),this.shot===3?3.3:1.7));
+   const target=this.at(distance+(this.shot===2?8:-13),this.shot===2?1:0,this.shot===3?.85:.72);this.camera.lookAt(target);
+  }
+  // Shift the opening composition to the right, leaving the menu readable.
+  const offset=this.shot===0?-(this.camera.aspect>=1?.43:.18)*this.camera.getFilmWidth()*Math.tan(THREE.MathUtils.degToRad(this.camera.fov/2))*this.camera.aspect:0;
+  if(this.camera.filmOffset!==offset){this.camera.filmOffset=offset;this.camera.updateProjectionMatrix();}
  }
  private render(){
   this.renderer.render(this.scene,this.camera);
@@ -157,7 +171,7 @@ export class TitleRaceScene {
   this.raf=requestAnimationFrame(this.animate);const interval=1000/this.targetFPS;if(this.rendered&&now-this.rendered<interval-.3)return;
   if(!this.rendered)this.rendered=now;else{this.rendered+=interval;if(now-this.rendered>interval)this.rendered=now;}
   const dt=this.last?Math.min((now-this.last)/1000,.06):0;this.last=now;this.elapsed+=dt;
-  const next=Math.floor(this.elapsed/12)%3;
+  const next=this.elapsed<OPENING_SECONDS?0:1+Math.floor((this.elapsed-OPENING_SECONDS)/RACE_SHOT_SECONDS)%3;
   if(next!==this.shot){this.render();this.overlap.width=this.renderer.domElement.width;this.overlap.height=this.renderer.domElement.height;this.overlap.getContext('2d')?.drawImage(this.renderer.domElement,0,0);this.overlap.style.transition='none';this.overlap.style.opacity='1';this.shot=next;}
   this.pose(this.elapsed);this.render();
   if(this.overlap.style.opacity==='1'){requestAnimationFrame(()=>{if(this.stopped)return;this.overlap.style.transition='opacity .65s ease';this.overlap.style.opacity='0';});}
