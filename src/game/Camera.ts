@@ -35,9 +35,10 @@ export class CockpitCamera {
     this.cockpit.traverse(child=>{if(child!==this.cockpit&&child!==this.wheel){child.updateMatrix();child.matrixAutoUpdate=false;}});this.resize();
   }
   toggle(){this.mode=1-this.mode;this.initialized=false;}
-  update(vehicle:Vehicle,dt=1/60,feedback?:DrivingFeedbackFrame){
-    const forward=new THREE.Vector3(Math.sin(vehicle.heading),0,Math.cos(vehicle.heading));
-    const desired=vehicle.position.clone().addScaledVector(forward,this.mode===0?-10:-.85).add(new THREE.Vector3(0,this.mode===0?5:this.eyeHeight,0));
+  update(vehicle:Vehicle,dt=1/60,feedback?:DrivingFeedbackFrame,pose?:{position:THREE.Vector3;heading:number}){
+    const position=pose?.position??vehicle.position,heading=pose?.heading??vehicle.heading;
+    const forward=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));
+    const desired=position.clone().addScaledVector(forward,this.mode===0?-10:-.85).add(new THREE.Vector3(0,this.mode===0?5:this.eyeHeight,0));
     if(feedback){
       desired.y+=feedback.heave;
       desired.addScaledVector(new THREE.Vector3(-forward.z,0,forward.x),feedback.sway);
@@ -45,7 +46,7 @@ export class CockpitCamera {
     }
     if(!this.initialized||this.mode===1)this.camera.position.copy(desired);else this.camera.position.lerp(desired,1-Math.exp(-7*dt));
     this.initialized=true;this.camera.up.set(0,1,0);
-    this.camera.lookAt(vehicle.position.clone().addScaledVector(forward,26).add(new THREE.Vector3(0,this.mode===0?1.3:-.35,0)));
+    this.camera.lookAt(position.clone().addScaledVector(forward,26).add(new THREE.Vector3(0,this.mode===0?1.3:-.35,0)));
     if(feedback){this.camera.rotateX(feedback.pitch);this.camera.rotateZ(feedback.roll);}
     this.camera.fov=THREE.MathUtils.damp(this.camera.fov,(this.mode===1?76:62)+vehicle.speed*.055+(feedback?.boostFov??0),4,dt);this.camera.updateProjectionMatrix();
     vehicle.group.visible=true;vehicle.group.traverse(child=>{if(child.name==='driver')child.visible=this.mode===0;});

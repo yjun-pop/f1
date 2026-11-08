@@ -7,6 +7,7 @@ import {transmissionMode,type TransmissionMode} from './Powertrain';
 import {Track} from './Track';
 import {selectedCircuit,circuitById,circuitURL,type CircuitId} from './Circuits';
 import {Vehicle} from './Vehicle';
+import {VehiclePose} from './VehiclePose';
 import {CockpitCamera} from './Camera';
 import {RacingLine} from './RacingLine';
 import {Race} from './Race';
@@ -22,6 +23,7 @@ export class Game {
   private renderer:THREE.WebGLRenderer;
   private scene=new THREE.Scene();private input=new Input();private track:Track;private vehicle:Vehicle;private cockpit:CockpitCamera;private line:RacingLine;private hud:HUD;private race:Race;
   private mirror:RearViewMirror;
+  private renderPose=new VehiclePose();
   private audio=new DrivingAudio();private feedback=new DrivingFeedback();
   private sun:THREE.DirectionalLight;
   private appliedTier?:string;private graphics:GraphicsQuality;private lighting:WorldLighting;
@@ -37,6 +39,7 @@ export class Game {
     this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier,!!circuit.night,environment);this.sun=this.lighting.sun;
     this.renderer.shadowMap.autoUpdate=false;
     this.track=new Track(this.scene,circuit);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle,opponentCount:opponentCount(options.opponentCount??new URLSearchParams(window.location.search).get('opponents')),flyingStart:options.totalLaps===1||(!options.totalLaps&&quickRaceLaps(new URLSearchParams(window.location.search).get('laps'))===1),totalLaps:quickRaceLaps(options.totalLaps??new URLSearchParams(window.location.search).get('laps'))});
+    this.renderPose.capture(this.vehicle);
     try{localStorage.setItem('apex-circuit',this.track.circuit.id);}catch{}
     try{
       const saved=localStorage.getItem('apex-motion-strength');
@@ -92,7 +95,7 @@ export class Game {
   }
   private pause(){if(this.race.state==='racing'||this.race.state==='countdown'){this.paused=true;this.audio.silence();this.accumulator=0;this.input.clear();}}
   private resume(){this.paused=false;this.accumulator=0;this.previous=performance.now();this.input.clear();}
-  private restart(){this.audio.silence();this.feedback.reset();this.vehicle.reset();this.race.reset();this.paused=false;this.accumulator=0;this.input.clear();}
+  private restart(){this.audio.silence();this.feedback.reset();this.vehicle.reset();this.race.reset();this.renderPose.capture(this.vehicle);this.paused=false;this.accumulator=0;this.input.clear();}
   private pollWheel(){if(this.input.poll()||this.input.wheel.configuring)this.pause();}
   private frame=(now:number)=>{
     if(this.changingCircuit)return;
@@ -106,21 +109,21 @@ export class Game {
     if(this.input.consume('KeyT'))this.selectTransmission(this.vehicle.transmission.mode==='auto'?'manual':'auto');
     if(this.paused||this.race.state!=='racing'){this.input.consume('KeyQ');this.input.consume('KeyE');this.input.consume('KeyF');}
     if(this.input.consume('KeyG'))this.line.toggle();if(this.input.consume('KeyC'))this.cockpit.toggle();
-    if(!this.paused){this.accumulator+=dt;while(this.accumulator>=1/120){if(this.race.state==='racing'){this.race.prepareAerodynamics(this.vehicle);this.vehicle.update(1/120,this.input);}this.race.update(1/120,this.vehicle);const remaining=this.race.takeHandoffRemainder();if(remaining>0){this.race.prepareAerodynamics(this.vehicle);this.vehicle.update(remaining,this.input);this.race.update(remaining,this.vehicle);}this.accumulator-=1/120;}}
-    const feedback=this.feedback.update(this.vehicle,this.track,dt,!this.paused&&this.race.state==='racing');
+    if(!this.paused){this.accumulator+=dt;while(this.accumulator>=1/120){this.renderPose.capture(this.vehicle);if(this.race.state==='racing'){this.race.prepareAerodynamics(this.vehicle);this.vehicle.update(1/120,this.input);}this.race.update(1/120,this.vehicle);this.accumulator-=1/120;}}
+    const feedback=this.feedback.update(this.vehicle,this.track,dt,!this.paused&&(this.race.state==='racing'||this.race.rollingStart));
     if(!this.input.wheel.configuring)this.input.wheel.haptics.update(this.input.wheel.drivingDevice,this.vehicle,feedback,dt,!this.paused&&this.race.state==='racing');
     this.audio.update(this.vehicle,!this.paused&&(this.race.state==='racing'||this.race.state==='countdown'),feedback);
     this.audio.updateStart(this.race.startSignal,!this.paused);this.track.setStartLights(this.race.startSignal.lights);
     this.vehicle.present(feedback.surfaceHeave);
-    if(this.graphics.observe(elapsed,!this.paused&&this.race.state==='racing'))this.applyGraphics(false);
+    if(this.graphics.observe(elapsed,!this.paused&&(this.race.state==='racing'||this.race.rollingStart)))this.applyGraphics(false);
     this.sceneAge+=dt;
     if(this.sceneAge>=.1||this.scenePosition.distanceToSquared(this.vehicle.position)>400){this.track.updatePresentation(this.vehicle.position,this.graphics.tier);for(const rival of this.race.opponents)rival.car.setPresentation(rival.car.position.distanceTo(this.vehicle.position),this.graphics.tier);this.scenePosition.copy(this.vehicle.position);this.sceneAge=0;}
     // Keep a small, texel-stable shadow volume around the player, not the full circuit.
-    if(this.shadows.shouldRefresh(this.vehicle.position,this.lighting.sunOffset,this.graphics.tier==='high'&&!this.paused&&this.race.state==='racing',dt)){
+    if(this.shadows.shouldRefresh(this.vehicle.position,this.lighting.sunOffset,this.graphics.tier==='high'&&!this.paused&&(this.race.state==='racing'||this.race.rollingStart),dt)){
       const texel=130/this.sun.shadow.mapSize.x,x=Math.round(this.vehicle.position.x/texel)*texel,z=Math.round(this.vehicle.position.z/texel)*texel;
       this.sun.target.position.set(x,0,z);this.sun.position.set(x,0,z).add(this.lighting.sunOffset);this.renderer.shadowMap.needsUpdate=true;
     }
-    this.cockpit.update(this.vehicle,dt,feedback);this.line.update(this.vehicle,dt);
+    this.cockpit.update(this.vehicle,dt,feedback,this.renderPose.present(this.vehicle,this.accumulator*120));this.line.update(this.vehicle,dt);
     this.hud.updateProximity(this.vehicle,this.race,this.paused);
     const hudStamp=`${this.race.state}/${this.paused}/${this.cockpit.mode}`;this.hudAge+=dt;
     if(this.hudAge>=.1||hudStamp!==this.hudStamp){this.hud.update(this.vehicle,this.race,this.paused,this.track,this.cockpit.mode);this.hud.setWheelStatus(this.input.wheel.status,!!this.input.wheel.profile?.enabled&&!this.input.wheel.armed&&!this.paused);this.hudAge=0;this.hudStamp=hudStamp;}
