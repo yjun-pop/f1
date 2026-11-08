@@ -130,7 +130,7 @@ export class DriverAgent {
     const occupied=traffic.filter(other=>Math.abs(gapTo(other))<55&&Math.abs(biasAt(other)-currentBias)<8).length>=3;
     const steeringRoom=[0,60,120,180,240].every(distance=>this.speedPlanner.cornerLimit(car.progress+distance/this.track.length,o.racePace??o.pace,car.gripScale)>Math.max(40,car.speed*.9));
     const manoeuvreRoom=!occupied||steeringRoom;
-    const canRace=fieldSize>1;
+    const canRace=fieldSize>1&&manoeuvreRoom;
     // This selects the validated high-speed control calibration, not permission
     // to compete: independent local racing is enabled separately by canRace.
     const competitive=racingField&&!launchEnvelope;
@@ -299,8 +299,8 @@ export class DriverAgent {
     })){desiredLane=currentBias;if(!passing)this.intent='yield';}
     // Independent corridors validate their own curvature and braking envelope.
     const powerLimit=strategy.deploy&&car.boost>strategy.reserve?o.speedCap:o.speedCap*87/94;
-    const availableSpeed=powerLimit;
-    const candidate=this.trafficPlanner.update(car,traffic,this.elapsed,availableSpeed,canRace&&strategy.allowAttack&&!settling&&!cornerPlan&&this.corner.mayChangeRacingLine(car.distance)&&!passing,speedAt,true);
+    const availableSpeed=occupied?Math.min(plannedTarget,powerLimit):powerLimit;
+    const candidate=this.trafficPlanner.update(car,traffic,this.elapsed,availableSpeed,canRace&&strategy.allowAttack&&!settling&&!cornerPlan&&this.corner.mayChangeRacingLine(car.distance)&&!passing,speedAt,!occupied,strategy.mode==='attack'&&strategy.deploy);
     // A stale merge from the previous pass cannot cancel a fresh, legal
     // defensive move. Actual obstacle avoidance still takes priority.
     const localRoute=this.intent==='defend'&&(candidate?.mode==='merge'||candidate?.mode==='attack'||candidate?.longitudinalOnly)?null:candidate;
@@ -365,7 +365,7 @@ export class DriverAgent {
     const slip=Math.atan2(car.lateralSpeed,Math.max(8,car.speed));
     const countersteer=Math.sign(slip)*Math.max(0,Math.abs(slip)-.04)*.8;
     const steer=THREE.MathUtils.clamp((angle-car.yawRate*.01+countersteer)/steeringLock(car.speed,car.gripScale),-1,1);
-    if(advanced>.1&&(steeringRoute||Math.abs(currentBias-lane)>.35)){
+    if(advanced>.1&&Math.abs(currentBias-lane)>.35){
       // A car returning to its corridor may need a tighter turn than the
       // reference path. Bound the actual pursuit curvature before it drifts
       // outside the road, not just the curvature of an already aligned car.

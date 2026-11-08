@@ -193,13 +193,11 @@ for(const [metres,elapsed,gap,speed,slowSpeed] of [[300,5,30,65,30],[740,8,35,50
  console.log('PASS: established corner corridor survives safe side-by-side overlap and yields to actual lateral conflict');
 }
 
-// Returning from a passing lane must use the transition that was validated.
+// An ERS attack can invest in a safe pass that needs more than a few seconds.
 {
- const returning=new TrafficPlanner(straight,{aggression:.8,caution:.3,phase:1,lineBias:0},straight);returning.mergeUntil=52;
- const mergingCar={...car,position:straight.point(.1).add(new THREE.Vector3(1,0,0))};
- const route=returning.update(mergingCar,[],50,60,true,()=>60,true);
- assert.equal(route?.mode,'merge');assert.equal(route.holdLane,false);
- assert.ok(route.point(.1).distanceTo(mergingCar.position)<1e-8,'Merge begins at the current corridor');
- assert.ok(route.laneAt(.1+5/6000)>.9,'Merge must not aim immediately at the reference line');
- console.log('PASS: continuous merge origin and gradual near-field steering target');
+ const defender={...opponent,speed:55,velocity:new THREE.Vector3(0,0,55)};
+ const observed=[{...traffic[0],car:defender,speed:55,velocity:defender.velocity}];
+ const route=new TrafficPlanner(straight,{aggression:.95,caution:.25,phase:1,lineBias:0},straight).update(car,observed,50,60,true,()=>60,false,true);
+ assert.equal(route?.mode,'attack');assert.ok(route.speed<=60);assert.ok(Math.abs(route.laneAt(.11)-defender.position.x)>2.8);
+ console.log('PASS: committed energy attack evaluates a longer safe corridor without extra speed or power');
 }

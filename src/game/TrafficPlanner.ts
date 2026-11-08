@@ -29,7 +29,7 @@ export class TrafficPlanner {
   constructor(private track:Track,private character:Character,private reference:{point:(t:number)=>THREE.Vector3}){}
   reset(){this.mode='clear';this.routesChosen=this.obstaclesPassed=this.passes=this.recoveries=0;this.commitment=this.backing=undefined;this.stationary.clear();this.sluggish.clear();this.previousTime=this.blockedTime=this.mergeUntil=this.retryAfter=0;}
   cancel(){this.commitment=this.backing=undefined;this.mergeUntil=0;this.mode='clear';}
-  update(car:Vehicle,traffic:readonly TrafficSample[],time:number,desiredSpeed:number,racing:boolean,expectedAt?:(progress:number)=>number,independentSpeed=false):TrafficRoute|null {
+  update(car:Vehicle,traffic:readonly TrafficSample[],time:number,desiredSpeed:number,racing:boolean,expectedAt?:(progress:number)=>number,independentSpeed=false,committedAttack=false):TrafficRoute|null {
     const dt=Math.max(0,Math.min(.1,time-this.previousTime));this.previousTime=time;
     if(car.offRoad){this.cancel();return null;}
     const length=this.track.length,origin=car.progress,normal=this.track.normal(origin);
@@ -85,7 +85,7 @@ export class TrafficPlanner {
     }
     const obstacle=seen.filter(s=>s.hazard&&s.gap>-5&&s.gap<Math.min(95,35+car.speed*1.6)).sort((a,b)=>a.gap-b.gap)[0];
     const opportunity=racing&&time>this.retryAfter&&front&&front.gap>9&&car.speed>12&&desiredSpeed>front.forward+(independentSpeed&&!crowded?.3:crowded?4:2)&&
-      (independentSpeed||(expectedAt?.(front.sample.progress)??desiredSpeed)>front.forward+(crowded?4:2))&&
+      (independentSpeed&&!crowded||(expectedAt?.(front.sample.progress)??desiredSpeed)>front.forward+(crowded?4:2))&&
       (car.speed-front.forward>(independentSpeed&&!crowded?.15:crowded?1.8:.8)||this.blockedTime>(crowded?.9:.6))&&Math.abs(car.lateralSpeed)<3&&car.gripUsage<1.05?front:undefined;
     const target=committed??obstacle??opportunity;
     const merging=!target&&time<this.mergeUntil;
@@ -109,7 +109,7 @@ export class TrafficPlanner {
     const progressScale=(point:(t:number)=>THREE.Vector3,t:number)=>Math.max(.25,point(t+3/length).distanceTo(point(t-3/length))/6);
     const targetScale=target?progressScale(t=>roadPoint(t).addScaledVector(roadNormal(t),target.lane),target.sample.progress):1;
     const makeRoute=(goal:number,merge=false)=>{
-      const laneAt=(progress:number)=>{const limits=geometryAt(progress).bounds;return THREE.MathUtils.clamp(merge?THREE.MathUtils.lerp(from,referenceLane(progress),THREE.MathUtils.smoothstep(Math.max(0,delta(progress)),0,transition)):goal,limits.min,limits.max);};
+      const laneAt=(progress:number)=>{const limits=geometryAt(progress).bounds;return THREE.MathUtils.clamp(merge?referenceLane(progress):goal,limits.min,limits.max);};
       const point=(progress:number)=>roadPoint(progress).addScaledVector(roadNormal(progress),laneAt(progress));
       return {laneAt,point};
     };
@@ -129,7 +129,7 @@ export class TrafficPlanner {
       const route=makeRoute(goal,rejoining);
       const lookahead=tightObstacle?4:hazard?THREE.MathUtils.clamp(5+car.speed*.1,6,10):THREE.MathUtils.clamp(7+car.speed*.3,9,26);
       const travel=Math.max(12,lookahead*1.8);
-      const predictedLane=(d:number)=>rejoining?route.laneAt(origin+d/length):THREE.MathUtils.lerp(from,route.laneAt(origin+d/length),THREE.MathUtils.smoothstep(d,0,travel));
+      const predictedLane=(d:number)=>THREE.MathUtils.lerp(from,route.laneAt(origin+d/length),THREE.MathUtils.smoothstep(d,0,travel));
       const predictedPoint=(d:number)=>roadPoint(origin+d/length).addScaledVector(roadNormal(origin+d/length),predictedLane(d));
       let speed=Math.min(desiredSpeed,hazard?32:merging?94:Math.min(94,car.speed+3)),blocked=false;
       if(tightObstacle)speed=Math.min(speed,Math.sqrt(3.5**2+2*brakingDeceleration(car.speed,false,car.gripScale)*.65*Math.max(0,target!.gap-18)));
@@ -188,7 +188,7 @@ export class TrafficPlanner {
       // centreline projection, or a slower outside pass can look profitable.
       const ownRate=speed/progressScale(route.point,target?.sample.progress??origin),targetRate=(target?.forward??0)/targetScale;
       const passingTime=((target?.gap??0)+14)/Math.max(.1,ownRate-targetRate)+Math.abs(goal-from)/(2+this.character.aggression*1.5);
-      if(blocked||!hazard&&!merging&&(speed<12||ownRate<targetRate+(independentSpeed&&!crowded?.3:1.2)||!this.commitment&&passingTime>(independentSpeed&&!crowded?6+this.character.aggression*10:2+(crowded?this.character.aggression*2:7*this.character.aggression**2))))continue;
+      if(blocked||!hazard&&!merging&&(speed<12||ownRate<targetRate+(independentSpeed&&!crowded?.3:1.2)||!this.commitment&&passingTime>(committedAttack||independentSpeed&&!crowded?6+this.character.aggression*10:2+(crowded?this.character.aggression*2:7*this.character.aggression**2))))continue;
       // Compare usable track progress and passing gain; raw outside-lane speed can mislead.
       const c=this.character,sidePreference=Math.sin(c.phase*1.7+c.lineBias)*.2;
       const switchCost=this.commitment&&Math.abs(goal-this.commitment.lane)>1.5?2+c.caution*2:0;
