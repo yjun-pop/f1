@@ -35,6 +35,7 @@ console.log('PASS: loading shell blocks menu input; static entry works before th
 await send('Page.navigate',{url:base+'/'});
 await until(`document.querySelector('.title-scene')?.dataset.background==='live'&&!document.querySelector('#boot-screen')`,'first real race frame');
 assert.equal(await ev(`document.querySelector('#app').inert`),false);
+assert.equal(await ev(`document.querySelector('.title-scene').dataset.timeOfDay`),'night');
 const layouts=[];
 for(const [width,height]of[[1920,1080],[1280,720],[2560,1080],[390,844]]){
  await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});await wait(100);
@@ -55,18 +56,25 @@ await send('Page.navigate',{url:base+'/tests/title-race-fixture.html'});await un
 const opening=await ev(`(()=>{const f=window.film,car=f.cars[0];f.pose(0);f.render();const wheel=car.visual.frontWheels.find(p=>p.position.x>0).getWorldPosition(car.group.position.clone()),offset=f.camera.position.clone().sub(wheel),forward=car.group.getWorldDirection(wheel.clone()),right=forward.clone().set(forward.z,0,-forward.x);const screen=wheel.clone().project(f.camera);return {behind:offset.dot(forward)<0,right:offset.dot(right)>0,distance:offset.length(),screenX:screen.x,screenY:screen.y}})()`);
 assert.ok(opening.behind&&opening.right&&opening.distance>2&&opening.distance<4,JSON.stringify(opening));
 assert.ok(opening.screenX>.35&&opening.screenX<.55&&Math.abs(opening.screenY)<.1,'Right-front tyre must remain prominent beside the menu: '+JSON.stringify(opening));
-const film=await ev(`(()=>{const f=window.film;f.pose(0);const p0=f.cars[0].group.position.clone(),g0=f.cars[1].group.position.clone().sub(p0).dot(f.road.getTangentAt(.18));const wheel=f.cars[0].visual.tires[0].rotation.x;f.pose(3);const g1=f.cars[1].group.position.clone().sub(f.cars[0].group.position).dot(f.road.getTangentAt((f.length*.18+3*74)/f.length));f.render();return {cars:f.cars.length,moved:p0.distanceTo(f.cars[0].group.position),passed:g0<0&&g1>0,wheels:wheel!==f.cars[0].visual.tires[0].rotation.x,calls:f.renderer.info.render.calls,triangles:f.renderer.info.render.triangles}})()`);
-assert.equal(film.cars,6);assert.ok(film.moved>200&&film.passed&&film.wheels);assert.ok(film.calls<230&&film.triangles<160000,JSON.stringify(film));
+const film=await ev(`(()=>{const f=window.film;f.pose(0);const p0=f.cars[0].group.position.clone(),g0=f.cars[1].group.position.clone().sub(p0).dot(f.cars[0].group.getWorldDirection(p0.clone()));const wheel=f.cars[0].visual.tires[0].rotation.x;f.pose(3);const g1=f.cars[1].group.position.clone().sub(f.cars[0].group.position).dot(f.cars[0].group.getWorldDirection(p0.clone()));f.render();return {cars:f.cars.length,moved:p0.distanceTo(f.cars[0].group.position),passed:g0<0&&g1>0,wheels:wheel!==f.cars[0].visual.tires[0].rotation.x,calls:f.renderer.info.render.calls,triangles:f.renderer.info.render.triangles}})()`);
+assert.equal(film.cars,6);assert.ok(film.moved>260&&film.passed&&film.wheels);assert.ok(film.calls<230&&film.triangles<160000,JSON.stringify(film));
 const before=await ev(`window.film.elapsed`);await wait(200);assert.equal(await ev(`window.film.elapsed`),before,'Reduced motion must keep the film still');
 await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
 await until(`window.film.elapsed>0`,'animated film');
-await ev(`cancelAnimationFrame(film.raf);film.elapsed=5.99;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
-assert.equal(await ev(`film.shot===1&&film.overlap.width>1&&film.camera.filmOffset===0`),true,'The opening must overlap into the existing race framing after six seconds');
+await ev(`cancelAnimationFrame(film.raf);film.elapsed=3.99;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
+assert.equal(await ev(`film.shot===1&&film.overlap.width>1&&film.camera.filmOffset===0`),true,'The opening must overlap into the race framing after four seconds');
+await ev(`film.elapsed=9.19;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
+assert.equal(await ev(`film.shot===4&&film.overlap.width>1`),true,'The race sequence must include the overhead pass');
+const overhead=await ev(`(()=>{const f=film,start=f.shotStarted;f.pose(start+.82);f.render();const camera=f.camera.position.clone(),before=f.cars[0].group.position.clone().project(f.camera);f.pose(start+1.12);f.render();const after=f.cars[0].group.position.clone().project(f.camera);return {stationary:camera.distanceTo(f.camera.position)<.001,down:f.camera.getWorldDirection(camera.clone()).y<-.99,beforeY:before.y,afterY:after.y,screenTravel:before.distanceTo(after),calls:f.renderer.info.render.calls,triangles:f.renderer.info.render.triangles}})()`);
+assert.ok(overhead.stationary&&overhead.down&&overhead.beforeY<0&&overhead.afterY>0&&overhead.screenTravel>1.2,JSON.stringify(overhead));
+assert.ok(overhead.calls<230&&overhead.triangles<160000,JSON.stringify(overhead));
+await ev(`film.elapsed=11.79;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
+assert.equal(await ev(`film.shot===2&&film.camera.up.y===1&&film.camera.filmOffset===0`),true,'Overhead framing must return to a level chase view');
 await ev(`Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));window.hiddenTime=film.elapsed`);await wait(200);
 assert.equal(await ev(`film.elapsed===window.hiddenTime`),true,'Hidden tabs must stop advancing the film');
 await ev(`film.dispose();film.dispose()`);
 assert.equal(await ev(`!document.querySelector('canvas')&&film.scene.children.length===0&&film.cars.length===0`),true);
-console.log('PASS: right-front tyre opening from behind, six cars, a completed pass, rotating wheels, opening overlap, reduced motion, hidden-tab pause and idempotent disposal',{opening,film});
+console.log('PASS: night scene, right-front tyre opening, faster six-car race, a stationary overhead pass, overlap, reduced motion, hidden-tab pause and disposal',{opening,film,overhead});
 
 // GPU creation failure falls back to the local poster; no loading dead end.
 const injection=await send('Page.addScriptToEvaluateOnNewDocument',{source:`const original=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){return type==='webgl2'?null:original.call(this,type,...args)};`});
