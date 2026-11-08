@@ -186,7 +186,7 @@ export class DriverAgent {
     const physicalRoom=advanced>.8&&car.gripUsage<1.04&&Math.abs(Math.atan2(car.lateralSpeed,Math.max(8,car.speed)))<.1;
     const cornerRoom=pace/Math.sqrt(car.gripScale)<1.19||physicalRoom;
     const alignedForCorner=advanced<.1||!!this.corner.current||Math.abs(currentBias)<1&&Math.abs(o.lane)<1;
-    const preferExit=strategy.preferExit||advanced>.1&&this.speedPlanner.projectedGripUse(pace,car.gripScale)>.75;
+    const preferExit=strategy.preferExit||advanced>.1&&this.speedPlanner.projectedGripUse(pace,car.gripScale)>.9;
     let cornerPlan=this.corner.update(o,traffic,competitive&&(strategy.allowAttack||!!this.corner.current)&&cornerRoom&&alignedForCorner&&(!elitePursuit||physicalRoom)&&!settling&&!chicaneTraffic&&!this.passingTarget,elitePursuit&&!physicalRoom,preferExit);
     const reference=car.progress+car.speed*(cornerPlan?.preview??.12)/this.track.length;
     // Advanced drivers use geometry and actual tire/braking capacity, rather
@@ -297,8 +297,10 @@ export class DriverAgent {
       if(competitive&&(currentBias-lane)*(desiredLane-currentBias)>0)return false;
       return lane>Math.min(currentBias,desiredLane)-clearance&&lane<Math.max(currentBias,desiredLane)+clearance;
     })){desiredLane=currentBias;if(!passing)this.intent='yield';}
-    const availableSpeed=Math.min(plannedTarget,strategy.deploy&&car.boost>strategy.reserve?o.speedCap:o.speedCap*87/94);
-    const candidate=this.trafficPlanner.update(car,traffic,this.elapsed,availableSpeed,canRace&&strategy.allowAttack&&!settling&&!cornerPlan&&this.corner.mayChangeRacingLine(car.distance)&&!passing,speedAt);
+    // Independent corridors validate their own curvature and braking envelope.
+    const powerLimit=strategy.deploy&&car.boost>strategy.reserve?o.speedCap:o.speedCap*87/94;
+    const availableSpeed=occupied?Math.min(plannedTarget,powerLimit):powerLimit;
+    const candidate=this.trafficPlanner.update(car,traffic,this.elapsed,availableSpeed,canRace&&strategy.allowAttack&&!settling&&!cornerPlan&&this.corner.mayChangeRacingLine(car.distance)&&!passing,speedAt,!occupied);
     // A stale merge from the previous pass cannot cancel a fresh, legal
     // defensive move. Actual obstacle avoidance still takes priority.
     const localRoute=this.intent==='defend'&&(candidate?.mode==='merge'||candidate?.mode==='attack'||candidate?.longitudinalOnly)?null:candidate;
@@ -311,7 +313,7 @@ export class DriverAgent {
       // independent route's speed budget instead of the following target.
       const pullingOut=ahead&&Math.abs(currentBias-biasAt(ahead))<clearance&&gapTo(ahead)<12+Math.max(0,car.speed-ahead.speed)*.8;
       const clearPass=localRoute.mode==='avoid'||localRoute.mode==='attack'&&!pullingOut;
-      target=Math.min(clearPass?plannedTarget:target,localRoute.speed);
+      target=Math.min(clearPass&&localRoute.mode==='attack'?availableSpeed:clearPass?plannedTarget:target,localRoute.speed);
       this.target=localRoute.target;passing=localRoute.mode==='attack'||localRoute.mode==='avoid';
       this.intent=localRoute.mode==='attack'?'overtake':localRoute.mode;
       if(localRoute.longitudinalOnly){this.passingTarget=undefined;o.passLane=undefined;o.passUntil=0;}
@@ -390,7 +392,7 @@ export class DriverAgent {
         target=Math.min(target,Math.sqrt(limit*limit+2*braking*Math.max(0,distance-car.speed*.15)));
       }
     }
-    if(this.speedPlanner.curvature(car.progress)>.0068&&Math.abs(currentBias-o.lane)>1.5)target=Math.min(target,advanced>.5?speedAt(reference)*.92:this.planner.speed(reference)*Math.sqrt(car.gripScale));
+    if(!steeringRoute&&this.speedPlanner.curvature(car.progress)>.0068&&Math.abs(currentBias-o.lane)>1.5)target=Math.min(target,advanced>.5?speedAt(reference)*.92:this.planner.speed(reference)*Math.sqrt(car.gripScale));
     if(car.offRoad){target=Math.min(target,14);this.intent='recover';}
     if(Math.abs(error)>.5)target=Math.min(target,Math.max(9,22-Math.abs(error)*8));
     // Feed forward the acceleration required by the speed profile and road

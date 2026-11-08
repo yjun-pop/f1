@@ -36,7 +36,7 @@ export class CornerRacecraft {
     if(!enabled||car.offRoad){this.cancel();return null;}
     if(this.commitment){
       const target=traffic.find(t=>t.car===this.commitment!.opponent);
-      if(metres>this.commitment.apex+110||!target||Math.abs(gap(target))<11&&metres<this.commitment.apex-20||elite!==this.commitment.elite)this.cancel();
+      if(metres>this.commitment.apex+110||!target||Math.abs(gap(target))<11&&Math.abs(bias(target)-bias(car))<2.8&&metres<this.commitment.apex-20||elite!==this.commitment.elite)this.cancel();
     }
     if(!this.commitment){
       const nearby=traffic.filter(t=>t.car!==car);

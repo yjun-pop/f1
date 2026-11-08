@@ -81,6 +81,10 @@ const patient=new TrafficPlanner(straight,{aggression:.2,caution:.9,phase:1,line
 const attack=aggressive.update(car,traffic,50,60,true,()=>60),hold=patient.update(car,traffic,50,60,true,()=>60);
 assert.equal(attack?.mode,'attack');assert.equal(hold,null,'A cautious driver must reject an overtake that takes too long');
 assert.ok(Math.abs(attack.laneAt(.11)-opponent.position.x)>2.8);
+const independentSpeed=new TrafficPlanner(straight,{aggression:.95,caution:.25,phase:1,lineBias:0},straight).update(car,traffic,50,60,true,()=>20,true);
+assert.equal(independentSpeed?.mode,'attack','A clear physical corridor must not inherit the reference line speed');
+assert.ok(independentSpeed.speed>opponent.speed);
+assert.ok(Math.abs(independentSpeed.laneAt(.11)-opponent.position.x)>2.8);
 console.log('PASS: private personality-dependent route decisions and actual momentum opportunities without extra ERS or top speed');
 
 const stoppedCar={...car,speed:0};
@@ -172,4 +176,19 @@ for(const [metres,elapsed,gap,speed,slowSpeed] of [[300,5,30,65,30],[740,8,35,50
  }
  assert.ok(attacker.agent.passAttempts>0);assert.ok(separated>2.5);assert.equal(attacker.car.offRoad,false);assert.equal(attacker.collisionCount,0);
  console.log('PASS: one AI races the player independently, chooses a distinct corridor and avoids contact');
+}
+
+// Longitudinal overlap alone must not discard an established, separated corner route.
+{
+ const {CornerRacecraft}=await import(moduleURL('CornerRacecraft'));
+ const road={...straight,drivingBounds:()=>({min:-7.1,max:7.1}),compactBoundary:false};
+ const own={...car,position:straight.point(.16),progress:.16,distance:.16,speed:70};
+ const rival={...car,position:straight.point(.165),progress:.165,distance:.165,speed:65};
+ const driver={car:own,aggression:.9,avoidance:0},corner=new CornerRacecraft(road,{apices:[{progress:.2,direction:1}]},[],straight);
+ const sample=()=>[{car:rival,position:rival.position,progress:rival.progress,speed:rival.speed}];
+ assert.ok(corner.update(driver,sample(),true,false));
+ own.progress=own.distance=.17;own.position.copy(straight.point(.17));rival.progress=.171;rival.position.copy(straight.point(.171));rival.position.x=4;
+ assert.ok(corner.update(driver,sample(),true,false),'A separated alongside car must not force a reference-line return');
+ rival.position.x=1;assert.equal(corner.update(driver,sample(),true,false),null,'Overlapping corridors must still cancel the manoeuvre');
+ console.log('PASS: established corner corridor survives safe side-by-side overlap and yields to actual lateral conflict');
 }

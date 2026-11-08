@@ -71,7 +71,7 @@ export class RaceStrategy {
     // A distant challenger still deploys in clear air to close the leader.
     const cruiseReserve=reserve+(manager?22:10)-urgency*(manager?8:14)-(o.deploying?8:0);
     const deploy=!o.brakingSoon&&o.window&&(mode==='attack'||mode==='defend'||mode==='finish'||mode==='balanced'&&o.boost>cruiseReserve||mode==='prepare'&&o.boost>reserve+8&&!!nearAhead&&o.ahead!.gap>35);
-    this.plan={mode,reserve:final?5:reserve,allowAttack,deploy,preferExit:patient||o.boost<reserve+8||this.tyreLoad>.45||learnedRisk>0,driveScale:recovering?1-this.tyreLoad*.08:1};
+    this.plan={mode,reserve:final?5:reserve,allowAttack,deploy,preferExit:patient||o.boost<reserve+8||this.tyreLoad>.45||learnedRisk>0,driveScale:recovering?1-this.tyreLoad*.08:mode==='harvest'&&!momentumPass?.96:1};
     return this.plan;
   }
 }
