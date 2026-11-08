@@ -157,3 +157,19 @@ for(const [metres,elapsed,gap,speed,slowSpeed] of [[300,5,30,65,30],[740,8,35,50
  assert.ok(waiting>0,'A fast approaching rear car must delay the lateral rejoin');assert.equal(teleports,0);assert.equal(recovering.car.offRoad,false);assert.equal(race.opponents.reduce((n,o)=>n+o.collisionCount,0),0);
  console.log('PASS: physical off-track driver waits for the rear car, rejoins without contact and does not teleport',{waitingSeconds:waiting/120});
 }
+
+// A single opponent must be allowed to evaluate independent racing corridors.
+{
+ const track=referenceTrack,scene=new THREE.Scene(),race=new Race(track,scene,new LinePlanner(track),{opponentCount:1}),player=new Vehicle(track,scene),attacker=race.opponents[0];
+ race.state='racing';race.elapsed=60;race.balanceRivals=()=>{};
+ attacker.car.resetAt(300/track.length);attacker.car.position.copy(race.speedPlanner.point(attacker.car.progress));attacker.car.speed=65;attacker.lane=0;
+ player.resetAt(330/track.length);player.speed=30;
+ let separated=0;
+ for(let i=0;i<120*6;i++){
+  player.distance+=30/120/track.length;player.progress=(player.distance%1+1)%1;player.position.copy(race.speedPlanner.point(player.progress));const tangent=track.tangent(player.progress);player.heading=Math.atan2(tangent.x,tangent.z);
+  race.update(1/120,player);
+  separated=Math.max(separated,Math.abs(attacker.car.position.clone().sub(race.speedPlanner.point(attacker.car.progress)).dot(track.normal(attacker.car.progress))));
+ }
+ assert.ok(attacker.agent.passAttempts>0);assert.ok(separated>2.5);assert.equal(attacker.car.offRoad,false);assert.equal(attacker.collisionCount,0);
+ console.log('PASS: one AI races the player independently, chooses a distinct corridor and avoids contact');
+}

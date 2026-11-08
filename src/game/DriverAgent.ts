@@ -122,7 +122,7 @@ export class DriverAgent {
     const crowdedField=fieldSize>6;
     // Keep the validated launch speed envelope, but do not switch off racing
     // decisions for the whole grid until a fixed point on the map.
-    const racingField=fieldSize>2;
+    const racingField=fieldSize>1;
     const launchEnvelope=racingField&&this.elapsed<40&&car.distance*this.track.length<(this.track.circuit?.formationEnd??1300);
     // A multi-car squeeze has no reliable independent lateral escape room.
     // Each driver reassesses its own immediate neighbours, so a clear car can
@@ -151,7 +151,7 @@ export class DriverAgent {
     // A corner/chicane alone does not cancel a pass or command every driver
     // back to zero offset. The local planner checks actual route curvature,
     // occupied corridors and closing speeds before continuing or yielding.
-    if(chicaneTraffic&&!manoeuvreRoom){o.passLane=undefined;o.passUntil=0;o.defendUntil=0;this.passingTarget=undefined;desiredLane=0;this.intent='yield';}
+    if(chicaneTraffic&&!manoeuvreRoom){o.passLane=undefined;o.passUntil=0;o.defendUntil=0;this.passingTarget=undefined;desiredLane=currentBias;this.intent='yield';}
     if(competitive&&this.passingTarget){
       const rival=traffic.find(other=>other.car===this.passingTarget);
       if(rival&&gapTo(rival)<-12){this.passingTarget=undefined;o.passUntil=this.elapsed+.45;}
@@ -276,11 +276,11 @@ export class DriverAgent {
     const nextApex=this.planner.apices.find(apex=>apex.progress>car.progress)??this.planner.apices[0];
     const apexDistance=nextApex?((nextApex.progress-car.progress+1)%1)*this.track.length:Infinity;
     const alongside=traffic.some(other=>Math.abs(gapTo(other))<14);
-    if(!settling&&!chicaneTraffic&&!passing&&!ahead&&straight&&!alongside){
+    if(!settling&&!chicaneTraffic&&!passing&&straight&&!alongside){
       if(this.elapsed<o.defendUntil){desiredLane=o.defendLane;this.intent='defend';}
       else if(o.aggression-o.avoidance*.35>.5&&this.elapsed>o.defendCooldown&&apexDistance>200&&apexDistance<(competitive?440:260)&&traffic.some(other=>{
         const gap=-gapTo(other),closing=other.speed-car.speed;
-        return gap>22&&gap<45&&closing>1&&gap/closing>3;
+        return gap>22&&gap<70&&closing>.3&&gap/closing>3&&gap/closing<14;
       })){
         const defence=this.behavior.defence(apexDistance,car.speed);desiredLane=o.lineBias+(nextApex?.direction??1)*defence.width;
         this.intent='defend';o.defendLane=desiredLane;o.defendUntil=this.elapsed+defence.hold;o.defendCooldown=this.elapsed+defence.cooldown;

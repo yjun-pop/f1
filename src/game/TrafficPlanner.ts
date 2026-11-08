@@ -83,9 +83,9 @@ export class TrafficPlanner {
       this.commitment=undefined;committed=undefined;this.mergeUntil=time+3;
     }
     const obstacle=seen.filter(s=>s.hazard&&s.gap>-5&&s.gap<Math.min(95,35+car.speed*1.6)).sort((a,b)=>a.gap-b.gap)[0];
-    const opportunity=racing&&time>this.retryAfter&&front&&front.gap>9&&car.speed>12&&desiredSpeed>front.forward+4&&
-      (expectedAt?.(front.sample.progress)??desiredSpeed)>front.forward+4&&
-      (car.speed-front.forward>1.8||this.blockedTime>.9)&&Math.abs(car.lateralSpeed)<3&&car.gripUsage<1.05?front:undefined;
+    const opportunity=racing&&time>this.retryAfter&&front&&front.gap>9&&car.speed>12&&desiredSpeed>front.forward+2&&
+      (expectedAt?.(front.sample.progress)??desiredSpeed)>front.forward+2&&
+      (car.speed-front.forward>.8||this.blockedTime>.6)&&Math.abs(car.lateralSpeed)<3&&car.gripUsage<1.05?front:undefined;
     const target=committed??obstacle??opportunity;
     const merging=!target&&time<this.mergeUntil;
     if(!target&&!merging){this.mode='clear';return null;}
@@ -186,10 +186,11 @@ export class TrafficPlanner {
       // centreline projection, or a slower outside pass can look profitable.
       const ownRate=speed/progressScale(route.point,target?.sample.progress??origin),targetRate=(target?.forward??0)/targetScale;
       const passingTime=((target?.gap??0)+14)/Math.max(.1,ownRate-targetRate)+Math.abs(goal-from)/(2+this.character.aggression*1.5);
-      if(blocked||!hazard&&!merging&&(speed<12||ownRate<targetRate+1.2||!this.commitment&&passingTime>2+this.character.aggression*2))continue;
+      if(blocked||!hazard&&!merging&&(speed<12||ownRate<targetRate+1.2||!this.commitment&&passingTime>2+7*this.character.aggression**2))continue;
+      // Compare usable track progress and passing gain; raw outside-lane speed can mislead.
       const c=this.character,sidePreference=Math.sin(c.phase*1.7+c.lineBias)*.2;
       const switchCost=this.commitment&&Math.abs(goal-this.commitment.lane)>1.5?2+c.caution*2:0;
-      const score=speed*(.24+c.aggression*.12)-Math.abs(goal-from)*(.45+c.caution*.3)-switchCost+goal*sidePreference+(rejoining?3:0)+(hazard&&this.commitment&&Math.abs(goal-this.commitment.lane)<.3?10:0);
+      const score=ownRate*(.24+c.aggression*.12)+Math.min(12,Math.max(0,ownRate-targetRate))*(.25+c.aggression*.35)-Math.abs(goal-from)*(.45+c.caution*.3)-switchCost+goal*sidePreference+(rejoining?3:0)+(hazard&&this.commitment&&Math.abs(goal-this.commitment.lane)<.3?10:0);
       if(!best||score>best.score)best={lane:goal,speed,score,route};
     }
     if(!best){
