@@ -276,7 +276,7 @@ export class DriverAgent {
     const nextApex=this.planner.apices.find(apex=>apex.progress>car.progress)??this.planner.apices[0];
     const apexDistance=nextApex?((nextApex.progress-car.progress+1)%1)*this.track.length:Infinity;
     const alongside=traffic.some(other=>Math.abs(gapTo(other))<14);
-    if(!settling&&!chicaneTraffic&&!passing&&straight&&!alongside){
+    if(!settling&&!chicaneTraffic&&!passing&&(!ahead||!occupied)&&straight&&!alongside){
       if(this.elapsed<o.defendUntil){desiredLane=o.defendLane;this.intent='defend';}
       else if(o.aggression-o.avoidance*.35>.5&&this.elapsed>o.defendCooldown&&apexDistance>200&&apexDistance<(competitive?440:260)&&traffic.some(other=>{
         const gap=-gapTo(other),closing=other.speed-car.speed;
