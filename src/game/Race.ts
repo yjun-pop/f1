@@ -24,7 +24,11 @@ export class Race {
   state:'ready'|'countdown'|'racing'|'finished'='ready';
   countdown=0;elapsed=0;lapTime=0;best=0;lastLap=0;position=DEFAULT_FIELD_SIZE;
   readonly startSequence=new StartSequence();
-  get startSignal():StartSignal {return this.state==='countdown'||this.state==='racing'&&this.elapsed<.85?this.startSequence.signal:{run:this.startSequence.signal.run,phase:'idle',lights:0};}
+  private flying=false;private rollingSpeed=45;private approachRemaining=4;private handoffRemainder=0;
+  get flyingStart(){return this.flying;}
+  get rollingStart(){return this.flying&&this.state==='countdown';}
+  takeHandoffRemainder(){const dt=this.handoffRemainder;this.handoffRemainder=0;return dt;}
+  get startSignal():StartSignal {if(this.flying){const run=this.startSequence.signal.run;if(this.state==='countdown')return {run,phase:'lights',lights:Math.min(4,1+Math.floor((4-this.approachRemaining)+1e-8))};if(this.state==='racing'&&this.elapsed<.18)return {run,phase:'lights',lights:5};if(this.state==='racing'&&this.elapsed<.7)return {run,phase:'go',lights:0};return {run,phase:'idle',lights:0};}return this.state==='countdown'||this.state==='racing'&&this.elapsed<.85?this.startSequence.signal:{run:this.startSequence.signal.run,phase:'idle',lights:0};}
   private aiSpeeds:Float64Array;
   private speedPlanner:AISpeedPlanner;
   private cornerObserver:CornerPaceObserver;
@@ -39,8 +43,8 @@ export class Race {
   private lapSamples(player:Vehicle){return [{id:'PLAYER',name:'YOU',distance:player.distance},...this.opponents.map(o=>({id:o.id,name:o.name,distance:o.car.distance}))];}
   get classification(){return this.player?this.laps.standings(this.lapSamples(this.player),this.elapsed):[];}
   private gridPlayer?:Vehicle;
-  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number;player?:Vehicle;totalLaps?:number}={}){
-    this.gridPlayer=options.player;
+  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number;player?:Vehicle;totalLaps?:number;flyingStart?:boolean}={}){
+    this.gridPlayer=options.player;this.flying=!!options.flyingStart;
     this.timing=new RaceTiming(track.length);this.laps=new RaceLaps(track.length,quickRaceLaps(options.totalLaps));this.aerodynamics=new RaceAerodynamics(track,planner);track.details.addDRSBoards(track,this.aerodynamics.zones);
     // Rivals retain fixed steering/grip calibration, but share the player's
     // engine output, ERS and speed limits. Difficulty adjusts driving targets.
@@ -57,17 +61,19 @@ export class Race {
     this.speedPlanner=new AISpeedPlanner(track);
     this.cornerObserver=new CornerPaceObserver(track,planner);
     this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
-    const profiles=DRIVER_PROFILES.slice(0,Math.max(1,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
+    const profiles=DRIVER_PROFILES.slice(0,Math.max(0,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
     profiles.forEach((profile,i)=>this.opponents.push(new Opponent(profile,i,track,scene,planner,this.aiSpeeds,this.speedPlanner)));this.reset();
     this.best=readBest(this.storageKey,this.recordUser);this.bestAtStart=this.best;
   }
-  reset(){this.laps.reset();this.bestAtStart=this.best;this.aerodynamics.reset();this.aeroPreparedAt=-Infinity;this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
+  reset(){this.approachRemaining=4;this.handoffRemainder=0;this.laps.reset();this.bestAtStart=this.best;this.aerodynamics.reset();this.aeroPreparedAt=-Infinity;this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;
     // Bind the playable car before arming the start so paint, poses and timing
     // share one standing grid. Unbound simulations can stage their own field.
     if(this.gridPlayer){const slot=gridSlot(this.fieldSize);this.gridPlayer.reset();this.gridPlayer.resetAt(slot.meters/this.track.length,slot.lane);this.player=this.gridPlayer;}
-    this.opponents.forEach((o,i)=>o.reset(this.gridPlayer?gridSlot(i+1):{meters:15+(this.opponents.length-1-i)*12,lane:i%2?3:-3},i+1));}
+    this.opponents.forEach((o,i)=>o.reset(this.gridPlayer?gridSlot(i+1):{meters:15+(this.opponents.length-1-i)*12,lane:i%2?3:-3},i+1));
+    if(this.flying&&this.gridPlayer){this.rollingSpeed=Math.min(45,Math.max(18,this.planner.cornerSpeeds[0]*.85));const start=-4*this.rollingSpeed/this.track.length;this.gridPlayer.stageRolling(start,this.rollingSpeed,0);const mode=this.gridPlayer.transmission.mode;this.gridPlayer.transmission.setMode('auto',this.rollingSpeed);this.gridPlayer.transmission.setMode(mode,this.rollingSpeed);this.opponents.forEach((o,i)=>{o.car.stageRolling(start+(this.opponents.length-i)*10/this.track.length,this.rollingSpeed,0,i%2?3:-3);o.distance=o.car.distance;});}
+  }
 
-  start(){if(this.state==='ready'){this.bestAtStart=this.best;this.startSequence.arm();this.countdown=this.startSequence.remaining;this.state='countdown';}}
+  start(){if(this.state==='ready'){this.bestAtStart=this.best;this.startSequence.arm();this.countdown=this.flying?this.approachRemaining:this.startSequence.remaining;this.state='countdown';}}
   private balanceRivals(player:Vehicle,dt:number){
     const normal=this.track.normal(player.progress);
     const heldUp=this.opponents.some(o=>{
@@ -124,6 +130,13 @@ export class Race {
   }
   update(dt:number,player:Vehicle){
     this.player=player;
+    if(this.rollingStart){
+      const used=Math.min(dt,this.approachRemaining);this.approachRemaining=Math.max(0,this.approachRemaining-used);this.countdown=this.approachRemaining;
+      const distance=-this.approachRemaining*this.rollingSpeed/this.track.length;player.stageRolling(distance,this.rollingSpeed,used);
+      this.opponents.forEach((o,i)=>{o.car.stageRolling(distance+(this.opponents.length-i)*10/this.track.length,this.rollingSpeed,used,i%2?3:-3);o.distance=o.car.distance;});
+      if(this.approachRemaining<=1e-9){player.stageRolling(0,this.rollingSpeed,0);this.state='racing';this.elapsed=this.lapTime=this.lapStart=0;this.laps.reset(this.lapSamples(player),0);this.timing.update(this.timingSamples(player),0);this.handoffRemainder=Math.max(0,dt-used);}
+      return;
+    }
     if(this.state==='countdown'){this.startSequence.advance(dt);this.countdown=this.startSequence.remaining;if(this.startSequence.signal.phase==='go'){this.state='racing';this.laps.reset(this.lapSamples(player),0);this.timing.update(this.timingSamples(player),0);}return;}
     if(this.state!=='racing')return;
     if(!this.laps.started)this.laps.reset(this.lapSamples(player),this.elapsed);

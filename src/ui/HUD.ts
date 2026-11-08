@@ -99,7 +99,7 @@ export class HUD {
     (this.root.querySelector('#overlay') as HTMLElement).hidden=paused||r.state!=='ready'&&r.state!=='finished';
     if(this.sessionState!==r.state){
       if(r.state==='ready')this.session.ready(track.name);
-      if(r.state==='finished')this.session.result(track.name,playerStanding?.position??r.position,r.fieldSize,formatTime(playerStanding?.finish??r.elapsed),formatTime(playerStanding?playerStanding.best:r.best),{rows:standings,previousBest:r.bestAtStart??0,totalLaps:r.laps?.totalLaps??3});
+      if(r.state==='finished')this.session.result(track.name,playerStanding?.position??r.position,r.fieldSize,formatTime(playerStanding?.finish??r.elapsed),formatTime(playerStanding?playerStanding.best:r.best),{rows:standings,previousBest:r.bestAtStart??0,totalLaps:r.laps?.totalLaps??3,flyingStart:r.flyingStart??false});
       this.sessionState=r.state;
     }
     const ctx=this.map;ctx.clearRect(0,0,240,190);ctx.lineWidth=7;ctx.strokeStyle='#ffffff18';ctx.stroke(this.path);ctx.lineWidth=2;ctx.strokeStyle='#b7c7c5';ctx.stroke(this.path);

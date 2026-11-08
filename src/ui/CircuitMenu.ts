@@ -1,7 +1,6 @@
 import {readBest} from '../game/RecordStore';
 import {CIRCUITS,circuitById,type CircuitDefinition,type CircuitId} from '../game/Circuits';
 import {transmissionMode,type TransmissionMode} from '../game/Powertrain';
-import {DEFAULT_FIELD_SIZE} from '../game/RaceRoster';
 
 const PRESENTATION={
   monza:{country:'이탈리아',theme:'SPEED',accent:'#ff795f',style:'긴 직선 · 강한 제동',description:'직선에서 속도를 쌓고, 시케인에서 승부하세요.',landmark:'RETTIFILO / ASCARI'},
@@ -42,19 +41,19 @@ function record(id:CircuitId){
   const value=readBest(`apex-best-${id}-v3`);
   return Number.isFinite(value)&&value>0?`${Math.floor(value/60)}:${(value%60).toFixed(3).padStart(6,'0')}`:'아직 기록 없음';
 }
-function circuitMenuMarkup(selected:CircuitId,prefix='',totalLaps=3){
+function circuitMenuMarkup(selected:CircuitId,prefix='',totalLaps=3,opponents=0){
   const circuit=circuitById(selected),info=PRESENTATION[selected],id=(value:string)=>prefix+value;
   return `<section class="race-menu" id="${id('menu-shell')}" aria-labelledby="${id('menu-title')}">
-    <div class="menu-topbar"><div class="menu-brand" aria-label="APEX FORMULA"><i>Λ</i> APEX<span>FORMULA</span></div><span class="menu-mode"><i></i> QUICK RACE <span>/ SINGLE PLAYER</span></span></div>
-    <div class="menu-heading"><div><div class="menu-kicker">01 <span> / </span> SELECT YOUR CIRCUIT</div><h1 id="${id('menu-title')}">서킷 선택</h1><p id="${id('menu-description')}">서킷을 고르고, 당신의 다음 베스트 랩에 도전하세요.</p></div><div class="menu-session"><span><b id="${id('driver-count')}">${DEFAULT_FIELD_SIZE}</b> DRIVERS</span><i></i><span><b>${String(totalLaps).padStart(2,'0')}</b> LAPS</span><i></i><span class="menu-dry" id="${id('conditions')}">${circuit.night?'☾ <b>NIGHT · DRY</b>':'☀ <b>DRY</b>'}</span></div></div>
+    <div class="menu-topbar"><div class="menu-brand" aria-label="APEX FORMULA"><i>Λ</i> APEX<span>FORMULA</span></div><span class="menu-mode"><i></i> SINGLE RACE <span>/ SINGLE PLAYER</span></span></div>
+    <div class="menu-heading"><div><div class="menu-kicker">01 <span> / </span> SELECT YOUR CIRCUIT</div><h1 id="${id('menu-title')}">서킷 선택</h1><p id="${id('menu-description')}">서킷을 고르고, 당신의 다음 베스트 랩에 도전하세요.</p></div><div class="menu-session"><span><b id="${id('driver-count')}">${opponents+1}</b> DRIVERS</span><i></i><span><b>${String(totalLaps).padStart(2,'0')}</b> LAPS</span><i></i><span class="menu-dry" id="${id('conditions')}">${circuit.night?'☾ <b>NIGHT · DRY</b>':'☀ <b>DRY</b>'}</span></div></div>
     <fieldset class="circuit-gallery" id="${id('gallery')}" aria-roledescription="갤러리"><legend class="sr-only">레이스할 서킷 선택</legend><div class="gallery-stage" id="${id('gallery-stage')}">${CIRCUITS.map((c,i)=>{const p=PRESENTATION[c.id];return `<label class="circuit-card ${c.id===selected?'is-selected':''}" id="${id('card-'+c.id)}" style="--circuit-accent:${p.accent}"><input class="circuit-radio" type="radio" name="${id('circuit')}" id="${id('circuit-'+c.id)}" value="${c.id}" ${c.id===selected?'checked':''} aria-describedby="${id('facts-'+c.id)}"/><span class="card-topline"><span>${flag(c.id)} ${c.country}</span><span class="card-choice"><span class="choice-label">선택됨</span><i>✓</i></span></span><span class="card-title">${c.name}<small>${c.label}</small></span><span class="card-map"><span class="card-watermark">0${i+1}</span>${circuitPreview(c)}<span class="card-map-caption">${p.landmark}</span></span><span class="card-bottom" id="${id('facts-'+c.id)}"><span class="card-character">${p.theme}<small>${p.style}</small></span><span class="card-measure"><b>${(c.length/1000).toFixed(3)}<small>KM</small></b><span>${c.cornerCount} CORNERS</span></span></span></label>`;}).join('')}</div><div class="gallery-controls"><button type="button" class="gallery-arrow" id="${id('gallery-prev')}" aria-label="이전 서킷"><span aria-hidden="true">&lt;</span><small class="gallery-neighbor" id="${id('prev-name')}"></small></button><div class="gallery-pagination" aria-label="서킷 바로 선택">${CIRCUITS.map(c=>`<button type="button" class="gallery-dot" id="${id('dot-'+c.id)}" aria-label="${PRESENTATION[c.id].country} · ${c.label} 선택"></button>`).join('')}</div><button type="button" class="gallery-arrow" id="${id('gallery-next')}" aria-label="다음 서킷"><span aria-hidden="true">&gt;</span><small class="gallery-neighbor" id="${id('next-name')}"></small></button><span class="gallery-counter" id="${id('gallery-counter')}" aria-live="polite" aria-atomic="true"></span></div></fieldset>
-    <div class="menu-bottom"><div class="selected-circuit" id="${id('selection-summary')}" aria-live="polite"><span class="menu-kicker">YOUR NEXT CHALLENGE</span><h2 id="${id('selection-title')}">${info.country} · ${circuit.label}</h2><p id="${id('selection-description')}">${info.description}</p><span class="menu-record">최고 기록 <b id="${id('selection-record')}">${record(selected)}</b></span></div><div class="menu-launch"><div class="menu-setup-summary"><label class="menu-transmission" for="${id('start-transmission')}">변속 방식<select id="${id('start-transmission')}"><option value="auto">자동 변속</option><option value="manual">수동 변속 · Q / E</option></select></label><span class="launch-race-facts">${DEFAULT_FIELD_SIZE}대 · ${totalLaps}랩</span></div><button type="button" class="menu-wheel-button" id="${id('wheel-settings')}">설정</button><button class="menu-start" id="${id('start')}"><span id="${id('start-label')}">${circuit.label}에서 시작</span><span aria-hidden="true">↗</span></button><span class="menu-launch-hint"><kbd>← →</kbd> 서킷 선택 <span>·</span> <kbd>ENTER</kbd> 레이스 시작</span></div></div>
+    <div class="menu-bottom"><div class="selected-circuit" id="${id('selection-summary')}" aria-live="polite"><span class="menu-kicker">YOUR NEXT CHALLENGE</span><h2 id="${id('selection-title')}">${info.country} · ${circuit.label}</h2><p id="${id('selection-description')}">${info.description}</p><span class="menu-record">최고 기록 <b id="${id('selection-record')}">${record(selected)}</b></span></div><div class="menu-launch"><div class="menu-setup-summary"><label class="menu-transmission" for="${id('start-transmission')}">변속 방식<select id="${id('start-transmission')}"><option value="auto">자동 변속</option><option value="manual">수동 변속 · Q / E</option></select></label><label class="menu-transmission" for="${id('opponents')}">상대 차량<select id="${id('opponents')}">${Array.from({length:12},(_,i)=>`<option value="${i}" ${i===opponents?'selected':''}>${i===0?'상대 없음':'상대 '+i+'대'}</option>`).join('')}</select></label><span class="launch-race-facts" id="${id('race-facts')}">${opponents+1}대 · ${totalLaps}랩</span></div><button type="button" class="menu-wheel-button" id="${id('wheel-settings')}">설정</button><button class="menu-start" id="${id('start')}"><span id="${id('start-label')}">${circuit.label}에서 시작</span><span aria-hidden="true">↗</span></button><span class="menu-launch-hint"><kbd>← →</kbd> 서킷 선택 <span>·</span> <kbd>ENTER</kbd> 레이스 시작</span></div></div>
     <div class="menu-footnote"><a class="menu-home" href="./" aria-label="메인 화면으로 돌아가기">← 메인 화면</a><button type="button" class="menu-account" id="${id('account')}">계정 · 서버 기록</button><details><summary>조작 방법</summary><p>W / ↑ 가속 · S / ↓ 제동 · A D / ← → 조향<br>SHIFT ERS · F DRS · Q / E 변속 · T 변속 방식<br>C 시점 · G 주행선 · ESC 일시정지</p></details></div><p class="menu-status" id="${id('menu-status')}" role="status" hidden></p>
   </section>`;
 }
 
 interface MenuOptions {
-  totalLaps?:number;
+  totalLaps?:number;opponents?:number;opponentsChanged?:(count:number)=>void;
   selected:CircuitId;mode:TransmissionMode;prefix?:string;
   start:(id:CircuitId,mode:TransmissionMode)=>void;preview?:(id:CircuitId)=>void;transmission?:(mode:TransmissionMode)=>void;wheel?:()=>void;account?:()=>void;
 }
@@ -73,7 +72,7 @@ export class CircuitMenu {
   };
   constructor(private root:HTMLElement,private options:MenuOptions){
     this.selected=options.selected;
-    root.innerHTML=circuitMenuMarkup(options.selected,options.prefix,options.totalLaps);
+    root.innerHTML=circuitMenuMarkup(options.selected,options.prefix,options.totalLaps,options.opponents);
     for(const circuit of CIRCUITS){
       this.node<HTMLInputElement>('circuit-'+circuit.id).addEventListener('change',()=>this.select(circuit.id));
       this.node('dot-'+circuit.id).addEventListener('click',()=>this.select(circuit.id));
@@ -97,6 +96,7 @@ export class CircuitMenu {
     this.node('account').addEventListener('click',()=>{if(!this.loading)options.account?.();});
     this.node('wheel-settings').addEventListener('click',()=>{if(!this.loading)options.wheel?.();});
     this.node<HTMLSelectElement>('start-transmission').addEventListener('change',event=>options.transmission?.(transmissionMode((event.target as HTMLSelectElement).value)));
+    this.node<HTMLSelectElement>('opponents').addEventListener('change',event=>{const count=Number((event.target as HTMLSelectElement).value);options.opponentsChanged?.(count);this.node('driver-count').textContent=String(count+1);this.node('race-facts').textContent=`${count+1}대 · ${options.totalLaps??3}랩`;});
     this.setTransmission(options.mode);
     window.addEventListener('keydown',this.keyboardHandler);
     this.updateGallery();

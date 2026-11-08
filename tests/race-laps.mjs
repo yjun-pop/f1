@@ -65,3 +65,13 @@ for(const n of [1,10]){
  assert.equal(session.state,'finished');assert.equal(session.laps.totalLaps,n);assert.equal(session.classification.find(r=>r.id==='PLAYER').lapTimes.length,n);session.reset();assert.equal(session.laps.totalLaps,n);
 }
 console.log('PASS: 1/3/5/10 lap clocks, bounded URL choices, variable result rows/cards and real Race finish/restart at 1 and 10 laps');
+
+for(const step of [1/30,1/60,1/120,.037]){
+ const driver=new Vehicle(track,scene),session=new Race(track,scene,new LinePlanner(track),{player:driver,opponentCount:0,totalLaps:1,flyingStart:true});
+ assert.equal(session.fieldSize,1);assert.ok(driver.distance<0&&driver.speed>0);session.start();let approach=0;
+ while(session.state==='countdown'){session.update(step,driver);approach+=step;if(session.state==='countdown'){assert.equal(session.elapsed,0);assert.ok(session.startSignal.lights<5);assert.ok(driver.distance<0);}}
+ assert.ok(Math.abs(approach-session.takeHandoffRemainder()-4)<1e-8);assert.equal(driver.distance,0);assert.equal(driver.progress,0);assert.equal(session.startSignal.lights,5);assert.equal(session.elapsed,0);assert.ok(driver.speed>0);assert.equal(session.classification[0].completed,0);assert.equal(session.classification[0].finish,null);
+ const speed=driver.speed;driver.update(1/120,{down:()=>false,consume:()=>false});assert.ok(Math.abs(driver.speed-speed)<1);assert.ok(driver.distance>=0&&driver.distance<.001);session.update(1/120,driver);assert.ok(session.elapsed>0);assert.equal(session.classification[0].completed,0);session.reset();assert.equal(session.state,'ready');assert.ok(driver.distance<0);assert.equal(session.classification[0].lapTimes.length,0);
+}
+const solo=new Race(track,scene,new LinePlanner(track),{opponentCount:0});assert.equal(solo.opponents.length,0);
+console.log('PASS: solo racing, four-step-rate moving approaches, exact zero-distance/zero-time five-light handoff, continuous speed and reset without a phantom lap');

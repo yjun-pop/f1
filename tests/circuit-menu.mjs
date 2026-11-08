@@ -135,6 +135,8 @@ console.log('PASS: actual application bootstrap defers racing world/audio setup,
 
 env=environment('https://example.test/f1/?circuit=spa&race=start&laps=10');
 await bootstrap('confirmed-next-race');await env.paint();
-assert.equal(env.launches.length,1);assert.equal(env.launches[0].options.circuit,'spa');assert.equal(env.launches[0].options.totalLaps,10);assert.ok(env.href.includes('laps=10'));
+assert.equal(env.launches.length,1);assert.equal(env.launches[0].options.circuit,'spa');assert.equal(env.launches[0].options.totalLaps,10);assert.equal(env.launches[0].options.opponentCount,0);assert.ok(env.href.includes('laps=10'));
 assert.equal(new URL(env.href).searchParams.has('race'),false,'The next-race intent must be consumed so refresh returns to selection');
 console.log('PASS: confirmed next-circuit start bypasses a second selection screen and consumes its one-time launch intent');
+
+env=environment('https://example.test/f1/?circuit=monza&race=start&laps=1&opponents=11');await bootstrap('flying-full-field');await env.paint();assert.equal(env.launches[0].options.totalLaps,1);assert.equal(env.launches[0].options.opponentCount,11);assert.ok(env.href.includes('opponents=11'));console.log('PASS: zero-opponent default and eleven-opponent one-lap options reach the actual game bootstrap');

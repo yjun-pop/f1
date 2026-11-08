@@ -54,3 +54,5 @@ export function formatTime(seconds:number|null|undefined){
   const milliseconds=Math.round(seconds*1000),minutes=Math.floor(milliseconds/60000),remainder=milliseconds%60000;
   return `${minutes}:${Math.floor(remainder/1000).toString().padStart(2,'0')}.${(remainder%1000).toString().padStart(3,'0')}`;
 }
+
+export function opponentCount(value:unknown){const n=Number(value);return Number.isInteger(n)&&n>=0&&n<=11?n:0;}

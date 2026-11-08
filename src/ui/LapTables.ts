@@ -9,11 +9,11 @@ export function resultTable(rows:readonly RaceStanding[],totalLaps=3){
     return `<tr class="${row.id==='PLAYER'?'is-player':''}"><td>${String(row.position).padStart(2,'0')}</td><th scope="row">${escape(row.name)}${row.id==='PLAYER'?'<small>나</small>':''}</th>${Array.from({length:totalLaps},(_,i)=>i+1).map(number=>{const time=row.lapTimes.find(lap=>lap.lap===number)?.seconds;return `<td class="${sameLap(time,fastest)?'session-fastest':''}">${displayLap(time)}</td>`;}).join('')}<td class="${sameLap(row.best,fastest)?'session-fastest':''}">${displayLap(row.best)}</td><td class="finish-cell"><b>${row.finish===null?`${row.completed} / ${totalLaps}랩`:formatTime(row.finish)}</b><small>${gap}</small></td></tr>`;
   }).join('');
 }
-export function playerLapCards(player:RaceStanding|undefined,totalLaps=3){
+export function playerLapCards(player:RaceStanding|undefined,totalLaps=3,standingStart=true){
   return Array.from({length:totalLaps},(_,i)=>i+1).map(number=>{
     const time=player?.lapTimes.find(lap=>lap.lap===number)?.seconds,best=player?.best;
     const detail=time==null?'완료 기록 없음':sameLap(time,best)?'이번 레이스 베스트':`베스트 대비 +${(time-(best??time)).toFixed(3)}s`;
-    return `<div class="player-lap ${sameLap(time,best)?'is-best':''}"><span>LAP ${String(number).padStart(2,'0')}${number===1?'<small>출발 포함</small>':''}</span><b>${displayLap(time)}</b><small>${detail}</small></div>`;
+    return `<div class="player-lap ${sameLap(time,best)?'is-best':''}"><span>LAP ${String(number).padStart(2,'0')}${number===1&&standingStart?'<small>출발 포함</small>':''}</span><b>${displayLap(time)}</b><small>${detail}</small></div>`;
   }).join('');
 }
 export function fastestLapLabel(rows:readonly RaceStanding[]){

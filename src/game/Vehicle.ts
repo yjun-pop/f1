@@ -39,6 +39,14 @@ export class Vehicle {
     const t=this.track.tangent(progress);this.heading=Math.atan2(t.x,t.z);
     this.speed=0;this.lateralSpeed=0;this.yawRate=0;this.steer=0;this.steerAngle=0;this.throttle=0;this.brake=0;this.boosting=false;this.offRoad=false;this.acceleration=0;this.lateralAcceleration=0;this.gripUsage=0;this.sync();
   }
+  /** Presentation-only approach; normal driving resumes without resetting velocity. */
+  stageRolling(distance:number,speed:number,dt:number,lane=0){
+    this.distance=distance;this.progress=((distance%1)+1)%1;this.lastProgress=this.progress;this.lap=1;
+    this.position.copy(this.track.point(distance)).addScaledVector(this.track.normal(distance),lane);
+    const tangent=this.track.tangent(distance);this.heading=Math.atan2(tangent.x,tangent.z);
+    this.speed=speed;this.lateralSpeed=this.yawRate=0;this.throttle=.6;this.brake=0;
+    this.transmission.advance(speed,this.throttle,0,dt,false);this.sync(dt);
+  }
   recover(){const distance=this.distance,lap=this.lap;this.resetAt(this.progress);this.distance=distance;this.lap=lap;}
   constrainToWalls(x:number,z:number,heading:number){return this.track.solidWalls?.resolve(this,x,z,heading)??false;}
   update(dt:number,input:Input){

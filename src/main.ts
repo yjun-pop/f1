@@ -4,7 +4,7 @@ import './ui/RaceTiming.css';
 import './ui/RacingTheme.css';
 import {bootScreen} from './ui/BootScreen';
 import {CircuitMenu} from './ui/CircuitMenu';
-import {quickRaceLaps} from './game/RaceLaps';
+import {quickRaceLaps,opponentCount} from './game/RaceLaps';
 import {circuitById,circuitURL,selectedCircuit,type CircuitId} from './game/Circuits';
 import {transmissionMode,type TransmissionMode} from './game/Powertrain';
 
@@ -19,6 +19,7 @@ const front=document.querySelector<HTMLElement>('#front-menu')!;
 let savedCircuit:unknown,savedTransmission:unknown;
 try{savedCircuit=localStorage.getItem('apex-circuit');savedTransmission=localStorage.getItem('apex-transmission-mode');}catch{}
 const selected=selectedCircuit(window.location.search,savedCircuit),mode=transmissionMode(savedTransmission);
+let rivals=opponentCount(new URLSearchParams(window.location.search).get('opponents'));
 let launching=false;
 let previewInteraction=false;
 let backdrop:import('./ui/CircuitBackdrop').CircuitBackdrop|undefined,previewId=selected.id;
@@ -42,6 +43,7 @@ function preview(id:CircuitId){
 }
 function start(id:CircuitId,transmission:TransmissionMode){
   if(launching)return;launching=true;bootObserver?.disconnect();backdrop?.dispose();backdrop=undefined;
+  const raceURL=new URL(window.location.href);raceURL.searchParams.set('opponents',String(rivals));window.history.replaceState(null,'',raceURL.href);
   menu.setLoading(circuitById(id).label);
   try{localStorage.setItem('apex-circuit',id);localStorage.setItem('apex-transmission-mode',transmission);}catch{}
   try{window.history.replaceState(null,'',circuitURL(window.location.href,id));}catch{}
@@ -53,14 +55,14 @@ function start(id:CircuitId,transmission:TransmissionMode){
     try{
       const activeAccount=await accountReady;await activeAccount.sync();
       const {Game}=await import('./game/Game');
-      new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext,totalLaps});
+      new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext,totalLaps,opponentCount:rivals});
       // Game queues its first rendered frame first. Keep loading visible until
       // that frame, rather than briefly revealing an empty canvas or old menu.
       requestAnimationFrame(()=>{dialogObserver.disconnect();window.removeEventListener('apex-account-change',refreshRecords);menu.dispose();front.remove();bootScreen.finish();});
     }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();bootScreen.finish();}
   }));
 }
-const menu=new CircuitMenu(front,{selected:selected.id,mode,totalLaps,prefix:'front-',start,preview,wheel:()=>{
+const menu=new CircuitMenu(front,{selected:selected.id,mode,totalLaps,opponents:rivals,opponentsChanged:value=>{rivals=value;},prefix:'front-',start,preview,wheel:()=>{
   previewInteraction=true;backdrop?.setInteracting(true);
   void import('./ui/Settings').then(module=>module.openSettings());
 },account:()=>{void import('./ui/AccountPanel').then(m=>m.openAccount());},transmission:value=>{try{localStorage.setItem('apex-transmission-mode',value);}catch{}}});
