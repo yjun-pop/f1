@@ -12,7 +12,7 @@ import {RaceTiming} from './RaceTiming';
 import {RaceLaps,quickRaceLaps} from './RaceLaps';
 export {formatTime} from './RaceLaps';
 import {AISpeedPlanner} from './AISpeedPlanner';
-import {FlyingStart} from './FlyingStart';
+import {FlyingStart,FLYING_START_SECONDS} from './FlyingStart';
 import {CornerPaceObserver} from './CornerPaceObserver';
 import {RaceAerodynamics} from './Aerodynamics';
 import {gridSlot} from './StartingGrid';
@@ -28,7 +28,7 @@ export class Race {
   private flying=false;private flyingController!:FlyingStart;
   get flyingStart(){return this.flying;}
   get rollingStart(){return this.flying&&this.state==='countdown';}
-  get startSignal():StartSignal {if(this.flying){const run=this.startSequence.signal.run;if(this.state==='countdown')return {run,phase:'lights',lights:Math.min(4,Math.max(0,Math.floor(5*(1+((this.player?.distance??-1)*this.track.length)/this.flyingController.runIn))))};if(this.state==='racing'&&this.elapsed<.18)return {run,phase:'lights',lights:5};if(this.state==='racing'&&this.elapsed<.7)return {run,phase:'go',lights:0};return {run,phase:'idle',lights:0};}return this.state==='countdown'||this.state==='racing'&&this.elapsed<.85?this.startSequence.signal:{run:this.startSequence.signal.run,phase:'idle',lights:0};}
+  get startSignal():StartSignal {if(this.flying){const run=this.startSequence.signal.run;if(this.state==='countdown')return {run,phase:'lights',lights:Math.min(4,1+Math.floor(FLYING_START_SECONDS-this.countdown+1e-8))};if(this.state==='racing'&&this.elapsed<.18)return {run,phase:'lights',lights:5};if(this.state==='racing'&&this.elapsed<.7)return {run,phase:'go',lights:0};return {run,phase:'idle',lights:0};}return this.state==='countdown'||this.state==='racing'&&this.elapsed<.85?this.startSequence.signal:{run:this.startSequence.signal.run,phase:'idle',lights:0};}
   private aiSpeeds:Float64Array;
   private speedPlanner:AISpeedPlanner;
   private cornerObserver:CornerPaceObserver;
@@ -70,10 +70,10 @@ export class Race {
     // share one standing grid. Unbound simulations can stage their own field.
     if(this.gridPlayer){const slot=gridSlot(this.fieldSize);this.gridPlayer.reset();this.gridPlayer.resetAt(slot.meters/this.track.length,slot.lane);this.player=this.gridPlayer;}
     this.opponents.forEach((o,i)=>o.reset(this.gridPlayer?gridSlot(i+1):{meters:15+(this.opponents.length-1-i)*12,lane:i%2?3:-3},i+1));
-    if(this.flying&&this.gridPlayer){this.flyingController.stage(this.gridPlayer);this.opponents.forEach((o,i)=>{this.flyingController.stage(o.car,(this.opponents.length-i)*16);o.distance=o.car.distance;});}
+    if(this.flying&&this.gridPlayer){this.flyingController.prepare([this.gridPlayer,...this.opponents.map(o=>o.car)]);this.opponents.forEach(o=>{o.distance=o.car.distance;o.speed=o.car.speed;});}
   }
 
-  start(){if(this.state==='ready'){this.bestAtStart=this.best;this.startSequence.arm();this.countdown=this.flying?this.flyingController.runIn/Math.max(1,this.gridPlayer?.speed??40):this.startSequence.remaining;this.state='countdown';}}
+  start(){if(this.state==='ready'){this.bestAtStart=this.best;this.startSequence.arm();this.countdown=this.flying?FLYING_START_SECONDS:this.startSequence.remaining;this.state='countdown';}}
   private balanceRivals(player:Vehicle,dt:number){
     const normal=this.track.normal(player.progress);
     const heldUp=this.opponents.some(o=>{
@@ -132,10 +132,9 @@ export class Race {
     this.player=player;
     if(this.rollingStart){
       const cars=[player,...this.opponents.map(o=>o.car)],before=cars.map(car=>car.distance);
-      const traffic=cars.map(car=>({car,distance:car.distance,speed:car.speed}));
-      for(const car of cars)this.flyingController.drive(car,dt,traffic);
+      this.flyingController.driveField(cars,dt);
       this.opponents.forEach(o=>{o.distance=o.car.distance;o.speed=o.car.speed;});
-      this.countdown=Math.max(0,-player.distance*this.track.length/Math.max(1,player.speed));
+      this.countdown=Math.max(0,this.countdown-dt);
       if(before[0]<0&&player.distance>=0){
         const alpha=-before[0]/(player.distance-before[0]),remaining=dt*(1-alpha),samples=this.lapSamples(player);
         // The timed session begins with the same full ERS allocation as a standing start.

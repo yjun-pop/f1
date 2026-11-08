@@ -33,13 +33,14 @@ export class RearViewMirror {
     this.target.setSize(Math.max(1,Math.ceil(width*scale)),Math.max(1,Math.ceil(height*scale)));this.age=Infinity;
   }
   setQuality(tier:GraphicsTier){this.quality=GRAPHICS_PROFILES[tier];this.camera.far=this.quality.mirrorFar;this.resize();}
-  update(vehicle:Vehicle){
-    const forward=this.forward.set(Math.sin(vehicle.heading),0,Math.cos(vehicle.heading));
-    this.camera.position.copy(vehicle.position).addScaledVector(forward,-3.8);this.camera.position.y+=1.7;
+  update(vehicle:Vehicle,pose?:{position:THREE.Vector3;heading:number}){
+    const position=pose?.position??vehicle.position,heading=pose?.heading??vehicle.heading;
+    const forward=this.forward.set(Math.sin(heading),0,Math.cos(heading));
+    this.camera.position.copy(position).addScaledVector(forward,-3.8);this.camera.position.y+=1.7;
     this.camera.up.set(0,1,0);
-    this.lookTarget.copy(vehicle.position).addScaledVector(forward,-40);this.lookTarget.y+=1.1;this.camera.lookAt(this.lookTarget);
+    this.lookTarget.copy(position).addScaledVector(forward,-40);this.lookTarget.y+=1.1;this.camera.lookAt(this.lookTarget);
   }
-  render(vehicle:Vehicle,dt=1/60){
+  render(vehicle:Vehicle,dt=1/60,pose?:{position:THREE.Vector3;heading:number}){
     const interval=1/this.quality.mirrorFPS;
     this.age+=Math.max(0,dt);const refresh=this.age+1e-6>=interval;
     const previousTarget=this.renderer.getRenderTarget();
@@ -49,7 +50,7 @@ export class RearViewMirror {
     const visible=vehicle.group.visible,shadowUpdate=this.renderer.shadowMap?.autoUpdate;
     try{
       if(refresh){
-        this.update(vehicle);
+        this.update(vehicle,pose);
         vehicle.group.visible=false;
         if(this.renderer.shadowMap)this.renderer.shadowMap.autoUpdate=false;
         this.renderer.setScissorTest(false);this.renderer.setRenderTarget(this.target);

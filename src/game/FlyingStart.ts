@@ -4,6 +4,7 @@ import type {LinePlanner} from './LinePlanner';
 import type {Vehicle} from './Vehicle';
 import {HANDLING,steeringLock,cornerSpeed,brakingDeceleration} from './Dynamics';
 
+export const FLYING_START_SECONDS=4;
 /** Out-lap controls use the same drivetrain and body integration as the player. */
 export class FlyingStart {
  readonly runIn:number;private points:THREE.Vector3[];private limits:Float64Array;
@@ -30,11 +31,23 @@ export class FlyingStart {
  private point(t:number){const f=((t%1+1)%1)*this.points.length,i=Math.floor(f);return this.points[i].clone().lerp(this.points[(i+1)%this.points.length],f-i);}
  private target(t:number){const f=((t%1+1)%1)*this.limits.length,i=Math.floor(f);return THREE.MathUtils.lerp(this.limits[i],this.limits[(i+1)%this.limits.length],f-i);}
  stage(car:Vehicle,offset=0){
-  const distance=(-this.runIn+offset)/this.track.length;car.resetAt(distance);
+  const distance=(-this.runIn+offset)/this.track.length;car.resetAt(distance);car.boost=100;
   car.position.copy(this.point(car.progress));
   const forward=this.point(car.progress+2/this.track.length).sub(this.point(car.progress-2/this.track.length));car.heading=Math.atan2(forward.x,forward.z);
   car.speed=Math.min(70,this.target(car.progress)*.85);
   const mode=car.transmission.mode;car.transmission.setMode('auto',car.speed);car.transmission.setMode(mode,car.speed);car.sync();
+ }
+ prepare(cars:readonly Vehicle[]){
+  const stage=()=>cars.forEach((car,i)=>this.stage(car,i?(cars.length-i)*16:0));
+  stage();let ticks=0;const step=1/120;
+  // Solve the out-lap before the first rendered frame, then retain only the
+  // original four-second light sequence. Both passes use identical physics.
+  while(cars[0].distance<0&&ticks<90*120){this.driveField(cars,step);ticks++;}
+  stage();for(let i=0;i<Math.max(0,ticks-FLYING_START_SECONDS*120);i++)this.driveField(cars,step);
+ }
+ driveField(cars:readonly Vehicle[],dt:number){
+  const traffic=cars.map(car=>({car,distance:car.distance,speed:car.speed}));
+  for(const car of cars)this.drive(car,dt,traffic);
  }
  drive(car:Vehicle,dt:number,traffic:readonly {car:Vehicle;distance:number;speed:number}[]=[]){
   const look=THREE.MathUtils.clamp(7+car.speed*.3,9,26),to=this.point(car.progress+look/this.track.length).sub(car.position);

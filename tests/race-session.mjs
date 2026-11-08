@@ -32,7 +32,7 @@ function fixture(){
  for(let step=1;step<=269;step++){const time=Math.min(step,268.2);samples.forEach((s,i)=>s.distance=starts[i]+time*(i===0?3.096/268.2:i===1?.013:i===2?.0122:.0108));clock.update(samples,time);}
  const classification=clock.standings(samples,268.2);
  const race={classification,bestAtStart:85.125,state:'ready',position:3,fieldSize:12,elapsed:268.2,best:85.125,lapTime:0,lastLap:85.125,intervals:{},aerodynamics:{enabled:false},opponents:[],reset(){this.state='ready';this.classification=[];trace.push('race-reset');},start(){if(this.state==='ready'){this.state='countdown';trace.push('start');}}};
- const game={renderPose:{capture(){}},track,vehicle,race,paused:false,accumulator:.01,input:{clear(){trace.push('clear-input');}},feedback:{reset(){trace.push('feedback-reset');}},audio:{silence(){trace.push('silence');}}};
+ const game={rivalPoses:race.opponents.map(()=>({capture(){}})),renderPose:{capture(){}},track,vehicle,race,paused:false,accumulator:.01,input:{clear(){trace.push('clear-input');}},feedback:{reset(){trace.push('feedback-reset');}},audio:{silence(){trace.push('silence');}}};
  const hud=new HUD(root,track,{start:id=>{assert.equal(id,'silverstone');race.start();},restart:()=>Game.prototype.restart.call(game),camera:noop,resume:noop,recover:noop,volume:noop,audioLevel:.7,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop,transmissionMode:'manual',transmission:mode=>vehicle.transmission.mode=mode,menu:()=>Game.prototype.selectCircuit.call(game,'silverstone')});game.hud=hud;
  const update=(state=race.state,paused=false)=>{race.state=state;hud.update(vehicle,race,paused,track,1);};
  const click=id=>nodes.get(id).events.get('click')();
