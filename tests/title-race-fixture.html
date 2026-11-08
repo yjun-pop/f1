@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}#film{position:fixed;inset:0}canvas{position:absolute;inset:0;width:100%;height:100%}</style></head><body><div id="film"></div><script type="module">
+import {TitleRaceScene} from '/src/ui/TitleRaceScene.ts';
+window.film=new TitleRaceScene(document.querySelector('#film'));
+window.filmReady=window.film.prepare(()=>{}).then(()=>window.prepared=true);
+</script></body></html>

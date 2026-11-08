@@ -21,7 +21,9 @@ ws.addEventListener('message',async e=>{const m=JSON.parse(e.data);if(m.id){cons
 });
 const ev=async expression=>{const r=await send('Runtime.evaluate',{expression:expression.includes('await ')?'(async()=>{'+expression+'})()':expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value;};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));await send('Page.enable');await send('Page.bringToFront');await send('Fetch.enable',{patterns:[{urlPattern:'*account-config.json'},{urlPattern:'https://test.supabase.co/*'}]});await send('Emulation.setDeviceMetricsOverride',{width:1280,height:720,deviceScaleFactor:1,mobile:false});
-await send('Page.navigate',{url:base+'/'});await wait(1000);await ev(`document.querySelector('#title-account').focus();document.querySelector('#title-account').click()`);await wait(100);
+await send('Page.navigate',{url:base+'/'});
+for(let i=0;i<180;i++){if(await ev(`!!document.querySelector('#title-account')&&!document.querySelector('#boot-screen')`))break;await wait(200);}
+await ev(`document.querySelector('#title-account').focus();document.querySelector('#title-account').click()`);await wait(100);
 assert.equal(await ev(`!document.querySelector('#account-unavailable').hidden&&document.querySelector('#account-form').hidden`),true);assert.equal(authCalls,0);
 await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await wait(100);assert.equal(await ev(`document.activeElement.id==='title-account'&&!document.querySelector('dialog[open]')`),true);
 configured=true;await send('Page.navigate',{url:base+'/tests/ui-fixture.html'});await wait(600);await ev(`localStorage.removeItem('apex-auth-session');window.authUI=await import('/src/ui/AccountPanel.ts');await authUI.openAccount();`);

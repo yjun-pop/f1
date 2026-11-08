@@ -2,10 +2,12 @@ import './style.css';
 import './ui/CircuitMenu.css';
 import './ui/RaceTiming.css';
 import './ui/RacingTheme.css';
+import {bootScreen} from './ui/BootScreen';
 import {CircuitMenu} from './ui/CircuitMenu';
 import {circuitById,circuitURL,selectedCircuit,type CircuitId} from './game/Circuits';
 import {transmissionMode,type TransmissionMode} from './game/Powertrain';
 
+bootScreen.stage('메뉴를 준비하는 중…',1);
 const accountReady=import('./account/Account').then(async({account})=>{await account.initialize();return account;});
 const app=document.querySelector<HTMLDivElement>('#app')!;
 function quickRace(){
@@ -17,16 +19,26 @@ const selected=selectedCircuit(window.location.search,savedCircuit),mode=transmi
 let launching=false;
 let previewInteraction=false;
 let backdrop:import('./ui/CircuitBackdrop').CircuitBackdrop|undefined,previewId=selected.id;
+let bootObserver:MutationObserver|undefined;
+let previewDisabled=false;
 const backdropHost=document.querySelector<HTMLElement>('#menu-backdrop')!;
+bootScreen.allowSkip(()=>{previewDisabled=true;bootObserver?.disconnect();backdrop?.dispose();backdrop=undefined;});
 function preview(id:CircuitId){
   previewId=id;
   void import('./ui/CircuitBackdrop').then(({CircuitBackdrop})=>{
-    if(launching||previewId!==id)return;
-    try{backdrop??=new CircuitBackdrop(backdropHost);backdrop.setInteracting(previewInteraction);backdrop.select(id);}catch(error){console.warn('Menu background unavailable',error);}
-  }).catch(error=>console.warn('Menu background unavailable',error));
+    if(launching||previewDisabled||previewId!==id)return;
+    try{
+      backdrop??=new CircuitBackdrop(backdropHost);backdrop.setInteracting(previewInteraction);backdrop.select(id);
+      if(document.querySelector('#boot-screen')){
+        const finish=()=>{if(backdropHost.classList.contains('is-ready')){bootObserver?.disconnect();bootScreen.finish();}};
+        bootObserver?.disconnect();bootObserver=new MutationObserver(finish);
+        bootObserver.observe(backdropHost,{attributes:true,attributeFilter:['class']});finish();
+      }
+    }catch(error){console.warn('Menu background unavailable',error);bootObserver?.disconnect();bootScreen.finish();}
+  }).catch(error=>{console.warn('Menu background unavailable',error);bootScreen.finish();});
 }
 function start(id:CircuitId,transmission:TransmissionMode){
-  if(launching)return;launching=true;backdrop?.dispose();backdrop=undefined;
+  if(launching)return;launching=true;bootObserver?.disconnect();backdrop?.dispose();backdrop=undefined;
   menu.setLoading(circuitById(id).label);
   try{localStorage.setItem('apex-circuit',id);localStorage.setItem('apex-transmission-mode',transmission);}catch{}
   try{window.history.replaceState(null,'',circuitURL(window.location.href,id));}catch{}
@@ -41,8 +53,8 @@ function start(id:CircuitId,transmission:TransmissionMode){
       new Game(document.querySelector('#viewport')!,document.querySelector('#hud')!,{circuit:id,transmission,autoStart:true,audioContext});
       // Game queues its first rendered frame first. Keep loading visible until
       // that frame, rather than briefly revealing an empty canvas or old menu.
-      requestAnimationFrame(()=>{dialogObserver.disconnect();window.removeEventListener('apex-account-change',refreshRecords);menu.dispose();front.remove();});
-    }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();}
+      requestAnimationFrame(()=>{dialogObserver.disconnect();window.removeEventListener('apex-account-change',refreshRecords);menu.dispose();front.remove();bootScreen.finish();});
+    }catch(error){console.error(error);void audioContext?.close().catch(()=>{});menu.setError();bootScreen.finish();}
   }));
 }
 const menu=new CircuitMenu(front,{selected:selected.id,mode,prefix:'front-',start,preview,wheel:()=>{
@@ -70,7 +82,7 @@ const refreshRecords=()=>menu.refreshRecords();window.addEventListener('apex-acc
 const syncSettings=()=>{try{menu.setTransmission(transmissionMode(localStorage.getItem('apex-transmission-mode')));}catch{}};
 window.addEventListener('apex-settings-change',syncSettings);
 
-return ()=>{launching=true;window.removeEventListener('apex-account-change',refreshRecords);window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
+return ()=>{launching=true;bootObserver?.disconnect();window.removeEventListener('apex-account-change',refreshRecords);window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
 }
 if(new URLSearchParams(window.location.search).has('circuit')||new URLSearchParams(window.location.search).get('race')==='start')quickRace();
-else void import('./ui/TitleScreen').then(({TitleScreen})=>new TitleScreen(app,quickRace));
+else void import('./ui/TitleScreen').then(({TitleScreen})=>{const title=new TitleScreen(app,quickRace);void title.ready.then(()=>{if(title.active)bootScreen.finish();});}).catch(error=>{console.error('Title screen unavailable',error);bootScreen.fail();});
