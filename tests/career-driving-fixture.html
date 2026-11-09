@@ -1,6 +1,6 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="viewport"></div><div id="hud"></div><script type="module">
 import '../src/style.css';import {Game} from '../src/game/Game';import {AcademyRun} from '../src/career/Career';
-localStorage.setItem('apex-graphics-quality','low');window.requestAnimationFrame=()=>0;let monitor=new AcademyRun(),samples=0,resets=0;
+localStorage.setItem('apex-graphics-quality','low');localStorage.setItem('apex-transmission-mode','auto');window.requestAnimationFrame=()=>0;let monitor=new AcademyRun(),samples=0,resets=0;
 const g=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{circuit:'monza',totalLaps:3,opponentCount:0,career:{sample:s=>{samples++;monitor.update(s);},reset:()=>{resets++;monitor=new AcademyRun();},exit:()=>{}}});
 window.runCareerPhysics=()=>{
  g.race.start();while(g.race.state==='countdown')g.race.update(1/120,g.vehicle);

@@ -66,10 +66,13 @@ npm run preview
 전체 회귀 검사는 `npm test`로 실행합니다. UI만 수정할 때는 다음 검사를 사용합니다.
 
 ```sh
+node tests/career.mjs
 node tests/circuit-menu.mjs
 node tests/circuit-backdrop.mjs
 node tests/race-session.mjs
 ```
+
+커리어 화면과 실제 주행 연결 브라우저 검사는 Vite(5180)와 Chromium CDP(9238)를 실행한 상태에서 `node tests/career-browser.mjs`로 확인합니다.
 
 ## 배포
 
