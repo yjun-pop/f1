@@ -4,6 +4,7 @@ import ts from 'typescript';
 
 const cache=new Map();
 function moduleURL(name){
+  if(name==='ui/CircuitBackdrop')return 'data:text/javascript,'+encodeURIComponent('export class CircuitBackdrop{setInteracting(){}select(){}dispose(){}}export function preloadCircuitPoster(){return Promise.resolve();}export function warmCircuitPosters(){}');
   if(cache.has(name))return cache.get(name);
   let js=ts.transpileModule(fs.readFileSync(new URL(`../src/${name}.ts`,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   const folder=name.slice(0,name.lastIndexOf('/'));
