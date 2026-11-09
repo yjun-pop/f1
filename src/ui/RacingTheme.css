@@ -84,3 +84,18 @@ select option{background:#172739;color:#eef4fa}
 dialog.wheel-dialog .wheel-notice{border-left-color:#9de0be}
 .overlay .has-results .race-session-actions{background:#0b172b}
 .pause-shade .pause-panel button:hover{filter:none}
+
+/* Shared interaction hierarchy, independent from the racing camera and HUD scale. */
+:root{--ui-focus:#ffb49f;color-scheme:dark}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible{outline:2px solid var(--ui-focus);outline-offset:4px}
+dialog.settings-dialog .settings-tabs{gap:4px;background:#07121e55;padding-top:4px}
+dialog.settings-dialog .settings-tabs [role=tab]{min-height:46px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;box-shadow:none;color:#adbfce}
+dialog.settings-dialog .settings-tabs [aria-selected=true]{border-bottom-color:var(--race-accent);background:#ff795f0c;color:#fff}
+dialog.settings-dialog .setting-row{position:relative;padding-right:96px;min-height:104px;border-color:#ffffff15;margin-bottom:20px}
+dialog.settings-dialog .setting-row .setting-reset{position:absolute;right:0;top:32px;min-height:36px;color:#bbccd9;border-color:#ffffff20;background:transparent}
+dialog.settings-dialog .setting-row label{font-size:16px}.settings-dialog .setting-row output{color:#ffb49f;font-variant-numeric:tabular-nums}
+dialog.settings-dialog .settings-content{scrollbar-gutter:stable}.settings-dialog .settings-bottom{min-height:70px}.settings-dialog .settings-bottom p:empty{display:none}
+.pause-shade .pause-panel{width:min(440px,calc(100vw - 32px));padding:28px}.pause-shade .pause-panel button{min-height:48px}.pause-shade .pause-panel .change-circuit-hint{font-size:13px}
+.overlay .race-session-actions button{min-height:48px}.overlay .result-classification td{font-variant-numeric:tabular-nums}
+.title-content #title-status:empty,.title-content #title-status[hidden]{display:none}.title-content nav button span:empty{display:none}
+@media(max-width:600px){dialog.settings-dialog .settings-tabs{overflow-x:auto;scrollbar-width:none}dialog.settings-dialog .settings-tabs [role=tab]{white-space:nowrap;padding:10px 12px;flex:1}dialog.settings-dialog .setting-row{padding-right:0;padding-bottom:48px}dialog.settings-dialog .setting-row .setting-reset{top:auto;bottom:12px}.pause-shade .pause-panel{padding:22px}}
