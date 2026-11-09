@@ -30,12 +30,31 @@ export function finishRound(s:CareerSave,result:RunResult){
 export function nextSeason(s:CareerSave){if(s.phase!=='season'||s.round!==3)throw Error('시즌을 먼저 마치세요.');return change(s,{year:s.year+1,round:0,points:0});}
 /** Read-only telemetry: no input injection or vehicle physics changes. */
 export class AcademyRun {
- accelerated=false;braked=false;turnSeconds=0;offRoadSeconds=0;contacts=0;seconds=0;private lastImpacts=0;
- update(s:DrivingSample){this.seconds+=s.dt;this.offRoadSeconds+=s.offRoad?s.dt:0;this.contacts+=Math.max(0,s.impacts-this.lastImpacts);this.lastImpacts=s.impacts;
-  if(s.speed>=80/3.6&&s.throttle>.4)this.accelerated=true;
-  if(this.accelerated&&s.speed<40/3.6&&s.brake>.3)this.braked=true;
-  if(this.braked&&!s.offRoad&&s.speed>20/3.6&&s.speed<130/3.6&&Math.abs(s.steer)>.15)this.turnSeconds+=s.dt;
+ accelerated=false;braked=false;exited=false;turnSeconds=0;offRoadSeconds=0;contacts=0;seconds=0;retryHint='';private retryUntil=0;private lastImpacts=0;
+ get lesson(){return !this.accelerated?0:!this.braked?1:this.turnSeconds<2?2:!this.exited?3:4;}
+ update(s:DrivingSample){this.seconds+=s.dt;this.offRoadSeconds+=s.offRoad?s.dt:0;const impact=s.impacts>this.lastImpacts;this.contacts+=Math.max(0,s.impacts-this.lastImpacts);this.lastImpacts=s.impacts;
+  // Only the current lesson can advance; off-track input never completes a task.
+  if(s.offRoad||impact){this.retryHint=s.offRoad?'코스로 돌아오면 과제를 계속합니다.':this.lesson===2?'접촉했습니다. 2초 조향을 다시 시도하세요.':'접촉했습니다. 안전하게 과제를 계속하세요.';this.retryUntil=this.seconds+2;if(this.lesson===2)this.turnSeconds=0;return;}
+  if(this.seconds>=this.retryUntil)this.retryHint='';
+  switch(this.lesson){
+   case 0:if(s.speed>=80/3.6&&s.throttle>.4)this.accelerated=true;break;
+   case 1:if(s.speed<40/3.6&&s.brake>.3)this.braked=true;break;
+   case 2:if(s.speed>20/3.6&&s.speed<130/3.6&&Math.abs(s.steer)>.15)this.turnSeconds=Math.min(2,this.turnSeconds+s.dt);break;
+   case 3:if(s.speed>=100/3.6&&s.throttle>.4&&Math.abs(s.steer)<.18)this.exited=true;break;
+  }
  }
- get trained(){return this.accelerated&&this.braked&&this.turnSeconds>=2;}
+ get trained(){return this.exited;}
  result(s:DrivingSample):RunResult {const seconds=Math.max(.01,s.elapsed),timeScore=Math.max(0,Math.min(100,100-(seconds-85)*.65)),penalty=this.offRoadSeconds*1.5+this.contacts*10;return {seconds,offRoadSeconds:Math.round(this.offRoadSeconds*10)/10,contacts:this.contacts,bestLap:s.bestLap||seconds,position:s.position,score:Math.round(Math.max(0,Math.min(100,timeScore-penalty)))};}
+}
+
+export const ACADEMY_LESSONS=[
+ {title:'직선에서 가속',target:'80 km/h',hint:'W / ↑ 또는 가속 페달',cue:'차를 곧게 유지하며 가속하세요.'},
+ {title:'브레이크로 감속',target:'40 km/h 이하',hint:'S / ↓ 또는 브레이크 페달',cue:'가속을 놓고 브레이크를 밟으세요.'},
+ {title:'코너에서 조향',target:'코스 안 조향 2초',hint:'A / D 또는 스티어링 휠',cue:'20~130 km/h에서 코너를 따라 조향하세요.'},
+ {title:'코너 탈출 · 재가속',target:'100 km/h',hint:'조향을 풀고 가속',cue:'차를 곧게 세운 뒤 다시 가속하세요.'}
+] as const;
+export function academyFeedback(run:AcademyRun,s?:DrivingSample){
+ const index=Math.min(run.lesson,3),lesson=ACADEMY_LESSONS[index],speed=Math.max(0,(s?.speed??0)*3.6);
+ const progress=run.trained?1:index===0?speed/80:index===1?(80-speed)/40:index===2?run.turnSeconds/2:speed/100;
+ return {index,...lesson,progress:Math.max(0,Math.min(1,progress)),value:index===2?`${run.turnSeconds.toFixed(1)} / 2초`:`${Math.round(speed)} km/h`,feedback:s?.offRoad?'코스로 돌아오면 과제를 계속합니다.':run.retryHint||lesson.cue};
 }

@@ -19,8 +19,12 @@
    No transform transition: crossing +/-180 degrees must never spin a marker. */
 .proximity-ring{position:absolute;inset:0;--proximity-radius:clamp(90px,33vmin,380px);pointer-events:none;overflow:hidden}
 .proximity-ring[hidden],.proximity-marker[hidden]{display:none}
-.proximity-marker{position:absolute;left:50%;top:50%;width:48px;height:9px;margin:-4.5px 0 0 -24px;color:#d7e5ed;transform:rotate(var(--bearing)) translateY(calc(-1 * var(--proximity-radius)));transform-origin:50% 50%;z-index:1}
-.proximity-marker::after{content:'';position:absolute;inset:0;border-top:4px solid currentColor;border-radius:50%;filter:drop-shadow(0 1px 3px #000b);opacity:.8}
-.proximity-marker.is-approaching{color:#ffd078;z-index:2}.proximity-marker.is-close{color:#ff806b;z-index:3}.proximity-marker.is-close::after{border-top-width:6px;opacity:1}
-@media(max-width:700px){.proximity-marker{width:36px;margin-left:-18px}}
+.proximity-marker{position:absolute;left:50%;top:50%;width:76px;height:18px;margin:-9px 0 0 -38px;color:#f4faff;transform:rotate(var(--bearing)) translateY(calc(-1 * var(--proximity-radius)));transform-origin:50% 50%;z-index:1}
+.proximity-marker::before{content:'';position:absolute;inset:-8px -10px;background:#07101bcb;border:1px solid #ffffff55;border-radius:45%;box-shadow:0 2px 8px #0008}
+.proximity-marker::after{content:'';position:absolute;inset:0;border-top:7px solid currentColor;border-radius:50%;filter:drop-shadow(0 0 3px #000);opacity:1}
+.proximity-marker.is-approaching{color:#ffe093;z-index:2}.proximity-marker.is-approaching::before{border-color:#ffe093b0}
+.proximity-marker.is-close{color:#ff8c6a;z-index:3}.proximity-marker.is-close::after{border-top-width:10px;box-shadow:0 -4px 0 -1px #fff;animation:proximity-emphasis 1s ease-in-out infinite alternate}.proximity-marker.is-close::before{border:2px solid #ffb29a;background:#210e0cd9}
+@keyframes proximity-emphasis{from{filter:drop-shadow(0 0 2px #ff8c6a)}to{filter:drop-shadow(0 0 7px #ff8c6a)}}
+@media(max-width:700px){.proximity-marker{width:56px;height:16px;margin:-8px 0 0 -28px}.proximity-marker::before{inset:-6px -8px}}
+@media(prefers-reduced-motion:reduce){.proximity-marker.is-close::after{animation:none}}
 .has-results .race-session-actions{position:sticky;bottom:-1px;z-index:2;background:#101c2bf5;padding:16px 0 4px;border-top:1px solid #ffffff26;margin-top:20px}.race-session-actions button{min-height:46px;border-radius:6px}.race-session-results>div:first-child b{font-size:44px}.race-session-results>div:nth-child(4){border-color:#bca5ff88;background:#bca5ff12}.race-session-panel p,.race-session-panel small{font-size:13px}.race-session-panel h3{font-size:18px}.race-result-note{line-height:1.7}

@@ -139,10 +139,10 @@
 .career-game-hud button,.career-game-hud input,.career-game-hud select{pointer-events:auto}
 .career-screen.career-driving{background:transparent}
 .career-game-hud{font-family:'Barlow Condensed',sans-serif}
-.academy-overlay{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);padding:12px 22px;border-radius:6px;background:#081420df;border:1px solid #ffffff32;max-width:90vw;pointer-events:none;text-align:center;font-size:14px;z-index:10}
-.academy-overlay b,.academy-overlay span,.academy-overlay small{display:block}
-.academy-overlay small{color:#afc1cf;font-size:12px}
-
+/* The coach belongs to the minimap, so HUD size changes move both together. */
+#hud .mapbox .academy-overlay{position:relative;inset:auto;transform:none;width:100%;max-width:none;margin:12px 0 0;padding:12px 0 0;border:0;border-top:1px solid #ffffff30;border-radius:0;background:none;text-align:left;font:13px/1.5 'Noto Sans KR',sans-serif;pointer-events:none;color:#eaf2f8}
+.academy-overlay[hidden]{display:none}
+.academy-heading{display:flex;justify-content:space-between;gap:12px;color:#a8bfce;font-size:11px;letter-spacing:.5px}.academy-heading b{color:#fff;font-variant-numeric:tabular-nums}.academy-steps{display:flex;gap:6px;margin:10px 0 12px}.academy-steps span{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1px solid #ffffff30;font-size:11px;color:#8eabbc}.academy-steps .active{background:#ff967d;color:#151a22;border-color:#ff967d;font-weight:800}.academy-steps .done{color:#76e0b9;border-color:#76e0b960;background:#76e0b913}#hud .academy-overlay h3{font:600 15px/1.4 'Noto Sans KR',sans-serif;margin:0 0 5px}.academy-target{font-weight:600;color:#ffc1a9;margin:0 0 10px;font-size:14px}.academy-progress{height:5px;background:#ffffff20;border-radius:4px;overflow:hidden}.academy-progress i{display:block;height:100%;background:#ffb99b}.academy-live{display:block!important;text-align:right!important;margin-top:5px;color:#d4e4ee!important;font-size:12px!important;font-variant-numeric:tabular-nums}.academy-feedback{font-size:12px;color:#cadbe5;margin:10px 0 7px}.academy-input{display:block!important;text-align:left!important;font-size:11px!important;color:#98afc0!important;letter-spacing:0!important}.academy-announcement{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden;clip-path:inset(50%)}.academy-session-stats{display:flex;gap:14px;font-size:12px;margin:10px 0}.academy-session-stats>span{font-size:12px!important;letter-spacing:0!important;color:#9ab0c0!important;text-align:left!important}.academy-session-stats b{color:#fff}.career-training-four{grid-template-columns:repeat(4,minmax(0,1fr))}.career-training-four strong{font-size:25px}
 @media(min-width:1100px) and (max-height:800px){.career-header{height:64px}
 .career-layout{min-height:calc(100dvh - 64px)}
 .career-sidebar{height:calc(100dvh - 64px);padding-top:22px}
@@ -257,8 +257,10 @@
 .career-team-profile .career-metrics{grid-template-columns:1fr}
 .career-team-monogram{font-size:220px;right:0}
 .career-records th,.career-records td{padding:14px}
-.academy-overlay{bottom:68px;width:92vw;font-size:12px;padding:8px}
+.career-training-four{grid-template-columns:1fr}
 }
 
 @media(prefers-reduced-motion:reduce){.career-screen button{transition:none!important}
 }
+
+@media(max-height:650px){#hud .mapbox .academy-overlay{margin-top:8px;padding-top:8px}.academy-steps{margin:6px 0}.academy-steps span{width:20px;height:20px}.academy-feedback{margin:6px 0;font-size:11px}.academy-target{margin-bottom:7px}#hud .academy-overlay h3{font-size:13px}}

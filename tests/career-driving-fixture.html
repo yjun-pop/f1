@@ -7,7 +7,8 @@ window.runCareerPhysics=()=>{
  const render=g.renderer.render.bind(g.renderer);g.renderer.render=()=>{};g.mirror.render=()=>{};g.input.analog=()=>undefined;g.input.down=(...keys)=>keys.includes('KeyW');let now=g.previous,maxSpeed=0;
  const step=()=>{now+=1000/120;g.frame(now);maxSpeed=Math.max(maxSpeed,g.vehicle.speed);};
  for(let i=0;i<120*8&&!monitor.accelerated;i++)step();g.input.down=(...keys)=>keys.includes('KeyS');for(let i=0;i<120*4&&!monitor.braked;i++)step();
- g.input.down=()=>false;g.input.analog=()=>({steer:.2,throttle:.1,brake:0});for(let i=0;i<120*4&&!monitor.trained;i++)step();
+ g.input.down=()=>false;for(let i=0;i<120*4&&monitor.turnSeconds<2;i++){g.input.analog=()=>({steer:Math.floor(i/60)%2===0?.2:-.2,throttle:.1,brake:0});step();}
+ g.input.analog=()=>({steer:0,throttle:1,brake:0});for(let i=0;i<120*8&&!monitor.trained;i++)step();
  const result={trained:monitor.trained,accelerated:monitor.accelerated,braked:monitor.braked,turnSeconds:monitor.turnSeconds,samples,maxSpeed,offRoadSeconds:monitor.offRoadSeconds};
  render(g.scene,g.cockpit.camera);g.restart();result.resets=resets;result.resetTurn=monitor.turnSeconds;g.endCareerSession();return result;
 };
