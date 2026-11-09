@@ -1,0 +1,14 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="viewport"></div><div id="hud"></div><script type="module">
+import '../src/style.css';import {Game} from '../src/game/Game';import {AcademyRun} from '../src/career/Career';
+localStorage.setItem('apex-graphics-quality','low');window.requestAnimationFrame=()=>0;let monitor=new AcademyRun(),samples=0,resets=0;
+const g=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{circuit:'monza',totalLaps:3,opponentCount:0,career:{sample:s=>{samples++;monitor.update(s);},reset:()=>{resets++;monitor=new AcademyRun();},exit:()=>{}}});
+window.runCareerPhysics=()=>{
+ g.race.start();while(g.race.state==='countdown')g.race.update(1/120,g.vehicle);
+ const render=g.renderer.render.bind(g.renderer);g.renderer.render=()=>{};g.mirror.render=()=>{};g.input.analog=()=>undefined;g.input.down=(...keys)=>keys.includes('KeyW');let now=g.previous,maxSpeed=0;
+ const step=()=>{now+=1000/120;g.frame(now);maxSpeed=Math.max(maxSpeed,g.vehicle.speed);};
+ for(let i=0;i<120*8&&!monitor.accelerated;i++)step();g.input.down=(...keys)=>keys.includes('KeyS');for(let i=0;i<120*4&&!monitor.braked;i++)step();
+ g.input.down=()=>false;g.input.analog=()=>({steer:.2,throttle:.1,brake:0});for(let i=0;i<120*4&&!monitor.trained;i++)step();
+ const result={trained:monitor.trained,accelerated:monitor.accelerated,braked:monitor.braked,turnSeconds:monitor.turnSeconds,samples,maxSpeed,offRoadSeconds:monitor.offRoadSeconds};
+ render(g.scene,g.cockpit.camera);g.restart();result.resets=resets;result.resetTurn=monitor.turnSeconds;g.endCareerSession();return result;
+};
+</script></body></html>

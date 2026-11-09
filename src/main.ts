@@ -95,5 +95,6 @@ window.addEventListener('apex-settings-change',syncSettings);
 
 return ()=>{launching=true;lobby?.dispose();bootObserver?.disconnect();window.removeEventListener('apex-account-change',refreshRecords);window.removeEventListener('apex-settings-change',syncSettings);dialogObserver.disconnect();menu.dispose();backdrop?.dispose();front.remove();};
 }
-if(new URLSearchParams(window.location.search).has('circuit')||new URLSearchParams(window.location.search).get('race')==='start')quickRace();
+if(new URLSearchParams(window.location.search).has('career'))void import('./career/Screen').then(({openCareer})=>openCareer(app)).catch(error=>{console.error(error);bootScreen.fail();});
+else if(new URLSearchParams(window.location.search).has('circuit')||new URLSearchParams(window.location.search).get('race')==='start')quickRace();
 else void import('./ui/TitleScreen').then(({TitleScreen})=>{const title=new TitleScreen(app,quickRace);void title.ready.then(()=>{if(title.active)bootScreen.finish();});}).catch(error=>{console.error('Title screen unavailable',error);bootScreen.fail();});
