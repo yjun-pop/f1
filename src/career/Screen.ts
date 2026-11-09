@@ -9,7 +9,9 @@ const money=(s:number)=>s.toLocaleString('ko-KR')+' CR';
 const home=()=>{const url=new URL(location.href);url.search='';location.assign(url.href);};
 const dashboard=()=>{const url=new URL(location.href);url.search='?career=continue';location.assign(url.href);};
 export async function openCareer(host:HTMLElement){
- await account.initialize();let store=new CareerStore(account),save:CareerSave|null=null,pending:CareerSave|null=null,busy=false,game:import('../game/Game').Game|undefined;
+ await account.initialize();
+ if(!account.session||account.recovering){const url=new URL(location.href),intent=url.searchParams.get('career');url.search='';url.searchParams.set('career-login',intent==='new'?'new':'continue');location.replace(url.href);return;}
+ let store=new CareerStore(account),save:CareerSave|null=null,pending:CareerSave|null=null,busy=false,game:import('../game/Game').Game|undefined;
  const root=document.createElement('main');root.className='career-screen';root.setAttribute('aria-label','드라이버 커리어');host.replaceChildren(root);
  const button=(id:string,fn:()=>void)=>root.querySelector<HTMLButtonElement>('#'+id)?.addEventListener('click',fn);
  const shell=(title:string,body:string)=>{root.classList.remove('career-driving');root.innerHTML=`<header class="career-header"><a href="${import.meta.env.BASE_URL}" class="career-brand">Λ APEX <span>FORMULA</span></a><button id="career-account">${escape(store.owner?account.name:'게스트 · 기기 저장')}</button></header><div class="career-layout"><aside><p class="career-kicker">드라이버 커리어</p><h1>${title}</h1><ol class="career-steps">${['드라이버 생성','아카데미','평가 주행','팀 계약','첫 시즌'].map((name,i)=>`<li class="${i===(save?{academy:1,assessment:2,offers:3,season:4}[save.phase]:0)?'active':''}"><span>0${i+1}</span>${name}</li>`).join('')}</ol><details class="career-save-help"><summary>저장 정보</summary><p>${store.owner?'계정별 서버 저장':'현재 브라우저에 저장'} · 완료 단계 기준<br>주행 중단 시 해당 세션을 다시 시작합니다.</p></details><button id="career-home" class="career-link">← 메인 메뉴</button></aside><section class="career-content">${body}<p id="career-message" role="status" aria-live="polite"></p></section></div>`;
@@ -44,10 +46,10 @@ export async function openCareer(host:HTMLElement){
   }catch(e){busy=false;paint();error('주행을 시작하지 못했습니다. '+(e as Error).message);}
  }
  async function load(serverOnly=false){if(busy)return;busy=true;shell('커리어 불러오기','<p>저장된 진행을 확인하는 중입니다…</p>');
-  try{save=await store.load(serverOnly);pending=null;if(game){dashboard();return;}if(new URLSearchParams(location.search).get('career')==='new'&&!serverOnly)form();else paint();}
+  try{save=await store.load(serverOnly);pending=null;if(game){dashboard();return;}if(new URLSearchParams(location.search).get('career')==='new'&&!serverOnly)form();else if(!save){const url=new URL(location.href);url.search='?career-empty=1';location.replace(url.href);}else paint();}
   catch(e){shell('저장 확인이 필요합니다','<p>서버 또는 기기 저장을 확인하지 못했습니다. 기존 진행은 덮어쓰지 않았습니다.</p><div class="career-actions"><button id="reload-career">다시 시도</button><button id="load-server">서버 진행 사용</button></div>');error((e as Error).message);button('reload-career',()=>void load());button('load-server',()=>void load(true));}
   finally{busy=false;bootScreen.finish();}
  }
- window.addEventListener('apex-account-change',()=>{if((account.session?.user.id??null)!==store.owner){game?.endCareerSession();busy=false;shell('계정이 변경됐습니다','<p>현재 계정의 저장을 다시 확인해주세요.</p><button id="switch-account">현재 계정으로 커리어 열기</button>');button('switch-account',()=>{store=new CareerStore(account);void load();});}});
+ window.addEventListener('apex-account-change',()=>{if((account.session?.user.id??null)!==store.owner){game?.endCareerSession();busy=false;shell('계정이 변경됐습니다','<p>현재 계정의 저장을 다시 확인해주세요.</p><button id="switch-account">현재 계정으로 커리어 열기</button>');button('switch-account',()=>{if(!account.session){home();return;}store=new CareerStore(account);void load();});}});
  await load();
 }

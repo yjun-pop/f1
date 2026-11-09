@@ -4,6 +4,7 @@ import {account} from '../account/Account';
 import {QUICK_RACE_LAPS} from '../game/RaceLaps';
 import {bootScreen} from './BootScreen';
 import {openSettings} from './Settings';
+import {CareerStore} from '../career/Store';
 /** Live race-film background; gameplay starts only after a quick-race choice. */
 export class TitleScreen {
  readonly ready:Promise<void>;
@@ -19,9 +20,26 @@ export class TitleScreen {
  this.ready=this.prepareBackdrop();bootScreen.allowSkip(()=>this.usePoster());
  const unmountAccount=mountAccountButton(this.element.querySelector<HTMLButtonElement>('#title-account')!);
  void account.initialize().then(()=>{if(account.recovering)void openAccount();});
- const career=(fresh:boolean)=>{const url=new URL(location.href);url.search='';url.searchParams.set('career',fresh?'new':'continue');location.assign(url.href);};
- this.element.querySelector('#title-new')!.addEventListener('click',()=>career(true));
- const continueButton=this.element.querySelector<HTMLButtonElement>('#title-continue')!;continueButton.disabled=false;continueButton.querySelector('span')!.textContent='';continueButton.addEventListener('click',()=>career(false));
+ const newButton=this.element.querySelector<HTMLButtonElement>('#title-new')!,continueButton=this.element.querySelector<HTMLButtonElement>('#title-continue')!;
+ continueButton.querySelector('span')!.textContent='';
+ const status=this.element.querySelector<HTMLElement>('#title-status')!;
+ const tell=(message:string)=>{status.hidden=false;status.textContent=message;};
+ let entering=false;
+ const career=async(fresh:boolean)=>{
+  if(entering||!this.active)return;entering=true;newButton.disabled=continueButton.disabled=true;this.element.setAttribute('aria-busy','true');
+  try{
+   await account.initialize();if(!this.active)return;
+   if(!account.session||account.recovering){await openAccount({reason:'커리어를 시작하거나 이어하려면 로그인해주세요.',onSignedIn:()=>{void career(fresh);}});return;}
+   const owner=account.session.user.id;
+   if(!fresh){tell('저장된 커리어를 확인하는 중…');const save=await new CareerStore(account).load();if(!this.active)return;if(account.session?.user.id!==owner)throw Error('계정이 변경됐습니다. 다시 선택해주세요.');if(!save){tell('저장된 커리어가 없습니다. 새 게임을 시작하세요.');newButton.focus();return;}}
+   const url=new URL(location.href);url.search='';url.searchParams.set('career',fresh?'new':'continue');location.assign(url.href);
+  }catch{tell('커리어를 확인하지 못했습니다. 연결 상태를 확인하고 다시 시도해주세요.');}
+  finally{entering=false;newButton.disabled=continueButton.disabled=false;this.element.removeAttribute('aria-busy');if(!status.hidden&&status.textContent?.includes('새 게임'))newButton.focus();}
+ };
+ newButton.addEventListener('click',()=>void career(true));continueButton.addEventListener('click',()=>void career(false));
+ const entryURL=new URL(location.href),loginIntent=entryURL.searchParams.get('career-login');
+ if(entryURL.searchParams.has('career-empty')){tell('저장된 커리어가 없습니다. 새 게임을 시작하세요.');entryURL.searchParams.delete('career-empty');history.replaceState(null,'',entryURL.href);}
+ if(loginIntent){entryURL.searchParams.delete('career-login');history.replaceState(null,'',entryURL.href);void career(loginIntent==='new');}
  this.element.querySelector('#title-settings')!.addEventListener('click',openSettings);
  const group=this.element.querySelector<HTMLElement>('.title-quick-group')!,button=this.element.querySelector<HTMLButtonElement>('#title-quick')!,choices=this.element.querySelector<HTMLElement>('#title-lap-options')!;
  const expand=(open:boolean)=>{if(open&&!choices.hidden)return;choices.hidden=!open;button.setAttribute('aria-expanded',String(open));if(open&&!matchMedia('(prefers-reduced-motion: reduce)').matches)choices.animate([{height:'0px',opacity:0},{height:choices.scrollHeight+'px',opacity:1}],{duration:180,easing:'ease-out'});};

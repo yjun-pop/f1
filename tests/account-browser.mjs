@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';import assert from 'node:assert/strict';
 const base=process.env.UI_BASE_URL??'http://127.0.0.1:5180',cdp=process.env.UI_CDP_URL??'http://127.0.0.1:9237';
 const pages=await(await fetch(cdp+'/json/list')).json(),ws=new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));let id=0;const pending=new Map();
 const send=(method,params={})=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params}));});
-let configured=false,cloudRecords=[],authCalls=0,saveCalls=0;const userId='11111111-1111-4111-8111-111111111111';
+let configured=false,cloudRecords=[],authCalls=0,saveCalls=0,careerRows=[],careerError=false;const userId='11111111-1111-4111-8111-111111111111';
 const user={id:userId,aud:'authenticated',role:'authenticated',email:'driver@example.test',email_confirmed_at:new Date().toISOString(),user_metadata:{display_name:'Test Driver'},app_metadata:{provider:'email'},identities:[],created_at:new Date().toISOString()};
 const b64=v=>Buffer.from(JSON.stringify(v)).toString('base64url'),jwt=b64({alg:'HS256',typ:'JWT'})+'.'+b64({sub:userId,aud:'authenticated',role:'authenticated',exp:Math.floor(Date.now()/1000)+3600,iat:Math.floor(Date.now()/1000)})+'.fake-test-signature';
 ws.addEventListener('message',async e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);}
@@ -15,6 +15,7 @@ ws.addEventListener('message',async e=>{const m=JSON.parse(e.data);if(m.id){cons
   else if(request.url.includes('/auth/v1/user'))body=user;
   else if(request.url.includes('/auth/v1/logout'))status=204;
   else if(request.url.includes('/rpc/record_best_lap')){saveCalls++;const input=JSON.parse(request.postData);cloudRecords=[{circuit_id:input.p_circuit,best_seconds:input.p_seconds,updated_at:new Date().toISOString()}];}
+  else if(request.url.includes('/career_saves')){body=careerError?{message:'unavailable'}:careerRows;if(careerError)status=503;}
   else if(request.url.includes('/rest/v1/'))body=cloudRecords;
   await send('Fetch.fulfillRequest',{requestId,responseCode:status,responseHeaders:[{name:'Content-Type',value:'application/json'},{name:'Access-Control-Allow-Origin',value:base},{name:'Access-Control-Allow-Headers',value:'authorization,apikey,x-client-info,content-type,x-supabase-api-version'},{name:'Access-Control-Allow-Methods',value:'GET,POST,PUT,DELETE,OPTIONS'}],body:Buffer.from(status===204?'':JSON.stringify(body)).toString('base64')});
  }
@@ -38,4 +39,18 @@ const layouts=[];for(const [width,height]of[[1280,720],[1920,1080],[390,844]]){a
 if(process.env.UI_SCREENSHOT){const shot=await send('Page.captureScreenshot',{format:'png'});await fs.writeFile(process.env.UI_SCREENSHOT,Buffer.from(shot.data,'base64'));}
 await ev(`document.querySelector('#account-signout').click()`);await wait(250);assert.equal(await ev(`!document.querySelector('#account-form').hidden&&document.querySelector('#account-signed-in').hidden`),true);
 await send('Page.reload');await wait(500);await ev(`window.authUI=await import('/src/ui/AccountPanel.ts');await authUI.openAccount()`);assert.equal(await ev(`!document.querySelector('#account-form').hidden`),true);
+const until=async expression=>{for(let i=0;i<200;i++){if(await ev(expression))return;await wait(100);}throw Error('Timed out: '+expression);};
+const title=async()=>{await send('Page.navigate',{url:base+'/'});await until(`!!document.querySelector('#title-new')&&!document.querySelector('#boot-screen')`);};
+const login=async()=>{await until(`!!document.querySelector('.account-dialog[open]')`);await ev(`document.querySelector('#account-email').value='driver@example.test';document.querySelector('#account-password').value='test-password-123';document.querySelector('#account-form').requestSubmit();`);};
+await title();await ev(`document.querySelector('#title-new').focus();document.querySelector('#title-new').click()`);await until(`!!document.querySelector('.account-dialog[open]')`);assert.match(await ev(`document.querySelector('#account-status').textContent`),/로그인/);assert.equal(await ev(`location.search`),'');
+await ev(`document.querySelector('#account-close').click()`);await until(`document.activeElement.id==='title-new'`);assert.equal(await ev(`!!document.querySelector('#driver-form')`),false);
+await ev(`document.querySelector('#title-continue').click()`);await login();await until(`!document.querySelector('.account-dialog[open]')&&!document.querySelector('#title-status').hidden&&document.querySelector('#title-status').textContent.includes('새 게임')`);assert.equal(await ev(`location.search`),'');assert.equal(await ev(`document.activeElement.id`),'title-new');
+careerError=true;await ev(`document.querySelector('#title-continue').click()`);await until(`document.querySelector('#title-status').textContent.includes('확인하지 못했습니다')`);assert.equal(await ev(`location.search`),'');careerError=false;
+await send('Page.navigate',{url:base+'/?career=continue'});await until(`!!document.querySelector('#title-status')&&document.querySelector('#title-status').textContent.includes('새 게임')&&!document.querySelector('#boot-screen')`);assert.equal(await ev(`!!document.querySelector('#driver-form')`),false);
+await ev(`document.querySelector('#title-new').click()`);await until(`!!document.querySelector('#driver-form')&&!document.querySelector('#boot-screen')`);
+const payload=await ev(`const {newCareer}=await import('/src/career/Career.ts');return newCareer('Saved Driver','대한민국',27);`);careerRows=[{revision:1,payload}];
+await title();await ev(`document.querySelector('#title-continue').click()`);await until(`!!document.querySelector('#practice')&&!document.querySelector('#boot-screen')`);assert.match(await ev(`document.querySelector('.career-content').textContent`),/Saved Driver/);
+await title();await ev(`document.querySelector('#title-new').click()`);await until(`!!document.querySelector('#driver-form input[type=checkbox]')`);assert.equal(await ev(`document.querySelector('#driver-form input[type=checkbox]').required`),true);
+await ev(`(await import('/src/account/Account.ts')).account.signOut()`);await wait(300);await send('Page.navigate',{url:base+'/?career=new'});await until(`!!document.querySelector('.account-dialog[open]')&&!document.querySelector('#boot-screen')`);assert.equal(await ev(`!!document.querySelector('#driver-form')`),false);
+console.log('PASS career entry: login gate/cancel/focus, login resumes intent, empty continue stays home, server failure distinct from no save, direct URL guard, existing save resumes, overwrite requires confirmation');
 console.log(JSON.stringify({unconfigured:'honest disabled state, no auth requests',auth:'actual SDK + mocked HTTP: signup/confirmation/login/password clearing/logout pass',records:'actual lap event to cloud RPC and display pass',layouts}));await send('Fetch.disable');ws.close();
