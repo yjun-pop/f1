@@ -35,11 +35,11 @@ function shotFor(track:Track,index:number){
   }
 
 const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setSize(1600,900);renderer.setPixelRatio(1);renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.append(renderer.domElement);
-let previous:THREE.Scene|undefined,lighting:WorldLighting|undefined;
-(window as any).captureCircuit=(id:CircuitId)=>{
- if(previous){previous.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});lighting?.dispose();renderer.renderLists.dispose();}
- const scene=new THREE.Scene(),environment=environmentFor(id);lighting=new WorldLighting(scene,renderer,'medium',!!circuitById(id).night,environment);const track=new Track(scene,circuitById(id));previous=scene;
- renderer.toneMappingExposure=environment.exposure;const camera=new THREE.PerspectiveCamera(57,1600/900,.5,1500),shot=shotFor(track,0);
- camera.position.copy(shot.focus).addScaledVector(shot.forward,-85).addScaledVector(shot.normal,45);camera.position.y+=environment.city?62:42;camera.lookAt(shot.focus);track.updatePresentation(camera.position,'medium');lighting.sun.target.position.copy(shot.focus);lighting.sun.position.copy(shot.focus).add(lighting.sunOffset);renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);
+let previous:THREE.Scene|undefined,lighting:WorldLighting|undefined,current: string|undefined,track:Track;
+(window as any).captureCircuit=(id:CircuitId,index=0)=>{
+ if(previous&&current!==id){previous.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});lighting?.dispose();renderer.renderLists.dispose();}
+ const environment=environmentFor(id);if(current!==id){previous=new THREE.Scene();lighting=new WorldLighting(previous,renderer,'medium',!!circuitById(id).night,environment);track=new Track(previous,circuitById(id));current=id;}const scene=previous!;
+ renderer.toneMappingExposure=environment.exposure;const camera=new THREE.PerspectiveCamera(57,1600/900,.5,1500),shot=shotFor(track,index);
+ camera.position.copy(shot.focus).addScaledVector(shot.forward,-85).addScaledVector(shot.normal,index%2===0?45:-45);camera.position.y+=environment.city?62:42;camera.lookAt(shot.focus);track.updatePresentation(camera.position,'medium');lighting!.sun.target.position.copy(shot.focus);lighting!.sun.position.copy(shot.focus).add(lighting!.sunOffset);renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);
  return renderer.domElement.toDataURL('image/webp',.8);
 };
