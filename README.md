@@ -70,10 +70,6 @@ node tests/circuit-backdrop.mjs
 node tests/race-session.mjs
 ```
 
-메뉴 배경은 `public/circuit-posters/`에 저장한 서킷별 4개 구간의 WebP 이미지를 순환 표시합니다. 서킷 환경을 변경한 뒤에는
-Vite(5180번 포트)와 Chromium(디버깅 포트 9238)을 실행하고
-`node scripts/capture-circuit-posters.mjs`로 이미지를 다시 생성합니다.
-
 ## 배포
 
 `main` 브랜치에 푸시하면 [GitHub Actions](.github/workflows/pages.yml)가 검사·빌드 후
