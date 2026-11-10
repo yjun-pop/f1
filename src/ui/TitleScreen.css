@@ -10,3 +10,5 @@
 .title-quick-group{position:relative}.title-lap-options{overflow:hidden;box-sizing:border-box;display:grid;grid-template-columns:repeat(4,1fr);padding:0 10px 8px 22px;gap:4px}.title-lap-options[hidden]{display:none}.title-content nav .title-lap-options button{justify-content:center;padding:10px 3px;font-size:14px;font-weight:400;white-space:nowrap}.title-content nav .title-lap-options button:hover,.title-content nav .title-lap-options button:focus-visible{border-left-color:#fff}
 
 .title-content #title-status{font-size:14px;color:#d5e1eb;line-height:1.65}
+
+.title-content nav #title-continue span{font-family:'Noto Sans KR',sans-serif;font-size:13px;letter-spacing:0;line-height:1.5;max-width:190px;text-align:right;color:#bdccd8}.title-content nav #title-continue{gap:20px}

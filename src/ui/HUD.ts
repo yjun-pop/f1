@@ -19,8 +19,8 @@ export class HUD {
   private textNodes=new Map<string,Element>();
   private mapPoint:(p:{x:number;z:number})=>{x:number;y:number};
   constructor(root:HTMLElement,track:Track,actions:{totalLaps?:number;start:(id:CircuitId)=>void,restart:()=>void,camera:()=>void;resume:()=>void;volume:(value:number)=>void;audioLevel:number;motionLevel:number;motion:(value:number)=>void;graphicsMode:GraphicsMode;graphicsTier:GraphicsTier;graphics:(mode:GraphicsMode)=>void;transmissionMode?:TransmissionMode;transmission?:(mode:TransmissionMode)=>void;menu?:()=>void;wheel?:()=>void}) {
-    this.root=root;
-    root.innerHTML=`<header><div class="brand"><i>Λ</i> APEX<span>FORMULA</span><small>OPEN WHEEL RACING / 01</small></div><div class="session"><b>${track.name} · ${track.country}</b><small>RACE · ${actions.totalLaps??3} LAPS · DRY · ${track.circuit?.night?'NIGHT':'DAYLIGHT'}</small></div></header>
+    this.root=root;const context=root.dataset.mode??'race',contextName=({training:'아카데미 · 기본 훈련',assessment:'아카데미 · 1랩 평가',practice:'트랙 익히기 · 단독 연습'} as Record<string,string>)[context];
+    root.innerHTML=`<header><div class="brand"><i>Λ</i> APEX<span>FORMULA</span><small>OPEN WHEEL RACING / 01</small></div><div class="session"><b>${track.name} · ${track.country}</b><small>${contextName??`RACE · ${actions.totalLaps??3} LAPS · DRY · ${track.circuit?.night?'NIGHT':'DAYLIGHT'}`}</small></div></header>
     <div class="rearview-frame" role="img" aria-label="차량 뒤쪽 실시간 백미러"><div id="rearview-viewport"></div><span>REAR VIEW</span></div>
     <aside class="timing"><div class="eyebrow">레이스 순위</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>순위</small></span></div><div class="intervals" aria-label="앞뒤 차량 시간 차"><div class="interval-row"><span>앞차 <b id="gap-ahead-name">—</b></span><strong id="gap-ahead">—</strong></div><div class="interval-row"><span>뒤차 <b id="gap-behind-name">—</b></span><strong id="gap-behind">—</strong></div></div><div class="timingrow"><span>LAP</span><b id="lap">1 / ${actions.totalLaps??3}</b></div><div class="timingrow"><span>현재 랩</span><b id="current"></b></div><div class="timingrow"><span>이전 랩</span><b id="last"></b></div><div class="timingrow best"><span title="개인 최고 랩">최고 랩</span><b id="best"></b></div></aside>
     <div class="mapbox"><canvas id="map" width="240" height="190"></canvas><span>${track.name} · ${track.country} · ${(track.length/1000).toFixed(2)} KM</span></div>
@@ -79,6 +79,7 @@ export class HUD {
     }
   }
   update(v:Vehicle,r:Race,paused:boolean,track:Track,cameraMode:number){
+    this.root.dataset.solo=String(r.fieldSize===1);
     this.raceActive=r.state==='racing'||r.state==='countdown';
     if(paused||r.state!=='racing')this.updateProximity(v,r,paused);
     (this.root.querySelector('#pause-menu') as HTMLElement).hidden=!paused;

@@ -23,7 +23,7 @@ function fixture(){
  const nodes=new Map(),trace=[],storage=new Map();let markup='',navigation;
  const noop=()=>{};
  const node=id=>({id,events:new Map(),value:'auto',textContent:'',hidden:false,disabled:false,style:{values:new Map(),setProperty(k,v){this.values.set(k,v);},getPropertyValue(k){return this.values.get(k);}},classList:{toggle(){}},setAttribute(){},replaceChildren(){},append(...children){this.children=children;},addEventListener(n,f){this.events.set(n,f);},focus(){document.activeElement=this;},blur(){document.activeElement=null;},closest(){return null;},getContext:()=>new Proxy({},{get:()=>noop,set:()=>true})});
- const root={classList:{toggle(){}},querySelector:q=>nodes.get(q.slice(1))??null,querySelectorAll:()=>[],contains:n=>[...nodes.values()].includes(n),get innerHTML(){return markup;},set innerHTML(s){markup=s;for(const m of s.matchAll(/id="([^"]+)"/g))nodes.set(m[1],node(m[1]));}};
+ const root={dataset:{},classList:{toggle(){}},querySelector:q=>nodes.get(q.slice(1))??null,querySelectorAll:()=>[],contains:n=>[...nodes.values()].includes(n),get innerHTML(){return markup;},set innerHTML(s){markup=s;for(const m of s.matchAll(/id="([^"]+)"/g))nodes.set(m[1],node(m[1]));}};
  globalThis.window={location:{href:'https://example.test/f1/?circuit=silverstone',assign:url=>navigation=url}};
  globalThis.document={documentElement:{dataset:{}},activeElement:null,createElement:()=>node('new')};globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)};
  const track={name:'SILVERSTONE',country:'GREAT BRITAIN',length:5891,circuit:{id:'silverstone'},bounds:{min:{x:0,z:0},max:{x:100,z:100}},point:t=>({x:t*100,z:t*100})};

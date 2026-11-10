@@ -5,6 +5,7 @@ import {QUICK_RACE_LAPS} from '../game/RaceLaps';
 import {bootScreen} from './BootScreen';
 import {openSettings} from './Settings';
 import {CareerStore} from '../career/Store';
+import {continueLabel} from '../career/Career';
 /** Live race-film background; gameplay starts only after a quick-race choice. */
 export class TitleScreen {
  readonly ready:Promise<void>;
@@ -21,7 +22,11 @@ export class TitleScreen {
  const unmountAccount=mountAccountButton(this.element.querySelector<HTMLButtonElement>('#title-account')!);
  void account.initialize().then(()=>{if(account.recovering)void openAccount();});
  const newButton=this.element.querySelector<HTMLButtonElement>('#title-new')!,continueButton=this.element.querySelector<HTMLButtonElement>('#title-continue')!;
- continueButton.querySelector('span')!.textContent='';
+ let summaryOwner:string|undefined,summaryRequest=0;
+ const summary=continueButton.querySelector('span')!;
+ const refreshSummary=()=>{if(!this.active)return;if(!account.session){summaryOwner=undefined;summaryRequest++;summary.textContent=account.phase==='loading'?'계정 확인 중…':account.phase==='error'?'연결 확인 필요':'로그인 필요';return;}const owner=account.session.user.id;if(summaryOwner===owner)return;summaryOwner=owner;const request=++summaryRequest;summary.textContent='진행 확인 중…';void new CareerStore(account).load().then(save=>{if(this.active&&request===summaryRequest&&account.session?.user.id===owner)summary.textContent=save?continueLabel(save):'저장된 커리어 없음';}).catch(()=>{if(this.active&&request===summaryRequest)summary.textContent='진행 확인 실패 · 다시 시도';});};
+ account.addEventListener('change',refreshSummary);refreshSummary();void account.initialize().then(refreshSummary);
+
  const status=this.element.querySelector<HTMLElement>('#title-status')!;
  const tell=(message:string)=>{status.hidden=false;status.textContent=message;};
  let entering=false;
@@ -47,7 +52,7 @@ export class TitleScreen {
  group.addEventListener('focusin',()=>expand(true));group.addEventListener('focusout',()=>queueMicrotask(()=>{if(!group.contains(document.activeElement))expand(false);}));
  button.addEventListener('click',()=>{expand(true);choices.querySelector<HTMLButtonElement>('button')!.focus();});
  group.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();button.focus();expand(false);}if(event.key==='ArrowDown'&&event.target===button){event.preventDefault();expand(true);choices.querySelector<HTMLButtonElement>('button')!.focus();}});
- choices.querySelectorAll<HTMLButtonElement>('[data-laps]').forEach(choice=>choice.addEventListener('click',()=>{unmountAccount();this.cancelled=true;this.backdrop?.dispose();this.element.remove();this.quick(Number(choice.dataset.laps));}));
+ choices.querySelectorAll<HTMLButtonElement>('[data-laps]').forEach(choice=>choice.addEventListener('click',()=>{unmountAccount();account.removeEventListener('change',refreshSummary);this.cancelled=true;this.backdrop?.dispose();this.element.remove();this.quick(Number(choice.dataset.laps));}));
  }
  private async prepareBackdrop(){
   try{

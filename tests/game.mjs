@@ -1453,7 +1453,7 @@ track.setStartLights(3);assert.equal(track.startBulbs.filter(m=>m.emissiveIntens
 const {HUD}=await import(moduleURL('../ui/HUD'));
 const nodes=new Map();
 function makeSignalNode(){const classes=new Set(),events=new Map();return {events,value:'',textContent:'',hidden:false,classes,style:{setProperty:()=>{}},setAttribute:()=>{},classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},addEventListener:(type,handler)=>events.set(type,handler),focus:()=>{},replaceChildren:()=>{},append:()=>{},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})};}
-const hudRoot={innerHTML:'',classList:{toggle:()=>{}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,makeSignalNode());return nodes.get(selector);},querySelectorAll:()=>[]};
+const hudRoot={dataset:{},innerHTML:'',classList:{toggle:()=>{}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,makeSignalNode());return nodes.get(selector);},querySelectorAll:()=>[]};
 const savedPath=globalThis.Path2D;globalThis.Path2D=class {moveTo(){}lineTo(){}};
 const noop=()=>{};const signalHUD=new HUD(hudRoot,track,{start:noop,restart:noop,camera:noop,resume:noop,recover:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop,transmission:mode=>signalPlayer.setTransmissionMode(mode)});
 nodes.get('#start-transmission').events.get('change')({target:{value:'manual'}});

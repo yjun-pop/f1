@@ -11,3 +11,8 @@
 #brief-copy{margin-top:18px}.corner-demo{margin:0 0 18px}
 
 .brief-map{align-self:start}
+
+/* Read the manoeuvre before watching it; both fit on a short desktop. */
+.brief-head{padding:16px 26px}.brief-head h2{font-size:30px}.brief-body{gap:24px;padding:18px 26px}.brief-details nav{margin-bottom:12px}.brief-details h3{font-size:21px;margin:4px 0 8px}.brief-details dl{display:grid;grid-template-columns:30px 1fr;gap:6px 10px}.brief-details dt,.brief-details dd{margin:0;font-size:13px;line-height:1.65}#brief-copy{margin:0 0 12px}.brief-actions{padding:14px 26px}.brief-map svg{max-height:360px}
+@media(min-width:701px){.brief-details nav button{min-height:38px!important;padding:6px 10px!important}.corner-demo{min-height:180px}.corner-demo canvas{height:180px}}
+@media(max-width:700px){.brief-head{padding:16px 20px}.brief-body{padding:16px 20px}.brief-map{max-width:190px}.brief-map svg{max-height:150px}.brief-details{margin-top:14px}.brief-details nav{margin-bottom:12px}.brief-actions{padding:12px}.brief-details dd{font-size:13px}}

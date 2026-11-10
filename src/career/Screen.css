@@ -264,3 +264,11 @@
 }
 
 @media(max-height:650px){#hud .mapbox .academy-overlay{margin-top:8px;padding-top:8px}.academy-steps{margin:6px 0}.academy-steps span{width:20px;height:20px}.academy-feedback{margin:6px 0;font-size:11px}.academy-target{margin-bottom:7px}#hud .academy-overlay h3{font-size:13px}}
+
+.career-goal{display:grid;grid-template-columns:1fr auto;gap:12px 24px;padding:20px 24px;margin-top:20px;background:#131d27;border:1px solid #ffffff1d;border-left:3px solid var(--career-accent);border-radius:4px}.career-goal h3{font-size:17px;margin:5px 0 0}.career-goal>div:nth-child(2){display:grid;gap:4px;text-align:right}.career-goal strong{color:var(--career-accent);font-size:18px}.career-goal>div>span:last-child{font-size:12px;color:#9db2c3}.career-goal progress{grid-column:1/-1;width:100%;height:5px;accent-color:var(--career-accent)}.career-debrief{padding:28px;border:1px solid #ffffff20;background:linear-gradient(130deg,#1b2937,#101821);border-top:3px solid var(--career-accent);border-radius:6px}.career-debrief h2{font-size:64px;margin:14px 0 24px}.career-debrief h2 small{font-size:24px;margin-left:6px}.career-next-step{font-size:18px;color:#beccd8}.career-result-actions{display:flex;gap:20px;align-items:center;margin-top:28px;flex-wrap:wrap}.career-saved{font-size:13px;color:#9dd7bd}.career-screen .career-contract-target{font-size:18px;font-weight:600}.career-debrief .career-goal{margin-top:24px}
+@media(max-width:760px){.career-goal{padding:18px;grid-template-columns:1fr}.career-goal>div:nth-child(2){text-align:left}.career-debrief{padding:22px}.career-debrief h2{font-size:42px}.career-result-actions{gap:12px}}
+
+.career-debrief .career-metrics strong{font-size:clamp(22px,2vw,30px);white-space:nowrap}.career-result-actions{position:sticky;bottom:0;z-index:2;background:#111d29;padding:14px 0 4px}
+@media(max-width:760px){.career-debrief{padding-bottom:105px}.career-debrief .career-metrics>div{padding:14px 10px}.career-debrief .career-metrics strong{font-size:22px}.career-result-actions{position:fixed;left:20px;right:20px;bottom:12px;margin:0;padding:12px;border:1px solid #ffffff28;border-radius:5px;background:#101923f5}.career-result-actions .primary{flex:1;min-width:0!important;font-size:13px}.career-result-actions .career-saved{font-size:11px}}
+
+.career-summary .career-sidebar nav{display:none}

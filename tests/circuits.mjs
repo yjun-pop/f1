@@ -113,7 +113,7 @@ const {HUD}=await import(moduleURL('../ui/HUD'));
 const {Game}=await import(moduleURL('Game'));
 const nodes=new Map();
 const node=()=>({events:new Map(),value:'',textContent:'',innerHTML:'',hidden:false,style:{setProperty(){}},addEventListener(type,fn){this.events.set(type,fn);},setAttribute(){},focus(){},classList:{toggle(){}},replaceChildren(){},append(){},getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})});
-const root={innerHTML:'',classList:{toggle(){}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,node());return nodes.get(selector);},querySelectorAll:()=>[]};
+const root={dataset:{},innerHTML:'',classList:{toggle(){}},querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,node());return nodes.get(selector);},querySelectorAll:()=>[]};
 globalThis.Path2D=class {moveTo(){}lineTo(){}};
 const choices=[],noop=()=>{};let menuOpened=0;
 const hud=new HUD(root,uiTrack,{start:id=>choices.push(id),restart:noop,camera:noop,resume:noop,recover:noop,volume:noop,audioLevel:.65,motionLevel:.6,motion:noop,graphicsMode:'auto',graphicsTier:'medium',graphics:noop,menu:()=>menuOpened++});
