@@ -1,14 +1,18 @@
-export interface DrivingSample {dt:number;elapsed:number;speed:number;throttle:number;brake:number;steer:number;offRoad:boolean;impacts:number;distance:number;finished:boolean;position:number;fieldSize:number;bestLap:number}
+import type {CircuitId} from '../game/Circuits';
+import type {PracticeGuide} from './TrackBriefing';
+export interface DrivingSample {dt:number;elapsed:number;speed:number;throttle:number;brake:number;steer:number;offRoad:boolean;impacts:number;distance:number;finished:boolean;position:number;fieldSize:number;bestLap:number;guide?:PracticeGuide}
 export interface RunResult {seconds:number;offRoadSeconds:number;contacts:number;bestLap:number;position:number;score:number}
-export interface CareerSave {version:1;kind:'apex-career';saveId:string;driver:{name:string;country:string;number:number};phase:'academy'|'assessment'|'offers'|'season';trained:boolean;assessment?:RunResult;team?:string;year:number;round:number;money:number;points:number;history:{year:number;round:number;position:number;points:number;reward:number;goalBonus?:number;result:RunResult}[]}
+export interface CareerSave {version:1;kind:'apex-career';saveId:string;driver:{name:string;country:string;number:number};phase:'academy'|'assessment'|'offers'|'season';trained:boolean;briefed?:CircuitId[];assessment?:RunResult;team?:string;year:number;round:number;money:number;points:number;history:{year:number;round:number;position:number;points:number;reward:number;goalBonus?:number;result:RunResult}[]}
 export const TEAMS=[{id:'atlas',name:'ATLAS RACING',style:'육성형',description:'안정적인 완주를 중시합니다. 첫 시즌은 경험을 쌓는 데 집중합니다.',bonus:12000,goalBonus:3000,target:'3경기 완주'}, {id:'vector',name:'VECTOR MOTORSPORT',style:'균형형',description:'기록과 안정성을 함께 평가합니다. 포인트 획득을 목표로 합니다.',bonus:16000,goalBonus:6000,target:'한 경기 이상 상위 4위'}, {id:'helix',name:'HELIX PERFORMANCE',style:'도전형',description:'높은 목표와 성과 보너스를 제안합니다. 포디움에 도전하세요.',bonus:18000,goalBonus:10000,target:'한 경기 이상 포디움'}] as const;
 export const SEASON=[{circuit:'monza',name:'이탈리아 · 몬자'},{circuit:'silverstone',name:'영국 · 실버스톤'},{circuit:'spa',name:'벨기에 · 스파'}] as const;
+const careerCircuitIds:readonly string[]=['monza','silverstone','spa','monaco','suzuka','interlagos','singapore','montreal'];
 const stamp=()=>globalThis.crypto.randomUUID();
 export function newCareer(name:string,country:string,number:number):CareerSave {if(!name.trim()||name.trim().length>24||!country.trim()||country.length>40||!Number.isInteger(number)||number<2||number>99)throw Error('이름·국적과 2~99번 번호를 확인하세요.');return {version:1,kind:'apex-career',saveId:stamp(),driver:{name:name.trim(),country:country.trim(),number},phase:'academy',trained:false,year:1,round:0,money:0,points:0,history:[]};}
 export function readCareer(value:unknown):CareerSave|null {
  if(!value||typeof value!=='object')return null;const s=value as CareerSave;
  if(s.version!==1||s.kind!=='apex-career'||typeof s.saveId!=='string'||!s.driver||typeof s.driver.name!=='string'||!s.driver.name.trim()||s.driver.name.length>24||typeof s.driver.country!=='string'||s.driver.country.length>40||!Number.isInteger(s.driver.number)||s.driver.number<2||s.driver.number>99)return null;
  if(!['academy','assessment','offers','season'].includes(s.phase)||typeof s.trained!=='boolean'||![s.year,s.round,s.money,s.points].every(Number.isSafeInteger)||s.year<1||s.round<0||s.round>3||s.money<0||s.points<0||!Array.isArray(s.history)||s.history.length>120)return null;
+ if(s.briefed!==undefined&&(!Array.isArray(s.briefed)||s.briefed.length>8||s.briefed.some(id=>!careerCircuitIds.includes(id))||new Set(s.briefed).size!==s.briefed.length))return null;
  const validResult=(r:RunResult)=>r&&[r.seconds,r.offRoadSeconds,r.contacts,r.bestLap,r.position,r.score].every(Number.isFinite)&&r.seconds>0&&r.offRoadSeconds>=0&&r.contacts>=0&&r.score>=0&&r.score<=100&&r.position>=1;
  if(s.assessment&&!validResult(s.assessment)||s.phase!=='academy'&&!s.trained||['offers','season'].includes(s.phase)&&!s.assessment||s.phase==='season'&&!TEAMS.some(t=>t.id===s.team))return null;
  if(!s.history.every(h=>h&&[h.year,h.round,h.position,h.points,h.reward].every(Number.isSafeInteger)&&h.year>0&&h.round>=0&&h.round<3&&h.position>0&&h.points>=0&&h.reward>=0&&(h.goalBonus===undefined||Number.isSafeInteger(h.goalBonus)&&h.goalBonus>=0)&&validResult(h.result)))return null;
@@ -58,3 +62,6 @@ export function academyFeedback(run:AcademyRun,s?:DrivingSample){
  const progress=run.trained?1:index===0?speed/80:index===1?(80-speed)/40:index===2?run.turnSeconds/2:speed/100;
  return {index,...lesson,progress:Math.max(0,Math.min(1,progress)),value:index===2?`${run.turnSeconds.toFixed(1)} / 2초`:`${Math.round(speed)} km/h`,feedback:s?.offRoad?'코스로 돌아오면 과제를 계속합니다.':run.retryHint||lesson.cue};
 }
+
+export function needsBriefing(s:CareerSave,id:CircuitId){return !s.briefed?.includes(id)&&!s.history.some(h=>SEASON[h.round].circuit===id);}
+export function markBriefed(s:CareerSave,id:CircuitId){if(!careerCircuitIds.includes(id))throw Error('서킷을 확인하세요.');return change(s,{briefed:[...new Set([...(s.briefed??[]),id])]});}

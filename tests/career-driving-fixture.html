@@ -1,7 +1,7 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="viewport"></div><div id="hud"></div><script type="module">
 import '../src/style.css';import {Game} from '../src/game/Game';import {AcademyRun} from '../src/career/Career';
 localStorage.setItem('apex-graphics-quality','low');localStorage.setItem('apex-transmission-mode','auto');window.requestAnimationFrame=()=>0;let monitor=new AcademyRun(),samples=0,resets=0;
-const g=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{circuit:'monza',totalLaps:3,opponentCount:0,career:{sample:s=>{samples++;monitor.update(s);},reset:()=>{resets++;monitor=new AcademyRun();},exit:()=>{}}});
+const g=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{circuit:'monza',totalLaps:3,opponentCount:0,career:{sample:s=>{window.lastCareerSample=s;samples++;monitor.update(s);},reset:()=>{resets++;monitor=new AcademyRun();},exit:()=>{}}});
 window.runCareerPhysics=()=>{
  g.race.start();while(g.race.state==='countdown')g.race.update(1/120,g.vehicle);
  const render=g.renderer.render.bind(g.renderer);g.renderer.render=()=>{};g.mirror.render=()=>{};g.input.analog=()=>undefined;g.input.down=(...keys)=>keys.includes('KeyW');let now=g.previous,maxSpeed=0;
@@ -12,4 +12,5 @@ window.runCareerPhysics=()=>{
  const result={trained:monitor.trained,accelerated:monitor.accelerated,braked:monitor.braked,turnSeconds:monitor.turnSeconds,samples,maxSpeed,offRoadSeconds:monitor.offRoadSeconds};
  render(g.scene,g.cockpit.camera);g.restart();result.resets=resets;result.resetTurn=monitor.turnSeconds;g.endCareerSession();return result;
 };
+window.runPracticeGuidance=()=>{g.changingCircuit=false;g.careerHooks.guidance=true;g.restart();g.race.start();while(g.race.state==='countdown')g.race.update(1/120,g.vehicle);g.input.analog=()=>({steer:0,throttle:0,brake:0});g.frame(g.previous+1000/60);const guide=window.lastCareerSample.guide,expected=g.line.planner.guidance(g.vehicle.progress,g.vehicle.speed,g.vehicle.offRoad,1400).target*3.6;g.endCareerSession();return {...guide,validSection:g.track.sections.some(s=>s.number===guide.section),targetDelta:Math.abs(guide.targetKmh-expected)};};
 </script></body></html>
