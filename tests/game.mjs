@@ -1469,8 +1469,8 @@ Game.prototype.selectTransmission.call({vehicle:signalPlayer,hud:signalHUD},'aut
 assert.equal(transmissionWrites.get('apex-transmission-mode'),'auto');
 if(savedStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=savedStorage;
 console.log('PASS: working start/pause transmission selectors, synchronized mode indicator and visible paddle controls');
-signalPlayer.aero.active=true;signalPlayer.aero.available=true;signalPlayer.aero.wake=.6;signalHUD.update(signalPlayer,signalRace,false,track,1);assert.equal(nodes.get('#drs-status').textContent,'DRS 사용 중');assert.equal(nodes.get('#draft-status').textContent,'슬립스트림 60%');signalPlayer.aero.clear();
-console.log('PASS: live DRS/slipstream HUD status and activation control hint');
+signalPlayer.aero.active=true;signalPlayer.aero.available=true;signalPlayer.aero.wake=.6;signalHUD.update(signalPlayer,signalRace,false,track,1);assert.ok(!/drs-status|draft-status/.test(hudRoot.innerHTML));assert.equal(nodes.has('#drs-status'),false);assert.equal(nodes.has('#draft-status'),false);signalPlayer.aero.clear();
+console.log('PASS: aerodynamic state does not restore removed DRS/slipstream indicators');
 
 signalRace.reset();signalRace.start();signalRace.update(2.61,signalPlayer);signalHUD.update(signalPlayer,signalRace,false,track,1);
 assert.ok(!/seat-height|seat-value/.test(hudRoot.innerHTML),'Fixed seat height must not retain an adjustment control');
