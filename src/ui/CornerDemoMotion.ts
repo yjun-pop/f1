@@ -20,3 +20,11 @@ export function demoSpeedPlan(span:number,exitDistance:number,limit:(distance:nu
  for(let i=exit-1;i>=0;i--)values[i]=Math.min(values[i],Math.sqrt(values[i+1]**2+32*spacing));
  return {exitDistance:exit*spacing,speed:(distance:number)=>{const f=Math.max(0,Math.min(count,distance/spacing)),i=Math.floor(f);return THREE.MathUtils.lerp(values[i],values[Math.min(count,i+1)],f-i);}};
 }
+/** The spline parameter is not distance: use arc length for replay movement. */
+export class DemoPath {
+ readonly curve:THREE.CatmullRomCurve3;readonly length:number;private lengths:number[];
+ constructor(points:THREE.Vector3[]){this.curve=new THREE.CatmullRomCurve3(points,true,'centripetal');this.curve.arcLengthDivisions=Math.max(24000,points.length*24);this.lengths=this.curve.getLengths();this.length=this.lengths.at(-1)!;}
+ distanceAt(progress:number){const f=Math.max(0,Math.min(1,progress))*(this.lengths.length-1),i=Math.floor(f);return THREE.MathUtils.lerp(this.lengths[i],this.lengths[Math.min(i+1,this.lengths.length-1)],f-i);}
+ progressAt(distance:number){return this.curve.getUtoTmapping(0,((distance%this.length)+this.length)%this.length);}
+ point(distance:number){return this.curve.getPointAt(((distance%this.length)+this.length)%this.length/this.length);}
+}
