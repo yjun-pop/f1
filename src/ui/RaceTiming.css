@@ -27,6 +27,6 @@
 @media(max-width:700px){.proximity-marker{width:56px;height:16px;margin:-8px 0 0 -28px}}
 .has-results .race-session-actions{position:sticky;bottom:-1px;z-index:2;background:#101c2bf5;padding:16px 0 4px;border-top:1px solid #ffffff26;margin-top:20px}.race-session-actions button{min-height:46px;border-radius:6px}.race-session-results>div:first-child b{font-size:44px}.race-session-results>div:nth-child(4){border-color:#bca5ff88;background:#bca5ff12}.race-session-panel p,.race-session-panel small{font-size:13px}.race-session-panel h3{font-size:18px}.race-result-note{line-height:1.7}
 
-#hud[data-mode=training] .timing,#hud[data-mode=practice] .timing,#hud[data-mode=training] .aero-status,#hud[data-mode=practice] .aero-status,#hud[data-mode=assessment] .aero-status{display:none}
+#hud[data-mode=training] .timing,#hud[data-mode=practice] .timing{display:none}
 #hud[data-mode=assessment] .timing .position,#hud[data-mode=assessment] .timing .intervals,#hud[data-solo=true] .timing .intervals{display:none}
 #hud footer #restart{display:none}

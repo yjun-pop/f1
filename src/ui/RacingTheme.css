@@ -75,7 +75,7 @@ dialog.wheel-dialog input[type=range]{accent-color:var(--race-accent)}
 /* No live blur on the driving HUD: dark backing preserves contrast over scenery. */
 #hud .timing,#hud .mapbox{background:linear-gradient(135deg,#23384adf,#0b172be8);border:1px solid var(--race-line);border-top:2px solid #c9dcec60;border-radius:3px;box-shadow:inset 0 1px 0 #ffffff0a;-webkit-backdrop-filter:none;backdrop-filter:none}
 #hud .timing .eyebrow,#hud .timingrow span{color:#b4c7d6}
-#hud .aero-status,#hud .wheel-input-notice{background:linear-gradient(115deg,#203348e8,#0b172bf0);border-radius:2px;box-shadow:inset 0 1px 0 #ffffff10}
+#hud .wheel-input-notice{background:linear-gradient(115deg,#203348e8,#0b172bf0);border-radius:2px;box-shadow:inset 0 1px 0 #ffffff10}
 #hud .rearview-frame{border-radius:4px}
 #hud footer{background:linear-gradient(0deg,#0b172be8,#172b3dc9);border-top:1px solid #dcecff18}
 select option{background:#172739;color:#eef4fa}

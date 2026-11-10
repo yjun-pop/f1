@@ -3,7 +3,7 @@ import './RacingTheme.css';
 import {currentWheelDiagnostic} from './WheelDiagnostics';
 import {wheelInput,changedAxis,changedPedal,validWheelProfile,steeringValue,pedalValue,pedalRaw,findWheelDevice,WHEEL_ACTIONS,type WheelAction,type WheelInput,type WheelProfile,type WheelDevice} from '../game/WheelInput';
 
-const LABELS:Record<WheelAction,string>={shiftDown:'기어 내리기',shiftUp:'기어 올리기',boost:'ERS · 누르는 동안',drs:'DRS',pause:'일시정지 · 계속',camera:'시점 변경'};
+const LABELS:Record<WheelAction,string>={shiftDown:'기어 내리기',shiftUp:'기어 올리기',boost:'ERS · 누르는 동안',drs:'미사용',pause:'일시정지 · 계속',camera:'시점 변경'};
 const STEPS=[
   ['휠 중앙','휠을 중앙에 놓고, 페달에서 발을 떼세요.'],
   ['왼쪽 조향','게임에서 최대 좌회전으로 사용할 만큼 휠을 왼쪽으로 돌려 유지하세요. 보통 중앙에서 180° 정도입니다.'],
@@ -33,7 +33,7 @@ export class WheelSetup {
       <section class="wheel-calibration" aria-labelledby="wheel-step-title"><span id="wheel-step-count">입력 보정</span><h3 id="wheel-step-title">장치를 선택해 주세요</h3><p id="wheel-step-description">처음 연결한 휠은 보정을 마쳐야 차량을 움직일 수 있습니다.</p><div class="wheel-step-buttons"><button type="button" id="wheel-calibrate">보정 시작</button><button type="button" id="wheel-next" hidden>현재 위치 기록 →</button></div></section>
       <p id="wheel-message" class="wheel-message" role="status" aria-live="polite"></p>
       <div class="wheel-meters"><label>조향 <output id="wheel-steer-value">0%</output><meter id="wheel-steer" min="-1" max="1" value="0"></meter></label><label>가속 <output id="wheel-throttle-value">0%</output><meter id="wheel-throttle" min="0" max="1" value="0"></meter></label><label>제동 <output id="wheel-brake-value">0%</output><meter id="wheel-brake" min="0" max="1" value="0"></meter></label></div>
-      <fieldset id="wheel-bindings" hidden><legend>패들·버튼 지정 <small>선택 사항</small></legend><p>‘지정’을 누른 뒤 휠의 버튼을 한 번 누르세요.</p>${WHEEL_ACTIONS.map(action=>`<div class="wheel-binding"><span>${LABELS[action]}</span><button type="button" id="wheel-bind-${action}">지정</button><button type="button" id="wheel-clear-${action}" aria-label="${LABELS[action]} 지정 해제">해제</button></div>`).join('')}<small>패들로 직접 변속하려면 레이스의 변속 방식을 ‘수동’으로 선택하세요.</small></fieldset>
+      <fieldset id="wheel-bindings" hidden><legend>패들·버튼 지정 <small>선택 사항</small></legend><p>‘지정’을 누른 뒤 휠의 버튼을 한 번 누르세요.</p>${WHEEL_ACTIONS.filter(a=>a!=='drs').map(action=>`<div class="wheel-binding"><span>${LABELS[action]}</span><button type="button" id="wheel-bind-${action}">지정</button><button type="button" id="wheel-clear-${action}" aria-label="${LABELS[action]} 지정 해제">해제</button></div>`).join('')}<small>패들로 직접 변속하려면 레이스의 변속 방식을 ‘수동’으로 선택하세요.</small></fieldset>
       <div class="wheel-tuning"><label for="wheel-deadzone">중앙 데드존 <output id="wheel-deadzone-value"></output></label><input id="wheel-deadzone" type="range" min="0" max="15" step="1" value="2"><label for="wheel-sensitivity">조향 감도 <output id="wheel-sensitivity-value"></output></label><input id="wheel-sensitivity" type="range" min="50" max="200" step="5" value="100"><label class="wheel-enable"><input id="wheel-enabled" type="checkbox" checked> 보정한 휠로 주행하기</label></div>
       <section class="wheel-tuning"><h3>휠 진동</h3><label for="wheel-rumble">진동 강도 <output id="wheel-rumble-value"></output></label><input id="wheel-rumble" type="range" min="0" max="100" step="5"><button type="button" id="wheel-rumble-test">진동 테스트</button><p id="wheel-rumble-status" role="status"></p><small>변속·연석·타이어 미끄러짐·충돌을 진동으로 전달합니다. 조향을 밀거나 당기는 포스피드백과는 별개입니다.</small></section>
       <details class="wheel-help"><summary>장치가 보이지 않거나 입력이 이상한가요?</summary><p>Chrome·Edge에서 휠 버튼을 한 번 누르세요. 제조사 드라이버와 PC 모드를 확인하고 필요하면 페이지를 새로고침하세요. 브라우저에 표시되는 장치만 사용할 수 있습니다.</p><p>페달을 별도 USB 장치로 연결했다면 ‘페달 장치’에서 선택하세요. 통합 페달 축도 보정할 수 있지만, 가속과 제동을 동시에 사용하려면 드라이버에서 페달을 분리하세요. 클러치·조향 포스피드백은 지원하지 않습니다.</p><pre id="wheel-raw" aria-label="조향·페달 원시 입력"></pre></details>
@@ -58,7 +58,7 @@ export class WheelSetup {
     });
     this.node('wheel-calibrate').addEventListener('click',()=>{this.calibrationBackup=this.draft?structuredClone(this.draft):undefined;this.learning=undefined;this.step=0;this.showStep();this.stage(1);this.message('');});
     this.node('wheel-next').addEventListener('click',()=>this.capture());
-    for(const action of WHEEL_ACTIONS){
+    for(const action of WHEEL_ACTIONS.filter(a=>a!=='drs')){
       this.node('wheel-bind-'+action).addEventListener('click',()=>{
         const device=this.selected('wheel-device');if(!this.draft||!device)return;
         this.learning={action,held:this.buttons(device),until:performance.now()+10000};this.message(`${LABELS[action]}에 사용할 버튼을 눌러주세요.`);
@@ -151,7 +151,7 @@ export class WheelSetup {
     if(changed){this.learning=undefined;if(this.step>=0){this.step=-1;this.draft=undefined;this.message('연결 장치가 바뀌었습니다. 보정을 다시 시작하세요.');}this.showStep();}
   }
   private showTuning(){for(const id of ['deadzone','sensitivity'])this.node('wheel-'+id+'-value').textContent=this.node<HTMLInputElement>('wheel-'+id).value+'%';}
-  private showBindings(){for(const action of WHEEL_ACTIONS)this.node('wheel-bind-'+action).textContent=this.draft?.buttons[action]!==null&&this.draft?.buttons[action]!==undefined?`버튼 ${this.draft.buttons[action]!+1}`:'지정';}
+  private showBindings(){for(const action of WHEEL_ACTIONS.filter(a=>a!=='drs'))this.node('wheel-bind-'+action).textContent=this.draft?.buttons[action]!==null&&this.draft?.buttons[action]!==undefined?`버튼 ${this.draft.buttons[action]!+1}`:'지정';}
   private showStep(){
     const step=STEPS[this.step];this.node('wheel-step-count').textContent=step?`${this.step+1} / ${STEPS.length} · 입력 보정`:'입력 보정';
     this.node('wheel-step-title').textContent=step?.[0]??(this.draft?'보정된 입력을 확인하세요':'장치를 선택해 주세요');
