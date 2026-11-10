@@ -1,5 +1,5 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="viewport"></div><div id="hud"></div><script type="module">
-import '../src/style.css';import {Game} from '../src/game/Game';import {AcademyRun} from '../src/career/Career';
+import '../src/style.css';import {Game} from '../src/game/Game';import {AcademyRun} from '../src/career/Career';import {Race} from '../src/game/Race';import {VehiclePose} from '../src/game/VehiclePose';
 localStorage.setItem('apex-graphics-quality','low');localStorage.setItem('apex-transmission-mode','auto');window.requestAnimationFrame=()=>0;let monitor=new AcademyRun(),samples=0,resets=0;
 const g=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{circuit:'monza',totalLaps:3,opponentCount:0,career:{sample:s=>{window.lastCareerSample=s;samples++;monitor.update(s);},reset:()=>{resets++;monitor=new AcademyRun();},exit:()=>{}}});
 window.runCareerPhysics=()=>{
@@ -13,4 +13,10 @@ window.runCareerPhysics=()=>{
  render(g.scene,g.cockpit.camera);g.restart();result.resets=resets;result.resetTurn=monitor.turnSeconds;g.endCareerSession();return result;
 };
 window.runPracticeGuidance=()=>{g.changingCircuit=false;g.careerHooks.guidance=true;g.restart();g.race.start();while(g.race.state==='countdown')g.race.update(1/120,g.vehicle);g.input.analog=()=>({steer:0,throttle:0,brake:0});g.frame(g.previous+1000/60);const guide=window.lastCareerSample.guide,expected=g.line.planner.guidance(g.vehicle.progress,g.vehicle.speed,g.vehicle.offRoad,1400).target*3.6;g.endCareerSession();return {...guide,validSection:g.track.sections.some(s=>s.number===guide.section),targetDelta:Math.abs(guide.targetKmh-expected)};};
+
+// Controlled measured crossings test the real Game -> career result boundary.
+window.runSeasonClassification=()=>{g.changingCircuit=false;g.race=new Race(g.track,g.scene,g.line.planner,{player:g.vehicle,opponentCount:5,totalLaps:3});g.rivalPoses=g.race.opponents.map(o=>{const p=new VehiclePose();p.capture(o.car);return p;});g.restart();g.race.start();while(g.race.state==='countdown')g.race.update(1/120,g.vehicle);
+ const cars=[g.vehicle,...g.race.opponents.map(o=>o.car)],ids=['PLAYER',...g.race.opponents.map(o=>o.id)],rows=()=>cars.map((car,i)=>({id:ids[i],name:ids[i],distance:car.distance}));
+ cars.forEach(c=>c.distance=0);g.race.laps.reset(rows());for(let t=1;t<=270;t++){cars.forEach((c,i)=>c.distance=t*(i===0?3/270:i===1?3/265:3/285));g.race.laps.update(rows(),t);}g.race.elapsed=270;g.race.position=g.race.classification.find(r=>r.id==='PLAYER').position;g.race.state='finished';g.frame(g.previous+1000/60);g.endCareerSession();return window.lastCareerSample;
+};
 </script></body></html>

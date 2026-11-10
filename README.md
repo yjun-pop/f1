@@ -66,6 +66,7 @@ npm run preview
 
 ```sh
 node tests/career.mjs
+node tests/championship.mjs
 node tests/circuit-menu.mjs
 node tests/circuit-backdrop.mjs
 node tests/race-session.mjs
