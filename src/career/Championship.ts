@@ -1,3 +1,4 @@
+import {SEASON} from './Calendar';
 import {DRIVER_PROFILES} from '../game/RaceRoster';
 import type {CareerSave} from './Career';
 import type {RaceStanding} from '../game/RaceLaps';
@@ -25,7 +26,7 @@ export function validChampionship(value:unknown,history:CareerSave['history']){
   if(!Array.isArray(value)||value.length>120)return false;
   const keys=new Set<string>();
   return value.every((r:SeasonRace)=>{
-    if(!r||!Number.isInteger(r.year)||r.year<1||!Number.isInteger(r.round)||r.round<0||r.round>2||!Array.isArray(r.entries))return false;
+    if(!r||!Number.isInteger(r.year)||r.year<1||!Number.isInteger(r.round)||r.round<0||r.round>=SEASON.length||!Array.isArray(r.entries))return false;
     const key=`${r.year}:${r.round}`;
     if(keys.has(key))return false;
     keys.add(key);
