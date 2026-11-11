@@ -5,7 +5,7 @@ import ts from 'typescript';
 const cache=new Map();
 function load(file){file=path.resolve(file);if(cache.has(file))return cache.get(file);let js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;js=js.replace(/from ['"]([^'"]+)['"]/g,(_,p)=>`from '${load(path.resolve(path.dirname(file),p)+'.ts')}'`);const url='data:text/javascript;base64,'+Buffer.from(js).toString('base64');cache.set(file,url);return url;}
 const m=await import(load('src/career/Career.ts'));
-const {CAREER_ROSTER,SEASON_POINTS,captureSeasonRace,seasonStandings,seasonMovement}=await import(load('src/career/Championship.ts'));
+const {CAREER_ROSTER,SEASON_POINTS,captureSeasonRace,seasonStandings,seasonMovement,championshipRivals}=await import(load('src/career/Championship.ts'));
 const {RaceLaps}=await import(load('src/game/RaceLaps.ts'));
 const result={seconds:270,offRoadSeconds:0,contacts:0,bestLap:89,position:1,score:90};
 const ids=CAREER_ROSTER.map(r=>r.id),[player,nova,vector,solar,polar,orbit]=ids;
@@ -35,3 +35,9 @@ const clock=new RaceLaps(1000,3),samples=ids.map((id,i)=>({id,name:id,distance:-
 for(let t=1;t<=270;t++){samples.forEach((row,i)=>row.distance=-.02*i+t*(i===0?3/270:i===1?3/265:3/285));clock.update(samples,t);}
 const measured=clock.standings(samples,270),saved=captureSeasonRace(1,0,measured,measured.find(r=>r.id===player).position);assert.equal(saved.entries.find(r=>r.id===player).finish,270);assert.equal(saved.entries.find(r=>r.id===nova).finish!==null,true);assert.equal(saved.entries.find(r=>r.id===vector).finish,null);
 console.log('PASS championship: fixed six drivers, three-round points, countback/shared ties, rank movement, measured crossings, null finish times, reload validation, legacy migration and 120-race retention ('+bytes+' bytes)');
+
+assert.deepEqual(championshipRivals(start()),[]);assert.deepEqual(championshipRivals(m.finishRound(start(),result)),[]);
+const middle=finish(start(),[nova,vector,player,solar,polar,orbit]);assert.deepEqual(championshipRivals(middle).map(r=>r.id),[vector,solar]);
+assert.deepEqual(championshipRivals(finish(start(),ids)).map(r=>r.id),[nova,vector]);
+assert.deepEqual(championshipRivals(finish(start(),[nova,vector,solar,polar,orbit,player])).map(r=>r.id),[orbit,polar]);
+assert.equal(championshipRivals(tie)[0].id,nova);console.log('PASS preparation rivals: adjacent championship positions, leaders/trailers/shared ranks, first round and missing legacy results');

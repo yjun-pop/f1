@@ -72,7 +72,7 @@ node tests/circuit-backdrop.mjs
 node tests/race-session.mjs
 ```
 
-커리어 화면과 실제 주행 연결 브라우저 검사는 Vite(5180)와 Chromium CDP(9238)를 실행한 상태에서 `node tests/career-browser.mjs`로 확인합니다.
+커리어 화면과 실제 주행 연결 브라우저 검사는 Vite(5180)와 Chromium CDP(9238)를 실행한 상태에서 `node tests/career-browser.mjs`로 확인합니다. 화면 흐름만 검사할 때는 `CAREER_UI_ONLY=1 node tests/career-browser.mjs`를 사용합니다.
 
 ## 배포
 

@@ -60,3 +60,13 @@ export function seasonMovement(save:CareerSave,id='PLAYER'){
   const now=after.rows.find(r=>r.id===id)!,previous=before.rows.find(r=>r.id===id)!;
   return now.rank===null?'집계 대기':previous.rank===null?'첫 집계':previous.rank>now.rank?`↑ ${previous.rank-now.rank}`:previous.rank<now.rank?`↓ ${now.rank-previous.rank}`:'유지';
 }
+
+/** Adjacent championship positions, including shared ranks; no invented legacy gaps. */
+export function championshipRivals(save:CareerSave){
+  const table=seasonStandings(save);
+  if(!table.complete||save.round===0)return [];
+  const index=table.rows.findIndex(r=>r.id==='PLAYER');
+  return table.rows.filter(r=>r.id!=='PLAYER').sort((a,b)=>
+    Math.abs(table.rows.indexOf(a)-index)-Math.abs(table.rows.indexOf(b)-index)||
+    Math.abs(a.points-save.points)-Math.abs(b.points-save.points)).slice(0,2);
+}
