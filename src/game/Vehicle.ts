@@ -23,7 +23,7 @@ export class Vehicle {
   acceleration=0;lateralAcceleration=0;gripUsage=0;
   impactSerial=0;impactStrength=0;
   recordImpact(strength:number){if(strength>.5){this.impactSerial++;this.impactStrength=strength;}}
-  distance=0;throttle=0;brake=0;boost=100;boosting=false;
+  ersEnabled=true;distance=0;throttle=0;brake=0;boost=100;boosting=false;
   private lastProgress=0;private reverseHold=0;
   constructor(private track:Track,scene:THREE.Scene,private color=0x8c969f,performance={grip:1,power:1}){
     this.baseGrip=THREE.MathUtils.clamp(performance.grip,1,1.5);
@@ -55,7 +55,7 @@ export class Vehicle {
   drive(dt:number,control:Controls){
     if(!this.aero.available||control.brake>0)this.drsRequested=false;
     const drs=control.drs??this.drsRequested;
-    this.throttle=control.throttle;this.brake=control.brake;this.boosting=!!control.boost&&this.boost>1&&control.throttle>0&&control.brake===0&&!this.offRoad;
+    this.throttle=control.throttle;this.brake=control.brake;this.boosting=this.ersEnabled!==false&&!!control.boost&&this.boost>1&&control.throttle>0&&control.brake===0&&!this.offRoad;
     this.boost=THREE.MathUtils.clamp(this.boost+(this.boosting?-24:8)*dt,0,100);
     let remaining=dt;while(remaining>1e-8){
       const step=Math.min(1/120,remaining),x=this.position.x,z=this.position.z,heading=this.heading;

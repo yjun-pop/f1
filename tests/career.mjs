@@ -20,3 +20,6 @@ let goalSave=m.signContract(m.assess(m.completeTraining(m.newCareer('test','한�
 
 // Calendar transitions are part of the career save contract.
 await import('./career-calendar.mjs');
+
+let academy=m.newCareer('학생','대한민국',27);assert.equal(m.academyProgress(academy),0);assert.throws(()=>m.completeAcademyTest(academy,1));for(let lesson=0;lesson<4;lesson++){const before=structuredClone(academy);academy=m.completeAcademyTest(academy,lesson);assert.equal(academy.academyCompleted,lesson+1);assert.equal(academy.phase,lesson===3?'assessment':'academy');assert.ok(m.readCareer(academy));assert.equal(before.academyCompleted??0,lesson);}assert.equal(m.academyProgress({...academy,academyCompleted:undefined}),4);assert.equal(m.readCareer({...academy,academyCompleted:1}),null);console.log('PASS persisted sequential academy tests, skip rejection and old completed-career migration');
+await import('./academy-lessons.mjs');

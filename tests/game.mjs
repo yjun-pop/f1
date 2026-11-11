@@ -1868,3 +1868,6 @@ for(const fps of [30,60,144]){
 }
 for(const sample of physicalPresentationResults.slice(1))assert.ok(Math.abs(sample.speed-physicalPresentationResults[0].speed)<1e-8&&Math.abs(sample.rpm-physicalPresentationResults[0].rpm)<1e-8);
 console.log('PASS: real manual driving, same physics/LED/audio gearbox, actual limiter envelope and fixed-physics independence at 30/60/144fps',physicalPresentationResults);
+
+// Focused academy physics shares the production vehicle and course geometry.
+await import('./academy-drive.mjs');

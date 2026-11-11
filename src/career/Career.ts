@@ -6,7 +6,7 @@ import type {CircuitId} from '../game/Circuits';
 import type {PracticeGuide} from './TrackBriefing';
 export interface DrivingSample {dt:number;elapsed:number;speed:number;throttle:number;brake:number;steer:number;offRoad:boolean;impacts:number;distance:number;finished:boolean;position:number;fieldSize:number;bestLap:number;guide?:PracticeGuide;classification?:readonly RaceStanding[]}
 export interface RunResult {seconds:number;offRoadSeconds:number;contacts:number;bestLap:number;position:number;score:number}
-export interface CareerSave {version:1;kind:'apex-career';saveId:string;driver:{name:string;country:string;number:number};phase:'academy'|'assessment'|'offers'|'season';trained:boolean;calendar?:CareerCalendar;championship?:SeasonRace[];debrief?:{kind:'training'|'assessment'|'season';result:RunResult;points:number;reward:number};briefed?:CircuitId[];assessment?:RunResult;team?:string;year:number;round:number;money:number;points:number;history:{year:number;round:number;position:number;points:number;reward:number;goalBonus?:number;result:RunResult}[]}
+export interface CareerSave {version:1;kind:'apex-career';saveId:string;driver:{name:string;country:string;number:number};phase:'academy'|'assessment'|'offers'|'season';trained:boolean;academyCompleted?:number;calendar?:CareerCalendar;championship?:SeasonRace[];debrief?:{kind:'training'|'assessment'|'season';result:RunResult;points:number;reward:number};briefed?:CircuitId[];assessment?:RunResult;team?:string;year:number;round:number;money:number;points:number;history:{year:number;round:number;position:number;points:number;reward:number;goalBonus?:number;result:RunResult}[]}
 export const TEAMS=[{id:'atlas',name:'ATLAS RACING',style:'육성형',description:'안정적인 완주를 중시합니다. 첫 시즌은 경험을 쌓는 데 집중합니다.',bonus:12000,goalBonus:3000,target:'12경기 완주'}, {id:'vector',name:'VECTOR MOTORSPORT',style:'균형형',description:'기록과 안정성을 함께 평가합니다. 포인트 획득을 목표로 합니다.',bonus:16000,goalBonus:6000,target:'한 경기 이상 상위 4위'}, {id:'helix',name:'HELIX PERFORMANCE',style:'도전형',description:'높은 목표와 성과 보너스를 제안합니다. 포디움에 도전하세요.',bonus:18000,goalBonus:10000,target:'한 경기 이상 포디움'}] as const;
 const careerCircuitIds:readonly string[]=['monza','silverstone','spa','monaco','suzuka','interlagos','singapore','montreal'];
 const stamp=()=>globalThis.crypto.randomUUID();
@@ -15,6 +15,7 @@ export function readCareer(value:unknown):CareerSave|null {
  if(!value||typeof value!=='object')return null;const s=value as CareerSave;
  if(s.version!==1||s.kind!=='apex-career'||typeof s.saveId!=='string'||!s.driver||typeof s.driver.name!=='string'||!s.driver.name.trim()||s.driver.name.length>24||typeof s.driver.country!=='string'||s.driver.country.length>40||!Number.isInteger(s.driver.number)||s.driver.number<2||s.driver.number>99)return null;
  if(!['academy','assessment','offers','season'].includes(s.phase)||typeof s.trained!=='boolean'||![s.year,s.round,s.money,s.points].every(Number.isSafeInteger)||s.year<1||s.round<0||s.round>SEASON.length||s.money<0||s.points<0||!Array.isArray(s.history)||s.history.length>120)return null;
+ if(s.academyCompleted!==undefined&&(!Number.isInteger(s.academyCompleted)||s.academyCompleted<0||s.academyCompleted>4||s.trained!==(s.academyCompleted===4)))return null;
  if(s.briefed!==undefined&&(!Array.isArray(s.briefed)||s.briefed.length>8||s.briefed.some(id=>!careerCircuitIds.includes(id))||new Set(s.briefed).size!==s.briefed.length))return null;
  const validResult=(r:RunResult)=>r&&[r.seconds,r.offRoadSeconds,r.contacts,r.bestLap,r.position,r.score].every(Number.isFinite)&&r.seconds>0&&r.offRoadSeconds>=0&&r.contacts>=0&&r.score>=0&&r.score<=100&&r.position>=1;
  if(s.debrief&&(!['training','assessment','season'].includes(s.debrief.kind)||!validResult(s.debrief.result)||![s.debrief.points,s.debrief.reward].every(n=>Number.isSafeInteger(n)&&n>=0)))return null;
@@ -26,7 +27,9 @@ export function readCareer(value:unknown):CareerSave|null {
  return structuredClone(s);
 }
 function change(save:CareerSave,patch:Partial<CareerSave>){return {...structuredClone(save),...patch,saveId:stamp()};}
-export function completeTraining(s:CareerSave){if(s.phase!=='academy')throw Error('훈련 단계가 아닙니다.');return change(s,{trained:true,phase:'assessment'});}
+export const academyProgress=(s:CareerSave)=>s.academyCompleted??(s.trained?4:0);
+export function completeAcademyTest(s:CareerSave,lesson:number){const progress=academyProgress(s);if(s.phase!=='academy'||!Number.isInteger(lesson)||lesson<0||lesson>3||lesson>progress)throw Error('이전 시험을 먼저 통과하세요.');const completed=Math.max(progress,lesson+1);return change(s,{academyCompleted:completed,trained:completed===4,phase:completed===4?'assessment':'academy'});}
+export function completeTraining(s:CareerSave){if(s.phase!=='academy')throw Error('훈련 단계가 아닙니다.');return change(s,{trained:true,academyCompleted:4,phase:'assessment'});}
 export function assess(s:CareerSave,result:RunResult){if(s.phase!=='assessment')throw Error('평가 단계가 아닙니다.');return change(s,{assessment:result,phase:'offers'});}
 export function signingBonus(s:CareerSave,team:typeof TEAMS[number]){return team.bonus+Math.round((s.assessment?.score??0)/100*8000);}
 export function signContract(s:CareerSave,id:string){const team=TEAMS.find(t=>t.id===id);if(s.phase!=='offers'||!team)throw Error('현재 계약할 수 없습니다.');return change(s,{team:id,phase:'season',calendar:{month:1,day:15,meetings:[]},money:s.money+signingBonus(s,team)});}
