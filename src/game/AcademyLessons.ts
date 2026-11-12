@@ -5,10 +5,12 @@ export const ACADEMY_TESTS=[
  {title:'ERS 활용',goal:'직선에서 ERS를 사용해 연습 차량 추월',key:'W + Shift · 가속 페달 + 지정 버튼',instruction:'ERS는 저장한 에너지로 추가 출력을 냅니다. 코너를 빠져나와 차가 곧게 섰을 때 사용하면 추월에 유리합니다.',action:'ERS',code:'boost'}
 ] as const;
 export type TutorialPhase='approach'|'waiting'|'driving'|'success'|'failed';
-export interface TutorialStatus {lesson:number;phase:TutorialPhase;cue:string;key:string;speed:number;distance:number;gap?:number}
+export type AcademyAction='throttle'|'brake'|'steer'|'boost';
+export interface TutorialStatus {lesson:number;phase:TutorialPhase;cue:string;key:string;speed:number;distance:number;gap?:number;action?:AcademyAction;direction?:'left'|'right';device?:'keyboard'|'wheel';inputValue?:number;releaseRequired?:boolean;checkpoints?:{label:string;complete:boolean}[];boostButton?:number|null}
 /** A fresh press is required: holding an action before the cue cannot skip it. */
 export class ActionGate {
  private released=false;
+ get needsRelease(){return !this.released;}
  update(active:boolean){if(!active)this.released=true;return this.released&&active;}
 }
 export interface LessonSample {dt:number;metres:number;speed:number;throttle:number;brake:number;steer:number;headingError:number;curvature:number;offRoad:boolean;impacts:number;boosting:boolean;energy:number;gap:number}
@@ -16,6 +18,9 @@ export interface LessonSample {dt:number;metres:number;speed:number;throttle:num
 export class LessonJudge {
  success=false;failed='';private braking=0;private gas=0;private energy=0;private fast=0;
  constructor(readonly lesson:number,private start:LessonSample,readonly apex:number,readonly exit:number,readonly target:number){}
+ get usedEnergy(){return this.energy;}
+ failAtEnd(s:LessonSample){if(this.success||this.failed)return;this.failed=this.lesson===2?(Math.abs(s.headingError)>=.16||Math.abs(s.steer)>=.4?'출구 방향으로 차를 정렬하세요.':this.gas<.6?'출구에서 가속을 유지하세요.':'재가속이 부족합니다.'):this.lesson===3?(this.energy<18?'추가 출력을 충분히 사용하세요.':'연습 차량을 완전히 지나가세요.'):'훈련 구간을 벗어났습니다.';}
+
  update(s:LessonSample){
   if(this.success||this.failed)return;
   if(s.offRoad||s.impacts>this.start.impacts){this.failed=s.offRoad?'트랙을 벗어났습니다. 다시 시도하세요.':'접촉했습니다. 벽이나 차량으로 감속하면 성공으로 인정하지 않습니다.';return;}
@@ -24,7 +29,7 @@ export class LessonJudge {
   if(this.lesson===1){
    if(s.metres>=this.start.metres-2&&s.metres<=this.apex+20&&s.brake>.25)this.braking+=s.dt;
    this.success=this.braking>=.2&&this.start.speed-s.speed>=7&&s.speed>=7&&s.speed<=this.target*1.35&&s.metres>=this.apex-35&&s.metres<=this.apex+90&&s.curvature>.001&&Math.abs(s.steer)>.06&&Math.abs(s.headingError)<.45;
-   if(s.metres>this.apex+110)this.failed='제동 후 코너에 진입하는 동작을 다시 연습하세요.';
+   if(s.metres>this.apex+110)this.failed=this.braking<.2?'제동을 확인하지 못했습니다.':s.speed>this.target*1.35?'코너 진입 속도가 높습니다.':'감속 뒤 코너 방향으로 조향하세요.';
   }
   if(this.lesson===2){
    if(s.metres>=this.exit&&s.throttle>.45&&Math.abs(s.headingError)<.2&&Math.abs(s.steer)<.4)this.gas+=s.dt;

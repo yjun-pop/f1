@@ -91,6 +91,9 @@ car.speed=25;driver.device.axes=[0,1,0];input.poll();for(let i=0;i<30;i++)car.up
 car.setTransmissionMode('manual');driver.device.axes=[0,1,1];input.clear();input.poll();button(driver.device,1,true);input.poll();car.update(1/120,input);const gear=car.transmission.gear;assert.equal(gear,2);
 for(let i=0;i<30;i++){input.poll();car.update(1/120,input);}assert.equal(car.transmission.gear,gear);
 console.log('PASS: real Vehicle uses analog throttle/brake/steering, keyboard override, physical acceleration/braking and single manual paddle shifts');
+const live={poll:()=>false,drivingDevice:{id:'wheel'},controls:{throttle:0,brake:0,steer:0,boost:false},suspend:()=>{}},sourceInput=new Input(live);sourceInput.poll();events.get('keydown')(key('KeyW'));events.get('keyup')(key('KeyW'));assert.equal(sourceInput.controlDevice,'keyboard');for(let i=1;i<=10;i++){live.controls.throttle=i*.01;sourceInput.poll();}assert.equal(sourceInput.controlDevice,'wheel','Slow pedal movement must update the live input prompt');events.get('keydown')(key('KeyD'));assert.equal(sourceInput.controlDevice,'keyboard');for(let i=0;i<10;i++)sourceInput.poll();assert.equal(sourceInput.controlDevice,'keyboard','A held wheel input must not steal keyboard guidance');
+console.log('PASS: live input guidance follows accumulated slow pedal input and the latest keyboard action');
+
 
 const {Game}=await import(moduleURL('game/Game'));
 let silenced=0;const loss=fixture(),raceInput=new Input(loss.wheel),session={input:raceInput,race:{state:'racing',elapsed:23},paused:false,accumulator:.01,audio:{silence:()=>silenced++},pause(){Game.prototype.pause.call(this);}};

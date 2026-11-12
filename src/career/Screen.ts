@@ -1,3 +1,4 @@
+import {AcademyHUD} from '../ui/AcademyHUD';
 import {ACADEMY_TESTS,type TutorialStatus} from '../game/AcademyLessons';
 import {AcademyIntro} from '../ui/AcademyIntro';
 import {calendarFor,dateLabel,dayOfYear,nextAppointment,raceReady,advanceCalendar,meetingAvailable,sponsorMeeting} from './Calendar';
@@ -25,7 +26,7 @@ export async function openCareer(host:HTMLElement){
  if(!account.session||account.recovering){const url=new URL(location.href),intent=url.searchParams.get('career');url.search='';url.searchParams.set('career-login',intent==='new'?'new':'continue');location.replace(url.href);return;}
  let store=new CareerStore(account),save:CareerSave|null=null,pending:CareerSave|null=null,busy=false,game:import('../game/Game').Game|undefined;
  const root=document.createElement('main');root.className='career-screen';root.setAttribute('aria-label','드라이버 커리어');host.replaceChildren(root);
- let intro:AcademyIntro|undefined;let briefing:TrackBriefing|undefined,pendingAction:(()=>void)|undefined;
+ let academyHUD:AcademyHUD|undefined;let intro:AcademyIntro|undefined;let briefing:TrackBriefing|undefined,pendingAction:(()=>void)|undefined;
  const button=(id:string,fn:()=>void)=>root.querySelector<HTMLButtonElement>('#'+id)?.addEventListener('click',fn);
  let view:'hub'|'calendar'|'team'|'records'|'championship'|'preparation'=new URLSearchParams(location.search).get('prepare')==='1'?'preparation':'hub';
  const selectView=(next:typeof view)=>{view=next;const url=new URL(location.href);url.searchParams.delete('prepare');if(save)url.searchParams.set('career','continue');if(next==='preparation')url.searchParams.set('prepare','1');history.replaceState(null,'',url.href);paint();};
@@ -89,17 +90,13 @@ export async function openCareer(host:HTMLElement){
   busy=true;disabled(true);const startSave=structuredClone(save);document.documentElement.dataset.ersLocked=String(lesson<3);
   try{
    shell('시험을 준비합니다','<p>몬자와 차량을 불러오는 중…</p>');await new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));
-   const {Game}=await import('../game/Game');if(account.session?.user.id!==store.owner||save?.saveId!==startSave.saveId){busy=false;return;}root.classList.add('career-driving');root.innerHTML='<div class="career-viewport"></div><div id="hud" class="career-game-hud"></div><section class="academy-overlay"></section><section class="academy-trial-status" aria-live="polite"></section>';
-   const overlay=root.querySelector<HTMLElement>('.academy-overlay')!,status=root.querySelector<HTMLElement>('.academy-trial-status')!;let previous='';
-   const update=(state:TutorialStatus)=>{const test=ACADEMY_TESTS[lesson];root.querySelector<HTMLElement>('#hud')!.dataset.tutorialPhase=state.phase;
-    overlay.innerHTML=`<div class="academy-heading"><span>시험 ${lesson+1} / 4 · ${test.title}</span></div><h3>${test.goal}</h3><p class="academy-target">${state.phase==='waiting'?state.cue.replace('입력을 시작하세요.','키·페달을 놓았다가 입력하세요.'):state.cue}</p><kbd>${state.key}</kbd><span class="academy-live">${state.speed} km/h</span>`;
-    if(previous===state.phase)return;previous=state.phase;
-    if(state.phase==='success'){status.innerHTML='<div class="academy-trial-card"><span>✓ 미션 성공</span><h2>시험을 통과했습니다.</h2><button id="academy-confirm" class="primary">확인 · 준비 화면으로 →</button></div>';button('academy-confirm',()=>{game!.endCareerSession();shell('시험 완료','<p>통과 기록을 저장하는 중…</p>');busy=false;void commit(completeAcademyTest(startSave,lesson));});root.querySelector<HTMLElement>('#academy-confirm')!.focus();}
-    else if(state.phase==='failed'){status.innerHTML='<div class="academy-trial-card"><h2>다시 도전하세요.</h2><p></p><button id="academy-retry" class="primary">다시 시도 →</button><button id="academy-leave">훈련 준비로</button></div>';status.querySelector('p')!.textContent=state.cue;button('academy-retry',()=>game!.retryTutorial());button('academy-leave',()=>{game!.endCareerSession();dashboard();});}
-    else status.replaceChildren();
-   };
-   game=new Game(root.querySelector('.career-viewport')!,root.querySelector('.career-game-hud')!,{circuit:'monza',totalLaps:3,opponentCount:0,transmission:'auto',career:{hudMode:'training',sample:()=>{},exit:dashboard,reset:()=>{},tutorial:{lesson,update}}});const map=root.querySelector('.mapbox');if(map){const stack=document.createElement('div');stack.className='hud-map-stack';map.before(stack);stack.append(map,overlay);}busy=false;
-  }catch(e){busy=false;paint();error('시험을 시작하지 못했습니다. '+(e as Error).message);}
+   const {Game}=await import('../game/Game');if(account.session?.user.id!==store.owner||save?.saveId!==startSave.saveId){busy=false;return;}root.classList.add('career-driving');root.innerHTML='<div class="career-viewport"></div><div id="hud" class="career-game-hud"></div>';
+   let updateUI:(state:TutorialStatus)=>void=()=>{};
+   game=new Game(root.querySelector('.career-viewport')!,root.querySelector('.career-game-hud')!,{circuit:'monza',totalLaps:3,opponentCount:0,transmission:'auto',career:{hudMode:'training',sample:()=>{},exit:()=>{academyHUD?.dispose();dashboard();},reset:()=>{},tutorial:{lesson,update:state=>updateUI(state)}}});
+   academyHUD=new AcademyHUD(root,lesson,{confirm:()=>{academyHUD?.dispose();game!.endCareerSession();shell('시험 완료','<p>통과 기록을 저장하는 중…</p>');busy=false;void commit(completeAcademyTest(startSave,lesson));},retry:()=>game!.retryTutorial(),leave:()=>{academyHUD?.dispose();game!.endCareerSession();dashboard();}});updateUI=state=>academyHUD?.update(state);
+   const overlay=academyHUD.overlay;
+   const map=root.querySelector('.mapbox');if(map){const stack=document.createElement('div');stack.className='hud-map-stack';map.before(stack);stack.append(map,overlay);}busy=false;
+  }catch(e){academyHUD?.dispose();busy=false;paint();error('시험을 시작하지 못했습니다. '+(e as Error).message);}
  }
  async function requestDrive(kind:'assessment'|'season',force=false,intent:'practice'|'race'='race'){
   if(busy||briefing||!save)return;const id=kind==='season'?SEASON[save.round]?.circuit:'monza';if(!id)return;
@@ -130,6 +127,6 @@ export async function openCareer(host:HTMLElement){
   catch(e){shell('저장 확인이 필요합니다','<p>서버 또는 기기 저장을 확인하지 못했습니다. 기존 진행은 덮어쓰지 않았습니다.</p><div class="career-actions"><button id="reload-career">다시 시도</button><button id="load-server">서버 진행 사용</button></div>');error((e as Error).message);button('reload-career',()=>void load());button('load-server',()=>void load(true));}
   finally{busy=false;bootScreen.finish();}
  }
- window.addEventListener('apex-account-change',()=>{if((account.session?.user.id??null)!==store.owner){intro?.close();briefing?.close();game?.endCareerSession();busy=false;shell('계정이 변경됐습니다','<p>현재 계정의 저장을 다시 확인해주세요.</p><button id="switch-account">현재 계정으로 커리어 열기</button>');button('switch-account',()=>{if(!account.session){home();return;}store=new CareerStore(account);void load();});}});
+ window.addEventListener('apex-account-change',()=>{if((account.session?.user.id??null)!==store.owner){intro?.close();academyHUD?.dispose();briefing?.close();game?.endCareerSession();busy=false;shell('계정이 변경됐습니다','<p>현재 계정의 저장을 다시 확인해주세요.</p><button id="switch-account">현재 계정으로 커리어 열기</button>');button('switch-account',()=>{if(!account.session){home();return;}store=new CareerStore(account);void load();});}});
  await load();
 }

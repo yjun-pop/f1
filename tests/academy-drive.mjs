@@ -37,3 +37,6 @@ for(let lesson=0;lesson<4;lesson++){
 }
 car.ersEnabled=false;car.resetAt(.02);car.boost=100;car.speed=40;car.drive(1/120,{throttle:1,brake:0,steer:0,boost:true});assert.equal(car.boosting,false);assert.equal(car.boost,100);
 console.log('PASS actual four-test vehicle physics, frozen input cues, disabled energy and continued input-free success motion');
+
+const steeringCue=new AcademyDrive(track,car,planner,1,scene);steeringCue.turnGate=true;steeringCue.phase='waiting';control={throttle:0,brake:0,steer:.2,boost:false};steeringCue.step(1/120,input);assert.equal(steeringCue.phase,'waiting');assert.equal(steeringCue.status.releaseRequired,true,'The prompt must use the same .15 steering threshold as its action gate');control.steer=0;steeringCue.step(1/120,input);assert.equal(steeringCue.status.releaseRequired,false);
+console.log('PASS steering release prompt matches actual gate activation');
