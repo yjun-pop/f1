@@ -6,7 +6,7 @@ type Coordinate=readonly [number,number];
 interface CircuitSection {number:number;name:string;coordinate:readonly number[];braking?:boolean}
 interface Gate {section:number;offset:number}
 export interface CircuitDefinition {
-  id:CircuitId;name:string;label:string;country:string;length:number;cornerCount:number;
+  id:CircuitId;training?:boolean;name:string;label:string;country:string;length:number;cornerCount:number;
   description:string;tagline:string;origin:readonly number[];points:readonly (readonly number[])[];
   sections:readonly CircuitSection[];formationEnd:number;referenceLap:number;woodlandDensity:number;pitProgress:number;
   drs?:readonly {id:string;detection:Gate;start:Gate;end:Gate}[];

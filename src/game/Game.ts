@@ -1,3 +1,4 @@
+import {ACADEMY_CIRCUIT} from './AcademyCircuit';
 import {AcademyDrive} from './AcademyDrive';
 import type {TutorialStatus} from './AcademyLessons';
 import type {PracticeGuide} from '../career/TrackBriefing';
@@ -41,13 +42,13 @@ export class Game {
     let savedGraphics:unknown;try{savedGraphics=localStorage.getItem('apex-graphics-quality');}catch{}
     this.graphics=new GraphicsQuality(graphicsMode(savedGraphics),recommendedTier({memory:(navigator as Navigator&{deviceMemory?:number}).deviceMemory,cores:navigator.hardwareConcurrency,maxTextureSize:this.renderer.capabilities.maxTextureSize,width:window.innerWidth}));
     let savedCircuit:unknown;try{savedCircuit=localStorage.getItem('apex-circuit');}catch{}
-    const circuit=options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit);
+    const circuit=options.career?.tutorial?ACADEMY_CIRCUIT:options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit);
     const environment=environmentFor(circuit.id);this.renderer.toneMappingExposure=environment.exposure;
     this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier,!!circuit.night,environment);this.sun=this.lighting.sun;
     this.renderer.shadowMap.autoUpdate=false;
     this.track=new Track(this.scene,circuit);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle,opponentCount:opponentCount(options.opponentCount??new URLSearchParams(window.location.search).get('opponents')),flyingStart:options.totalLaps===1||(!options.totalLaps&&quickRaceLaps(new URLSearchParams(window.location.search).get('laps'))===1),totalLaps:quickRaceLaps(options.totalLaps??new URLSearchParams(window.location.search).get('laps'))});
     this.renderPose.capture(this.vehicle);this.rivalPoses=this.race.opponents.map(o=>{const pose=new VehiclePose();pose.capture(o.car);return pose;});
-    try{localStorage.setItem('apex-circuit',this.track.circuit.id);}catch{}
+    if(!circuit.training)try{localStorage.setItem('apex-circuit',this.track.circuit.id);}catch{}
     try{
       const saved=localStorage.getItem('apex-motion-strength');
       this.feedback.strength=saved!==null&&Number.isFinite(Number(saved))?Math.max(0,Math.min(1,Number(saved))):window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?0:.6;

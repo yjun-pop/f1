@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {createAcademyFacilities} from './AcademyCircuit';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {terrainMaps} from './SurfaceTextures';
 import {MONZA,type CircuitDefinition} from './Circuits';
@@ -50,7 +51,7 @@ export class Track {
     let raw=circuit.points.map(([x,z])=>new THREE.Vector3(x,0,z));
     // Long sparse source segments must remain straight. Densification prevents
     // Catmull-Rom tangents from pulling kilometre-long straights into arcs.
-    if(circuit.id==='monza'){
+    if(circuit.id==='monza'&&!circuit.training){
       const t1=raw.findIndex(p=>Math.abs(p.z+988.105)<8);
       if(t1>0)raw=[raw[0],...raw.slice(t1)];
       const direction=raw[1].clone().sub(raw[0]).normalize();
@@ -87,7 +88,7 @@ export class Track {
       // Keep activation/expiry after detection, including a start-line crossing.
       this.drsZones=circuit.drs.map(zone=>{const detection=at(zone.detection),start=detection+wrap(at(zone.start)-detection),end=start+wrap(at(zone.end)-start);return {id:zone.id,detection,start,end};});
     }
-    this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();this.landmarks=createCircuitScenery(this);this.group.add(this.landmarks);this.buildWoodland();this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
+    this.buildRoad();this.buildScenery();this.buildCircuit();this.buildLighting();this.buildBrakeBoards();if(!circuit.training){this.landmarks=createCircuitScenery(this);this.group.add(this.landmarks);this.buildWoodland();}this.details=new CircuitDetails(this);this.details.update(this.point(0),'medium');scene.add(this.group);
     freezeStaticWorld(this.group);
   }
   updatePresentation(position:THREE.Vector3,tier:GraphicsTier){
@@ -203,6 +204,7 @@ export class Track {
     const kerbGeometry=createKerbGeometry(this,this.kerbSegments);this.surfaceGeometries.set('continuous-kerbs',kerbGeometry);
     const kerbSurface=terrainMaps('asphalt'),kerbs=createTrackChunks(kerbGeometry,new THREE.MeshStandardMaterial({map:kerbPaintMap(),normalMap:kerbSurface.normalMap,normalScale:new THREE.Vector2(.32,.32),roughnessMap:kerbSurface.roughnessMap,roughness:.95,metalness:0}),this.length,'continuous-kerbs');
     this.group.add(kerbs,createBarriers(this.barrierPaths));
+    if(this.circuit.training){this.group.add(createAcademyFacilities(this));return;}
     const steel=new THREE.MeshStandardMaterial({color:0x263b36});
     const pit=new THREE.Group(),pitProgress=this.circuit.pitProgress;pit.name='pit-building';pit.rotation.y=Math.atan2(this.tangent(pitProgress).x,this.tangent(pitProgress).z);
     let pitFootprint;
