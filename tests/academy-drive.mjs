@@ -21,6 +21,7 @@ globalThis.document={querySelector:()=>null,documentElement:{dataset:{}},createE
 const {Track}=await import(moduleURL('Track')),{LinePlanner}=await import(moduleURL('LinePlanner')),{Vehicle}=await import(moduleURL('Vehicle')),{AcademyDrive}=await import(moduleURL('AcademyDrive')),{HANDLING,steeringLock}=await import(moduleURL('Dynamics'));
 const {ACADEMY_CIRCUIT}=await import(moduleURL('AcademyCircuit'));
 const scene=new THREE.Scene(),track=new Track(scene,ACADEMY_CIRCUIT),planner=new LinePlanner(track),car=new Vehicle(track,scene);
+assert.deepEqual(track.drsZones,[]);
 let control={throttle:0,brake:0,steer:0,boost:false};const input={analog:()=>control,consume:()=>false,down:(...keys)=>control.boost&&keys.includes('ShiftLeft')};
 const steer=()=>{const look=Math.max(9,Math.min(26,7+car.speed*.3)),to=(car.ersEnabled?track.point(car.progress+look/track.length).addScaledVector(track.normal(car.progress+look/track.length),-1.8):planner.point(car.progress+look/track.length)).sub(car.position),desired=Math.atan2(to.x,to.z),error=Math.atan2(Math.sin(desired-car.heading),Math.cos(desired-car.heading)),angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));return Math.max(-1,Math.min(1,(angle-car.yawRate*.018)/steeringLock(car.speed,car.gripScale)));};
 for(let lesson=0;lesson<4;lesson++){

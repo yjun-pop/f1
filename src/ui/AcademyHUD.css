@@ -8,3 +8,5 @@
 @media(prefers-reduced-motion:reduce){.academy-input-track>span{transition:none}}
 
 #hud:has(#pause-menu:not([hidden]))~.academy-input-cue{visibility:hidden}
+
+.academy-cue-key{font-family:'Noto Sans KR',system-ui,sans-serif}

@@ -9,7 +9,7 @@ const arc=(x:number,z:number,from:number)=>{for(let i=1;i<=8;i++){const angle=fr
 arc(60,1200,Math.PI);points.push([200,1260],[340,1260]);arc(340,1200,Math.PI/2);
 points.push([400,900],[400,600],[400,300],[400,0]);arc(340,0,0);points.push([200,-60],[60,-60]);arc(60,0,-Math.PI/2);points.pop();
 export const ACADEMY_CIRCUIT:CircuitDefinition={
- id:'monza',training:true,name:'ACADEMY',label:'아카데미 트랙',country:'TRAINING CENTER',
+ id:'monza',training:true,drs:[],name:'ACADEMY',label:'아카데미 트랙',country:'TRAINING CENTER',
  length:3340,cornerCount:4,description:'가속·제동·코너링 전용 훈련장',tagline:'DRIVER ACADEMY',
  origin:[0,0],points,sections:[[1,'TRAINING CORNER',17.5,1242.5],[2,'RETURN TURN',382.5,1242.5],[3,'RETURN TURN',382.5,-42.5],[4,'RETURN TURN',17.5,-42.5]].map(([number,name,x,z])=>({number:Number(number),name:String(name),coordinate:[Number(x)/111320,-Number(z)/111320],braking:true})),
  formationEnd:100,referenceLap:95,woodlandDensity:0,pitProgress:.12,environment:'park'

@@ -36,8 +36,8 @@ jobs:
             if curl -fsS http://127.0.0.1:5180/ >/dev/null 2>&1 && curl -fsS http://127.0.0.1:9238/json/list >/dev/null 2>&1; then break; fi
             sleep 1
           done
-          CAREER_UI_ONLY=1 node tests/career-browser.mjs
           node tests/academy-browser.mjs
+          CAREER_UI_ONLY=1 node tests/career-browser.mjs
       - name: Capture review previews
         if: always()
         shell: bash
