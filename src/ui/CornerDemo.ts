@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {ACADEMY_CIRCUIT,academyGeometry} from '../game/AcademyCircuit';
+import {ACADEMY_CIRCUIT,ASSESSMENT_CIRCUIT,academyGeometry} from '../game/AcademyCircuit';
 import {Track} from '../game/Track';
 import {LinePlanner} from '../game/LinePlanner';
 import {circuitById,type CircuitId} from '../game/Circuits';
@@ -11,20 +11,20 @@ export class CornerDemo {
  private trainingBrake=0;private trainingTarget=26;private rival?:THREE.Group;private lesson?:number;private scene=new THREE.Scene();private camera=new THREE.PerspectiveCamera(62,1,.3,900);private renderer:THREE.WebGLRenderer;
  private track:Track;private planner:LinePlanner;private car=createTrafficCar(0xff795f);private raf=0;private last=0;private metres=0;private from=0;private span=300;private stopped=false;private paused=matchMedia('(prefers-reduced-motion: reduce)').matches;
  private path:DemoPath;private speed=0;private phase='';private speedPlan?:ReturnType<typeof demoSpeedPlan>;private visibility=()=>{this.last=0;};private observer:ResizeObserver;private guide?:THREE.Line;private cameraHeading=0;private resetPose=true;
- constructor(private host:HTMLElement,id:CircuitId,academy=false){
+ constructor(private host:HTMLElement,id:CircuitId,academy:boolean|'handling'=false){
   this.renderer=new THREE.WebGLRenderer({antialias:true});this.renderer.setPixelRatio(Math.min(devicePixelRatio,1));this.renderer.setClearColor(0x879aa7);this.scene.fog=new THREE.Fog(0x879aa7,180,700);this.scene.add(new THREE.HemisphereLight(0xd8ecff,0x5d6146,2));const sun=new THREE.DirectionalLight(0xffecd5,2.5);sun.position.set(90,140,70);this.scene.add(sun);
-  this.track=new Track(this.scene,academy?ACADEMY_CIRCUIT:circuitById(id));this.planner=new LinePlanner(this.track);this.path=new DemoPath(this.planner.points);this.scene.add(this.car);
+  this.track=new Track(this.scene,academy==='handling'?ASSESSMENT_CIRCUIT:academy?ACADEMY_CIRCUIT:circuitById(id));this.planner=new LinePlanner(this.track);this.path=new DemoPath(this.planner.points);this.scene.add(this.car);
   host.innerHTML='<div class="corner-demo-status" role="status" hidden></div><button class="corner-demo-toggle" type="button"></button>';host.prepend(this.renderer.domElement);
   const button=host.querySelector<HTMLButtonElement>('button')!;const label=()=>{button.textContent=this.paused?'재생 ▶':'일시정지 Ⅱ';};label();button.onclick=()=>{this.paused=!this.paused;label();};
   this.observer=new ResizeObserver(()=>{const w=host.clientWidth,h=this.lesson===undefined?(host.clientWidth>400?180:210):Math.max(150,Math.round(w*9/16));this.renderer.setSize(w,h);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();});this.observer.observe(host);document.addEventListener('visibilitychange',this.visibility);if(academy)this.training(0);else this.select(id,0);this.raf=requestAnimationFrame(this.frame);
  }
  select(id:CircuitId,index:number){const tip=TRACK_TIPS[id][index],a=this.track.sections.find(s=>s.number===tip.sections[0])!,b=this.track.sections.find(s=>s.number===tip.sections.at(-1))!;const aDistance=this.path.distanceAt(a.progress),bDistance=this.path.distanceAt(b.progress);this.from=aDistance-170;this.span=((bDistance-aDistance+this.path.length)%this.path.length)+310;this.speedPlan=demoSpeedPlan(this.span,this.span-105,m=>this.planner.speed(this.path.progressAt(this.from+m))*.9);this.metres=0;this.speed=this.speedPlan.speed(0);this.last=0;this.resetPose=true;this.track.updatePresentation(this.path.point(this.from+this.span/2),'low');if(this.guide){this.scene.remove(this.guide);this.guide.geometry.dispose();(this.guide.material as THREE.Material).dispose();}const points=Array.from({length:Math.ceil(this.span/4)+1},(_,i)=>this.pathPoint((this.from+Math.min(this.span,i*4))/this.path.length).add(new THREE.Vector3(0,.15,0)));this.guide=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0x76f2bf}));this.scene.add(this.guide);const p=this.pathPoint(this.from/this.path.length),t=this.pathPoint((this.from+2)/this.path.length).sub(p).normalize();this.camera.position.copy(p).addScaledVector(t,-9).add(new THREE.Vector3(0,4,0));}
  training(lesson:number){
-  this.lesson=lesson;this.phase='__reset';const g=academyGeometry(this.track,this.planner),start=g.apex-(lesson===0||lesson===3?850:240);
+  this.lesson=lesson;this.phase='__reset';const g=academyGeometry(this.track,this.planner,lesson===2?3:1),start=g.apex-(lesson===0||lesson===3?700:240);
   this.from=this.path.distanceAt(start/this.track.length);const exit=this.path.distanceAt(g.exit/this.track.length)-this.from;this.trainingBrake=this.path.distanceAt(g.brake/this.track.length)-this.from;this.trainingTarget=g.target;
   this.span=lesson===0||lesson===3?600:exit+110;
   const brakeAt=this.trainingBrake,target=this.trainingTarget;
-  this.speedPlan=lesson===0||lesson===3?{exitDistance:0,speed:(m:number)=>lesson===0?Math.min(75,12+m*.14):Math.min(80,45+m*.08)}:{exitDistance:exit,speed:(m:number)=>m<brakeAt?42:m<exit?Math.sqrt(Math.max(target*target,42*42-32*(m-brakeAt))):Math.min(42,Math.sqrt(target*target+14*(m-exit)))};
+  this.speedPlan=lesson===0||lesson===3?{exitDistance:0,speed:(m:number)=>lesson===0?Math.min(50,12+m*.14):Math.min(80,45+m*.08)}:{exitDistance:exit,speed:(m:number)=>m<brakeAt?36:m<exit?Math.sqrt(Math.max(target*target,36*36-32*(m-brakeAt))):Math.min(36,Math.sqrt(target*target+14*(m-exit)))};
 
   this.metres=0;this.speed=this.speedPlan.speed(0);this.last=0;this.resetPose=true;
   if(lesson===3&&!this.rival){this.rival=createTrafficCar(0x31bca6);this.scene.add(this.rival);}

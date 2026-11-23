@@ -1,4 +1,4 @@
-import {ACADEMY_CIRCUIT} from './AcademyCircuit';
+import {ACADEMY_CIRCUIT,ASSESSMENT_CIRCUIT} from './AcademyCircuit';
 import {AcademyDrive} from './AcademyDrive';
 import type {TutorialStatus} from './AcademyLessons';
 import type {PracticeGuide} from '../career/TrackBriefing';
@@ -42,7 +42,7 @@ export class Game {
     let savedGraphics:unknown;try{savedGraphics=localStorage.getItem('apex-graphics-quality');}catch{}
     this.graphics=new GraphicsQuality(graphicsMode(savedGraphics),recommendedTier({memory:(navigator as Navigator&{deviceMemory?:number}).deviceMemory,cores:navigator.hardwareConcurrency,maxTextureSize:this.renderer.capabilities.maxTextureSize,width:window.innerWidth}));
     let savedCircuit:unknown;try{savedCircuit=localStorage.getItem('apex-circuit');}catch{}
-    const circuit=options.career?.tutorial?ACADEMY_CIRCUIT:options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit);
+    const circuit=options.career?.tutorial?(options.career.tutorial.lesson===2?ASSESSMENT_CIRCUIT:ACADEMY_CIRCUIT):options.career?.hudMode==='assessment'?ASSESSMENT_CIRCUIT:options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit);
     const environment=environmentFor(circuit.id);this.renderer.toneMappingExposure=environment.exposure;
     this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier,!!circuit.night,environment);this.sun=this.lighting.sun;
     this.renderer.shadowMap.autoUpdate=false;

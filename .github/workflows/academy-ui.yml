@@ -1,0 +1,57 @@
+name: Validate continuous academy and technical assessment
+on:
+  push:
+    branches: ['codex/academy-rework-*']
+permissions:
+  contents: read
+concurrency:
+  group: academy-rework-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build -- --base=/f1/
+      - run: node tests/academy-lessons.mjs && node tests/academy-drive.mjs && node tests/career.mjs && node tests/track-briefing.mjs && node tests/race-session.mjs
+      - name: Browser checks
+        shell: bash
+        run: |
+          set -eu
+          npm run dev -- --port 5180 >/tmp/apex-vite.log 2>&1 &
+          vite_pid=$!
+          chrome_bin="$(command -v google-chrome || command -v chromium)"
+          "$chrome_bin" --headless --no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --remote-debugging-port=9238 --user-data-dir=/tmp/apex-rework-browser about:blank >/tmp/apex-chrome.log 2>&1 &
+          chrome_pid=$!
+          trap 'kill "$chrome_pid" "$vite_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:5180/ >/dev/null 2>&1 && curl -fsS http://127.0.0.1:9238/json/list >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          node tests/academy-browser.mjs
+          CAREER_UI_ONLY=1 node tests/career-browser.mjs
+      - name: Review previews
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          for(const name of ['academy-intro-1280','academy-track-1280','assessment-1280','assessment-result-1280','academy-exit-steer']){
+            const path='/tmp/apex-career-checks/'+name+'.png';
+            if(fs.existsSync(path))console.log('UI_SCREENSHOT '+name+' '+fs.readFileSync(path).toString('base64'));
+          }
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: academy-rework
+          path: |
+            /tmp/apex-career-checks/
+            /tmp/apex-vite.log
+            /tmp/apex-chrome.log
+          if-no-files-found: ignore
