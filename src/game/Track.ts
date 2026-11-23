@@ -204,8 +204,7 @@ export class Track {
     const kerbGeometry=createKerbGeometry(this,this.kerbSegments);this.surfaceGeometries.set('continuous-kerbs',kerbGeometry);
     const kerbSurface=terrainMaps('asphalt'),kerbs=createTrackChunks(kerbGeometry,new THREE.MeshStandardMaterial({map:kerbPaintMap(),normalMap:kerbSurface.normalMap,normalScale:new THREE.Vector2(.32,.32),roughnessMap:kerbSurface.roughnessMap,roughness:.95,metalness:0}),this.length,'continuous-kerbs');
     this.group.add(kerbs,createBarriers(this.barrierPaths));
-    if(this.circuit.training){this.group.add(createAcademyFacilities(this));return;}
-    const steel=new THREE.MeshStandardMaterial({color:0x263b36});
+    if(this.circuit.training){this.group.add(createAcademyFacilities(this));this.buildStartGantry();return;}
     const pit=new THREE.Group(),pitProgress=this.circuit.pitProgress;pit.name='pit-building';pit.rotation.y=Math.atan2(this.tangent(pitProgress).x,this.tangent(pitProgress).z);
     let pitFootprint;
     for(const side of [1,-1]){
@@ -221,6 +220,10 @@ export class Track {
     this.scenerySpace.reserveFootprint(pitFootprint);pit.userData.footprint=pitFootprint;
     const building=new THREE.Mesh(new THREE.BoxGeometry(17,7,240),new THREE.MeshStandardMaterial({color:0xa1b0b0,roughness:.75}));building.position.y=3.5;pit.add(building);const windows=new THREE.Mesh(new THREE.BoxGeometry(17.2,1.5,225),new THREE.MeshStandardMaterial({color:0x233d4b,metalness:.5,roughness:.3}));windows.position.y=5.4;pit.add(windows);this.group.add(pit);
     this.grandstands=createGrandstands(this);this.group.add(...this.grandstands);
+    this.buildStartGantry();
+  }
+  private buildStartGantry(){
+    const steel=new THREE.MeshStandardMaterial({color:0x263b36});
     const start=this.point(24/this.length),forward=this.tangent(24/this.length),gantry=new THREE.Group();gantry.name='start-gantry';
     for(const side of [-1,1]){const post=new THREE.Mesh(new THREE.BoxGeometry(.5,8,.5),steel);post.position.set(side*12,4,0);gantry.add(post);}const board=new THREE.Mesh(new THREE.BoxGeometry(25,2,.65),steel);board.position.y=7;gantry.add(board);
     const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=96;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#143d2e';ctx.fillRect(0,0,1024,96);ctx.fillStyle='#fff';ctx.font='bold italic 44px sans-serif';ctx.textAlign='center';ctx.fillText(`${this.name}  /  ${this.circuit.tagline}`,512,66);
