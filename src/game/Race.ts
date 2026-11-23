@@ -60,7 +60,7 @@ export class Race {
     }
     this.speedPlanner=new AISpeedPlanner(track);if(this.flying)this.flyingController=new FlyingStart(track,planner);
     this.cornerObserver=new CornerPaceObserver(track,planner);
-    this.storageKey=`apex-best-${track.name.toLowerCase()}-v3`;
+    this.storageKey=`apex-best-${track.name.toLowerCase()}${track.circuit?.training&&!this.flying?'-standing-v1':'-v3'}`;
     const profiles=DRIVER_PROFILES.slice(0,Math.max(0,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
     profiles.forEach((profile,i)=>this.opponents.push(new Opponent(profile,i,track,scene,planner,this.aiSpeeds,this.speedPlanner)));this.reset();
     this.best=readBest(this.storageKey,this.recordUser);this.bestAtStart=this.best;
