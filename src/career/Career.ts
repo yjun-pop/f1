@@ -1,3 +1,4 @@
+import {ACADEMY_ASSESSMENT} from '../game/AcademyLayout';
 import {SEASON,calendarFor,validCalendar,raceReady,dateLabel,type CareerCalendar} from './Calendar';
 export {SEASON} from './Calendar';
 import {captureSeasonRace,validChampionship,SEASON_POINTS,type SeasonRace} from './Championship';
@@ -5,7 +6,7 @@ import type {RaceStanding} from '../game/RaceLaps';
 import type {CircuitId} from '../game/Circuits';
 import type {PracticeGuide} from './TrackBriefing';
 export interface DrivingSample {dt:number;elapsed:number;speed:number;throttle:number;brake:number;steer:number;offRoad:boolean;impacts:number;distance:number;finished:boolean;position:number;fieldSize:number;bestLap:number;guide?:PracticeGuide;classification?:readonly RaceStanding[]}
-export interface RunResult {seconds:number;offRoadSeconds:number;contacts:number;bestLap:number;position:number;score:number}
+export interface RunResult {seconds:number;offRoadSeconds:number;contacts:number;bestLap:number;position:number;score:number;course?:'academy-v2';evaluation?:{version:2;safety:number;technique:number;pace:number;brakingCorners:number;cleanExits:number}}
 export interface CareerSave {version:1;kind:'apex-career';saveId:string;driver:{name:string;country:string;number:number};phase:'academy'|'assessment'|'offers'|'season';trained:boolean;academyCompleted?:number;calendar?:CareerCalendar;championship?:SeasonRace[];debrief?:{kind:'training'|'assessment'|'season';result:RunResult;points:number;reward:number};briefed?:CircuitId[];assessment?:RunResult;team?:string;year:number;round:number;money:number;points:number;history:{year:number;round:number;position:number;points:number;reward:number;goalBonus?:number;result:RunResult}[]}
 export const TEAMS=[{id:'atlas',name:'ATLAS RACING',style:'육성형',description:'안정적인 완주를 중시합니다. 첫 시즌은 경험을 쌓는 데 집중합니다.',bonus:12000,goalBonus:3000,target:'12경기 완주'}, {id:'vector',name:'VECTOR MOTORSPORT',style:'균형형',description:'기록과 안정성을 함께 평가합니다. 포인트 획득을 목표로 합니다.',bonus:16000,goalBonus:6000,target:'한 경기 이상 상위 4위'}, {id:'helix',name:'HELIX PERFORMANCE',style:'도전형',description:'높은 목표와 성과 보너스를 제안합니다. 포디움에 도전하세요.',bonus:18000,goalBonus:10000,target:'한 경기 이상 포디움'}] as const;
 const careerCircuitIds:readonly string[]=['monza','silverstone','spa','monaco','suzuka','interlagos','singapore','montreal'];
@@ -17,7 +18,7 @@ export function readCareer(value:unknown):CareerSave|null {
  if(!['academy','assessment','offers','season'].includes(s.phase)||typeof s.trained!=='boolean'||![s.year,s.round,s.money,s.points].every(Number.isSafeInteger)||s.year<1||s.round<0||s.round>SEASON.length||s.money<0||s.points<0||!Array.isArray(s.history)||s.history.length>120)return null;
  if(s.academyCompleted!==undefined&&(!Number.isInteger(s.academyCompleted)||s.academyCompleted<0||s.academyCompleted>4||s.trained!==(s.academyCompleted===4)))return null;
  if(s.briefed!==undefined&&(!Array.isArray(s.briefed)||s.briefed.length>8||s.briefed.some(id=>!careerCircuitIds.includes(id))||new Set(s.briefed).size!==s.briefed.length))return null;
- const validResult=(r:RunResult)=>r&&[r.seconds,r.offRoadSeconds,r.contacts,r.bestLap,r.position,r.score].every(Number.isFinite)&&r.seconds>0&&r.offRoadSeconds>=0&&r.contacts>=0&&r.score>=0&&r.score<=100&&r.position>=1;
+ const validResult=(r:RunResult)=>{if(!r||![r.seconds,r.offRoadSeconds,r.contacts,r.bestLap,r.position,r.score].every(Number.isFinite)||r.seconds<=0||r.offRoadSeconds<0||r.contacts<0||r.score<0||r.score>100||r.position<1)return false;if(r.course===undefined)return r.evaluation===undefined;if(r.course!=='academy-v2'||!r.evaluation)return false;const e=r.evaluation;return e.version===2&&[e.safety,e.technique,e.pace,e.brakingCorners,e.cleanExits].every(n=>Number.isInteger(n)&&n>=0)&&e.safety<=50&&e.technique<=20&&e.pace<=30&&e.brakingCorners<=8&&e.cleanExits<=8&&e.safety+e.technique+e.pace===r.score;};
  if(s.debrief&&(!['training','assessment','season'].includes(s.debrief.kind)||!validResult(s.debrief.result)||![s.debrief.points,s.debrief.reward].every(n=>Number.isSafeInteger(n)&&n>=0)))return null;
  if(s.assessment&&!validResult(s.assessment)||s.phase!=='academy'&&!s.trained||['offers','season'].includes(s.phase)&&!s.assessment||s.phase==='season'&&!TEAMS.some(t=>t.id===s.team))return null;
  if(!s.history.every(h=>h&&[h.year,h.round,h.position,h.points,h.reward].every(Number.isSafeInteger)&&h.year>0&&h.round>=0&&h.round<SEASON.length&&h.position>0&&h.points>=0&&h.reward>=0&&(h.goalBonus===undefined||Number.isSafeInteger(h.goalBonus)&&h.goalBonus>=0)&&validResult(h.result)))return null;
@@ -49,9 +50,10 @@ export function finishRound(s:CareerSave,result:RunResult,classification?:readon
 export function nextSeason(s:CareerSave,teamId=s.team){const team=TEAMS.find(t=>t.id===teamId);if(s.phase!=='season'||s.round!==SEASON.length||calendarFor(s).month!==12||s.debrief||!team)throw Error('12월 결산을 먼저 마치세요.');return change(s,{year:s.year+1,round:0,points:0,team:team.id,calendar:{month:1,day:15,meetings:[]},money:s.money+team.bonus});}
 /** Read-only telemetry: no input injection or vehicle physics changes. */
 export class AcademyRun {
- accelerated=false;braked=false;exited=false;turnSeconds=0;offRoadSeconds=0;contacts=0;seconds=0;retryHint='';private retryUntil=0;private lastImpacts=0;
+ accelerated=false;braked=false;exited=false;turnSeconds=0;offRoadSeconds=0;contacts=0;seconds=0;retryHint='';private retryUntil=0;private lastImpacts=0;private entryTime=new Map<number,number>();private exitTime=new Map<number,number>();private passedSections=new Set<number>();private previousSection?:number;private previousDistance?:number;
  get lesson(){return !this.accelerated?0:!this.braked?1:this.turnSeconds<2?2:!this.exited?3:4;}
  update(s:DrivingSample){this.seconds+=s.dt;this.offRoadSeconds+=s.offRoad?s.dt:0;const impact=s.impacts>this.lastImpacts;this.contacts+=Math.max(0,s.impacts-this.lastImpacts);this.lastImpacts=s.impacts;
+  const guide=s.guide;if(guide){if(this.previousSection!==undefined&&guide.currentSection!==this.previousSection&&this.previousDistance!==undefined&&s.distance>this.previousDistance&&!s.offRoad&&!impact)this.passedSections.add(guide.currentSection);this.previousSection=guide.currentSection;this.previousDistance=s.distance;}if(guide&&!s.offRoad&&!impact){if(s.brake>.2&&guide.distance<160)this.entryTime.set(guide.section,(this.entryTime.get(guide.section)??0)+s.dt);if(this.passedSections.has(guide.currentSection)&&(guide.sinceSection??Infinity)<180&&s.throttle>.45&&Math.abs(s.steer)<.3&&s.speed>12)this.exitTime.set(guide.currentSection,(this.exitTime.get(guide.currentSection)??0)+s.dt);}
   // Only the current lesson can advance; off-track input never completes a task.
   if(s.offRoad||impact){this.retryHint=s.offRoad?'코스로 돌아오면 과제를 계속합니다.':this.lesson===2?'접촉했습니다. 2초 조향을 다시 시도하세요.':'접촉했습니다. 안전하게 과제를 계속하세요.';this.retryUntil=this.seconds+2;if(this.lesson===2)this.turnSeconds=0;return;}
   if(this.seconds>=this.retryUntil)this.retryHint='';
@@ -63,7 +65,7 @@ export class AcademyRun {
   }
  }
  get trained(){return this.exited;}
- result(s:DrivingSample):RunResult {const seconds=Math.max(.01,s.elapsed),timeScore=Math.max(0,Math.min(100,100-(seconds-85)*.65)),penalty=this.offRoadSeconds*1.5+this.contacts*10;return {seconds,offRoadSeconds:Math.round(this.offRoadSeconds*10)/10,contacts:this.contacts,bestLap:s.bestLap||seconds,position:s.position,score:Math.round(Math.max(0,Math.min(100,timeScore-penalty)))};}
+ result(s:DrivingSample,academy=false):RunResult {const seconds=Math.max(.01,s.elapsed),timeScore=Math.max(0,Math.min(100,100-(seconds-85)*.65)),penalty=this.offRoadSeconds*1.5+this.contacts*10;const base={seconds,offRoadSeconds:Math.round(this.offRoadSeconds*10)/10,contacts:this.contacts,bestLap:s.bestLap||seconds,position:s.position};if(academy){const brakingCorners=Math.min(8,[...this.entryTime.values()].filter(t=>t>=.25).length),cleanExits=Math.min(8,[...this.exitTime.values()].filter(t=>t>=.4).length),safety=Math.round(Math.max(0,50-this.contacts*8-this.offRoadSeconds*1.5)),technique=Math.round(20*(brakingCorners+cleanExits)/16),pace=Math.round(30*Math.min(1,ACADEMY_ASSESSMENT.referenceLap/seconds));return {...base,score:safety+technique+pace,course:ACADEMY_ASSESSMENT.course,evaluation:{version:2,safety,technique,pace,brakingCorners,cleanExits}};}return {...base,score:Math.round(Math.max(0,Math.min(100,timeScore-penalty)))};}
 }
 
 export const ACADEMY_LESSONS=[
@@ -82,4 +84,4 @@ export function needsBriefing(s:CareerSave,id:CircuitId){return !s.briefed?.incl
 export function markBriefed(s:CareerSave,id:CircuitId){if(!careerCircuitIds.includes(id))throw Error('서킷을 확인하세요.');return change(s,{briefed:[...new Set([...(s.briefed??[]),id])]});}
 
 export function contractProgress(s:CareerSave){const rows=s.history.filter(h=>h.year===s.year),team=TEAMS.find(t=>t.id===s.team);if(!team)return null;const needed=team.id==='atlas'?(calendarFor(s).legacyContract?3:SEASON.length):1,done=team.id==='atlas'?rows.length:rows.filter(h=>h.position<=(team.id==='vector'?4:3)).length;return {target:team.id==='atlas'?`${needed}경기 완주`:team.target,done:Math.min(done,needed),needed,achieved:done>=needed,bonus:team.goalBonus,closed:s.round===SEASON.length};}
-export function continueLabel(s:CareerSave){if(s.debrief)return '주행 결과 확인';if(s.phase==='academy')return '아카데미 · 기본 훈련';if(s.phase==='assessment')return '몬자 · 평가 주행';if(s.phase==='offers')return '팀 계약 선택';return s.round<SEASON.length?`${s.year}년차 ${dateLabel(calendarFor(s))} · ${SEASON[s.round].name}`:`${s.year}년차 시즌 완료`;}
+export function continueLabel(s:CareerSave){if(s.debrief)return '주행 결과 확인';if(s.phase==='academy')return '아카데미 · 기본 훈련';if(s.phase==='assessment')return '아카데미 · 실력 평가';if(s.phase==='offers')return '팀 계약 선택';return s.round<SEASON.length?`${s.year}년차 ${dateLabel(calendarFor(s))} · ${SEASON[s.round].name}`:`${s.year}년차 시즌 완료`;}

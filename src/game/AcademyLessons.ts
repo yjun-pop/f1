@@ -1,34 +1,36 @@
 export const ACADEMY_TESTS=[
- {title:'직선 가속',goal:'아카데미 직선에서 250 km/h 이상 가속',key:'W / ↑ · 가속 페달',instruction:'차를 곧게 유지하며 가속을 이어가세요.',action:'가속',code:'throttle'},
- {title:'코너 진입',goal:'제동 구간에서 감속하고 코너에 진입',key:'S / ↓ · 브레이크 페달',instruction:'표시 지점에서 제동하고, 속도가 줄면 브레이크를 놓으며 코너 방향으로 조향하세요.',action:'제동',code:'brake'},
- {title:'코너 탈출',goal:'감속해 진입한 뒤, 조향을 풀며 재가속',key:'S → A / D → W · 제동 → 조향 → 가속',instruction:'제동부터 코너 진입을 이어서 연습합니다. 정점을 지난 뒤 출구를 향해 조향을 풀고 가속하세요.',action:'가속',code:'throttle'},
+ {title:'가속과 차선 유지',goal:'140 km/h까지 가속하고 차를 곧게 유지',key:'W / ↑ · 가속 페달',instruction:'차를 곧게 유지하며 가속을 이어가세요.',action:'가속',code:'throttle'},
+ {title:'제동과 코너 진입',goal:'제동 구간에서 감속하고 코너에 진입',key:'S / ↓ · 브레이크 페달',instruction:'표시 지점에서 제동하고, 속도가 줄면 브레이크를 놓으며 코너 방향으로 조향하세요.',action:'제동',code:'brake'},
+ {title:'연속 코너와 탈출',goal:'S자 코너를 연결하고 조향을 풀며 재가속',key:'S → A / D → W · 제동 → 조향 → 가속',instruction:'제동 구간에서 속도를 줄여 두 코너를 연결하세요. 정점을 지난 뒤 출구를 향해 조향을 풀고 가속하세요.',action:'가속',code:'throttle'},
  {title:'ERS 활용',goal:'직선에서 ERS를 사용해 연습 차량 추월',key:'W + Shift · 가속 페달 + 지정 버튼',instruction:'ERS는 저장한 에너지로 추가 출력을 냅니다. 코너를 빠져나와 차가 곧게 섰을 때 사용하면 추월에 유리합니다.',action:'ERS',code:'boost'}
 ] as const;
 export type TutorialPhase='approach'|'waiting'|'driving'|'success'|'failed';
-export type AcademyAction='throttle'|'brake'|'steer'|'boost';
-export interface TutorialStatus {lesson:number;phase:TutorialPhase;cue:string;key:string;speed:number;distance:number;gap?:number;action?:AcademyAction;direction?:'left'|'right';device?:'keyboard'|'wheel';inputValue?:number;releaseRequired?:boolean;checkpoints?:{label:string;complete:boolean}[];boostButton?:number|null}
+export type AcademyAction='throttle'|'brake'|'steer'|'boost'|'coast';
+export interface TutorialStatus {lesson:number;phase:TutorialPhase;cue:string;key:string;speed:number;distance:number;gap?:number;action?:AcademyAction;direction?:'left'|'right';device?:'keyboard'|'wheel';inputValue?:number;releaseRequired?:boolean;checkpoints?:{label:string;complete:boolean}[];boostButton?:number|null;ready?:boolean;urgent?:boolean}
 /** A fresh press is required: holding an action before the cue cannot skip it. */
 export class ActionGate {
  private released=false;
  get needsRelease(){return !this.released;}
  update(active:boolean){if(!active)this.released=true;return this.released&&active;}
 }
-export interface LessonSample {dt:number;metres:number;speed:number;throttle:number;brake:number;steer:number;headingError:number;curvature:number;offRoad:boolean;impacts:number;boosting:boolean;energy:number;gap:number}
+export interface LessonSample {dt:number;metres:number;speed:number;throttle:number;brake:number;steer:number;headingError:number;curvature:number;offRoad:boolean;impacts:number;boosting:boolean;energy:number;gap:number;lateralOffset?:number}
 export function cornerExitAligned(s:LessonSample,exit:number){return s.metres>=exit&&Math.abs(s.headingError)<.2&&Math.abs(s.steer)<.4;}
 /** Test scoring uses measured motion, controls and contacts, never just speed loss. */
 export class LessonJudge {
- success=false;failed='';braked=false;entered=false;aligned=false;private braking=0;private gas=0;private energy=0;private fast=0;
+ success=false;failed='';braked=false;entered=false;aligned=false;private excursion=0;private braking=0;private gas=0;private energy=0;private fast=0;
  constructor(readonly lesson:number,private start:LessonSample,readonly apex:number,readonly exit:number,readonly target:number){}
  get usedEnergy(){return this.energy;}
  failAtEnd(s:LessonSample){if(this.success||this.failed)return;this.failed=this.lesson===2?(Math.abs(s.headingError)>=.16||Math.abs(s.steer)>=.4?'출구 방향으로 차를 정렬하세요.':this.gas<.6?'출구에서 가속을 유지하세요.':'재가속이 부족합니다.'):this.lesson===3?(this.energy<18?'추가 출력을 충분히 사용하세요.':'연습 차량을 완전히 지나가세요.'):'훈련 구간을 벗어났습니다.';}
 
  update(s:LessonSample){
   if(this.success||this.failed)return;
-  if(s.offRoad||s.impacts>this.start.impacts){this.failed=s.offRoad?'트랙을 벗어났습니다. 다시 시도하세요.':'접촉했습니다. 벽이나 차량으로 감속하면 성공으로 인정하지 않습니다.';return;}
+  this.excursion=s.offRoad?this.excursion+s.dt:0;
+  if(s.impacts>this.start.impacts){this.failed=this.lesson===0?'차를 곧게 유지하고 조향을 작게 조절하세요.':this.lesson===3?'앞 차량과 옆 공간을 확보한 뒤 추월하세요.':'접촉했습니다. 제동 구간에서 먼저 속도를 줄이세요.';return;}
+  if(this.excursion>.8){this.failed='코스 밖에 머물렀습니다. 속도를 낮추고 코너를 따라가세요.';return;}if(s.offRoad)return;
   if(s.metres<this.start.metres-8||Math.abs(s.metres-this.start.metres)>1300){this.failed='훈련 구간을 벗어났습니다.';return;}
-  if(this.lesson===0){this.fast=s.speed>=250/3.6&&s.throttle>.4?this.fast+s.dt:0;this.success=this.fast>=.2;}
+  if(this.lesson===0){this.fast=s.speed>=140/3.6&&s.throttle>.4&&Math.abs(s.headingError)<.12&&Math.abs(s.lateralOffset??0)<3.5?this.fast+s.dt:0;this.success=this.fast>=1;}
   if(this.lesson===1||this.lesson===2){
-   if(s.metres>=this.start.metres-2&&s.metres<=this.apex+20&&s.brake>.25)this.braking+=s.dt;
+   if(s.metres>=this.apex-120&&s.metres<=this.apex+20&&s.brake>.25)this.braking+=s.dt;
    this.braked ||= this.braking>=.2&&this.start.speed-s.speed>=7;
    this.entered ||= this.braked&&this.start.speed-s.speed>=7&&s.speed>=7&&s.speed<=this.target*1.35&&s.metres>=this.apex-35&&s.metres<=this.apex+90&&s.curvature>.001&&Math.abs(s.steer)>.06&&Math.abs(s.headingError)<.45;
    if(this.lesson===1)this.success=this.entered;

@@ -32,3 +32,15 @@ const january=m.signContract(offerSave,'vector'),february=cal.advanceCalendar(ja
 assert.equal(cal.inPreseason(january),false);assert.equal(cal.inPreseason(february),true);assert.equal(cal.inPreseason({...february,calendar:{...february.calendar,day:17}}),true);
 assert.equal(cal.inPreseason(cal.advanceCalendar(february)),false);assert.equal(february.points,0);assert.equal(february.history.length,0);assert.equal(m.readCareer(february).calendar.month,2);
 console.log('PASS exact contract base/performance totals, unchanged funds before signing, and preseason dates without invented completion');
+
+const qualified=new m.AcademyRun();for(let i=1;i<=8;i++){qualified.update({...sample,dt:.3,distance:i/9-.01,brake:1,throttle:0,guide:{section:i,currentSection:i===1?8:i-1,distance:80,sinceSection:200,targetKmh:100,brakeDistance:50}});qualified.update({...sample,dt:.5,distance:i/9+.01,throttle:1,brake:0,guide:{section:i%8+1,currentSection:i,distance:200,sinceSection:50,targetKmh:100,brakeDistance:null}});}
+const qualifiedResult=qualified.result({...sample,elapsed:95,bestLap:95},true);assert.equal(qualifiedResult.course,'academy-v2');assert.equal(qualifiedResult.score,100);assert.equal(qualifiedResult.evaluation.technique,20);const qualifiedSave=m.assess(m.completeTraining(m.newCareer('기술 평가','대한민국',18)),qualifiedResult);assert.ok(m.readCareer(qualifiedSave));assert.equal(m.readCareer({...qualifiedSave,assessment:{...qualifiedResult,evaluation:{...qualifiedResult.evaluation,safety:100}}}),null);assert.ok(m.readCareer({...qualifiedSave,assessment:{...result}}));console.log('PASS versioned academy assessment, safety/technique/pace scoring and legacy Monza assessment preservation');
+
+const startExit=new m.AcademyRun();
+startExit.update({...sample,dt:.6,distance:.01,throttle:1,brake:0,guide:{section:1,currentSection:8,distance:500,sinceSection:90,targetKmh:100,brakeDistance:null}});
+assert.equal(startExit.result({...sample,elapsed:95},true).evaluation.cleanExits,0,'Starting past the final corner is not a completed exit');
+startExit.update({...sample,dt:.6,distance:.2,throttle:1,brake:0,guide:{section:2,currentSection:1,distance:300,sinceSection:50,targetKmh:100,brakeDistance:null}});
+assert.equal(startExit.result({...sample,elapsed:95},true).evaluation.cleanExits,1);
+startExit.update({...sample,dt:.6,distance:.1,throttle:1,brake:0,guide:{section:1,currentSection:8,distance:100,sinceSection:50,targetKmh:100,brakeDistance:null}});
+assert.equal(startExit.result({...sample,elapsed:95},true).evaluation.cleanExits,1,'Reverse travel cannot qualify a corner');
+console.log('PASS assessment exits require an observed forward corner crossing');

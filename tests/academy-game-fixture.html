@@ -11,3 +11,20 @@ throttle=true;for(let i=0;i<20;i++)step();const frozen=g.vehicle.position.clone(
 const resultOpen=document.querySelector('.academy-result').open;const phase=latest.phase,speed=g.vehicle.kmh,position=g.vehicle.position.clone(),before=renders;throttle=false;brake=true;escape=true;for(let i=0;i<30;i++)step();const success={resultOpen,phase,speed,motion:g.vehicle.position.distanceTo(position),renders:renders-before,paused:g.paused,changing:g.changingCircuit,ersLabels:text.filter(s=>s.includes('ERS')),ersEnabled:g.vehicle.ersEnabled};real(g.scene,g.cockpit.camera);ctx.fillText=fill;g.retryTutorial();const restarted={phase:g.academy.phase,energy:g.vehicle.boost};g.academy.phase='failed';step();const failed={paused:g.paused,dialog:document.querySelector('.academy-result').open,focused:document.activeElement.id};g.endCareerSession();ui.dispose();return {hold,waitingPause,resumedCue,success,restarted,failed};};
 window.checkHiddenEnergySettings=()=>{document.documentElement.dataset.academySession='true';void openSettings();const tutorial={help:document.querySelector('.controls-list').textContent,disabled:document.querySelector('#setting-transmission').disabled};document.querySelector('.settings-dialog').close();delete document.documentElement.dataset.academySession;delete document.documentElement.dataset.ersLocked;void openSettings();const normal={help:document.querySelector('.controls-list').textContent,disabled:document.querySelector('#setting-transmission').disabled};document.querySelector('.settings-dialog').close();return {tutorial,normal};};
 </script></body></html>
+<script type="module">
+import {Game} from '../src/game/Game';
+window.checkAssessmentGame=()=>{document.querySelector('#viewport').replaceChildren();delete document.querySelector('#hud').dataset.tutorial;const q=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{circuit:'monza',opponentCount:0,totalLaps:1,autoStart:true,career:{hudMode:'assessment',guidance:true,sample:()=>{},exit:()=>{},reset:()=>{}}});const show=q.renderer.render.bind(q.renderer);q.renderer.render=()=>{};q.mirror.render=()=>{};let ticks=0;while(q.race.elapsed===0&&ticks++<2400)q.frame(q.previous+1000/60);const result={name:q.track.name,corners:q.track.cornerCount,sections:q.track.sections.length,started:q.race.elapsed>0,savedCircuit:localStorage.getItem('apex-circuit')};show(q.scene,q.cockpit.camera);q.endCareerSession();return result;};
+</script>
+<script type="module">
+import {Game} from '../src/game/Game';
+import {AcademyHUD} from '../src/ui/AcademyHUD';
+window.previewHandlingGame=()=>{
+ const viewport=document.querySelector('#viewport'),hud=document.querySelector('#hud');viewport.replaceChildren();let coach,latest;
+ const q=new Game(viewport,hud,{opponentCount:0,transmission:'auto',career:{hudMode:'training',sample:()=>{},exit:()=>{},reset:()=>{},tutorial:{lesson:2,update:s=>{latest=s;coach?.update(s)}}}});
+ coach=new AcademyHUD(document.body,2,{confirm:()=>{},retry:()=>{},leave:()=>{}});
+ const map=hud.querySelector('.mapbox'),stack=document.createElement('div');stack.className='hud-map-stack';map.before(stack);stack.append(map,coach.overlay);
+ let gas=0;q.input.down=()=>false;q.input.consume=()=>false;q.input.analog=()=>({throttle:gas,brake:0,steer:0});q.frame(q.previous+1000/60);gas=1;q.frame(q.previous+1000/60);gas=0;q.frame(q.previous+1000/60);
+ const box=coach.overlay.getBoundingClientRect(),cue=document.querySelector('.academy-driving-cue').getBoundingClientRect();
+ const result={name:q.track.name,phase:latest.phase,action:latest.action,overlayFits:box.right<=innerWidth&&box.bottom<=innerHeight,cueFits:cue.left>=0&&cue.right<=innerWidth&&cue.bottom<=innerHeight};q.endCareerSession();return result;
+};
+</script>
