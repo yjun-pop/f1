@@ -5,7 +5,7 @@ export function academyPrompt(state:TutorialStatus,lesson:number){
  const action=state.action??(lesson===1?'brake':lesson===3?'boost':'throttle'),wheel=state.device==='wheel',left=state.direction!=='right';
  const keys:Record<AcademyAction,string>={coast:wheel?'가속 페달 놓기':'W 놓기',throttle:wheel?'가속 페달':'W',brake:wheel?'브레이크 페달':'S',steer:wheel?(left?'휠을 왼쪽으로':'휠을 오른쪽으로'):(left?'A':'D'),boost:wheel&&state.boostButton!=null?`휠 버튼 ${state.boostButton+1}`:'Shift'};
  const instructions:Record<AcademyAction,string>={coast:'가속을 놓고 전방을 보세요',throttle:'가속을 시작하세요',brake:'브레이크를 밟으세요',steer:left?'왼쪽으로 조향하세요':'오른쪽으로 조향하세요',boost:'추가 출력을 사용하세요'};
- return {key:keys[action],instruction:state.ready?'준비되면 출발하세요':instructions[action],support:state.releaseRequired?'누르고 있는 입력을 놓은 뒤 다시 눌러주세요':action==='steer'?'브레이크를 놓고 조향하세요':action==='boost'?(wheel&&state.boostButton==null?'가속 페달을 유지하며 Shift를 누르세요':'가속을 유지한 채 누르세요'):'',action};
+ return {key:keys[action],instruction:state.ready?'준비되면 연습을 시작하세요':instructions[action],support:state.ready&&(lesson===1||lesson===2)?(wheel?'가속 페달로 시작 · 노란 구간에서 브레이크':'W로 시작 · 노란 구간에서 S로 제동'):state.releaseRequired?'누르고 있는 입력을 놓은 뒤 다시 눌러주세요':action==='steer'?'브레이크를 놓고 조향하세요':action==='boost'?(wheel&&state.boostButton==null?'가속 페달을 유지하며 Shift를 누르세요':'가속을 유지한 채 누르세요'):'',action};
 }
 
 /** Stable HUD nodes, one native result dialog, and no per-frame focus changes. */
