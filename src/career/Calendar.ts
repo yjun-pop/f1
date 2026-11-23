@@ -35,6 +35,7 @@ export function validCalendar(save:CareerSave){
  return day>=last&&(!SEASON[save.round]||day<=dayOfYear(SEASON[save.round]));
 }
 export function raceReady(save:CareerSave){const e=SEASON[save.round];return save.phase==='season'&&!!e&&dayOfYear(calendarFor(save))===dayOfYear(e);}
+export function inPreseason(save:CareerSave){const day=dayOfYear(calendarFor(save));return save.phase==='season'&&save.round===0&&day>=dayOfYear({month:2,day:10})&&day<dayOfYear(SEASON[0]);}
 export function nextAppointment(save:CareerSave){
  const c=calendarFor(save),day=dayOfYear(c),race=SEASON[save.round];
  if(save.round===0&&day<dayOfYear({month:2,day:10}))return {kind:'test' as const,name:'프리시즌 테스트',month:2,day:10};

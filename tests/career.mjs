@@ -23,3 +23,12 @@ await import('./career-calendar.mjs');
 
 let academy=m.newCareer('학생','대한민국',27);assert.equal(m.academyProgress(academy),0);assert.throws(()=>m.completeAcademyTest(academy,1));for(let lesson=0;lesson<4;lesson++){const before=structuredClone(academy);academy=m.completeAcademyTest(academy,lesson);assert.equal(academy.academyCompleted,lesson+1);assert.equal(academy.phase,lesson===3?'assessment':'academy');assert.ok(m.readCareer(academy));assert.equal(before.academyCompleted??0,lesson);}assert.equal(m.academyProgress({...academy,academyCompleted:undefined}),4);assert.equal(m.readCareer({...academy,academyCompleted:1}),null);console.log('PASS persisted sequential academy tests, skip rejection and old completed-career migration');
 await import('./academy-lessons.mjs');
+
+const offerSave=m.assess(m.completeTraining(m.newCareer('계약 검증','대한민국',12)),{seconds:93,offRoadSeconds:0,contacts:0,bestLap:93,position:1,score:95});
+assert.deepEqual(m.signingTerms(offerSave,m.TEAMS[1]),{base:16000,performance:7600,total:23600});
+assert.equal(m.signContract(offerSave,'vector').money,23600);assert.equal(offerSave.money,0);assert.equal(offerSave.phase,'offers');
+for(const [score,performance]of[[0,0],[80,6400],[100,8000]])assert.equal(m.signingTerms({...offerSave,assessment:{...offerSave.assessment,score}},m.TEAMS[0]).performance,performance);
+const january=m.signContract(offerSave,'vector'),february=cal.advanceCalendar(january);
+assert.equal(cal.inPreseason(january),false);assert.equal(cal.inPreseason(february),true);assert.equal(cal.inPreseason({...february,calendar:{...february.calendar,day:17}}),true);
+assert.equal(cal.inPreseason(cal.advanceCalendar(february)),false);assert.equal(february.points,0);assert.equal(february.history.length,0);assert.equal(m.readCareer(february).calendar.month,2);
+console.log('PASS exact contract base/performance totals, unchanged funds before signing, and preseason dates without invented completion');

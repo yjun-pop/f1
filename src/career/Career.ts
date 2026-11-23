@@ -31,7 +31,9 @@ export const academyProgress=(s:CareerSave)=>s.academyCompleted??(s.trained?4:0)
 export function completeAcademyTest(s:CareerSave,lesson:number){const progress=academyProgress(s);if(s.phase!=='academy'||!Number.isInteger(lesson)||lesson<0||lesson>3||lesson>progress)throw Error('이전 시험을 먼저 통과하세요.');const completed=Math.max(progress,lesson+1);return change(s,{academyCompleted:completed,trained:completed===4,phase:completed===4?'assessment':'academy'});}
 export function completeTraining(s:CareerSave){if(s.phase!=='academy')throw Error('훈련 단계가 아닙니다.');return change(s,{trained:true,academyCompleted:4,phase:'assessment'});}
 export function assess(s:CareerSave,result:RunResult){if(s.phase!=='assessment')throw Error('평가 단계가 아닙니다.');return change(s,{assessment:result,phase:'offers'});}
-export function signingBonus(s:CareerSave,team:typeof TEAMS[number]){return team.bonus+Math.round((s.assessment?.score??0)/100*8000);}
+export const RACE_REWARDS={base:2000,perPoint:200,clean:1000} as const;
+export function signingTerms(s:CareerSave,team:typeof TEAMS[number]){const performance=Math.round((s.assessment?.score??0)/100*8000);return {base:team.bonus,performance,total:team.bonus+performance};}
+export function signingBonus(s:CareerSave,team:typeof TEAMS[number]){return signingTerms(s,team).total;}
 export function signContract(s:CareerSave,id:string){const team=TEAMS.find(t=>t.id===id);if(s.phase!=='offers'||!team)throw Error('현재 계약할 수 없습니다.');return change(s,{team:id,phase:'season',calendar:{month:1,day:15,meetings:[]},money:s.money+signingBonus(s,team)});}
 export function finishRound(s:CareerSave,result:RunResult,classification?:readonly RaceStanding[]){
  if(s.phase!=='season'||s.round>=SEASON.length)throw Error('진행 중인 경기가 없습니다.');
@@ -40,7 +42,7 @@ export function finishRound(s:CareerSave,result:RunResult,classification?:readon
  const points=SEASON_POINTS[result.position-1]??0,team=TEAMS.find(t=>t.id===s.team)!;
  const positions=[...s.history.filter(h=>h.year===s.year).map(h=>h.position),result.position];
  const goal=team.id==='atlas'?positions.length>=(calendarFor(s).legacyContract?3:SEASON.length):positions.some(p=>p<=(team.id==='vector'?4:3));
- const goalBonus=s.round===(calendarFor(s).legacyContract?2:SEASON.length-1)&&goal&&!s.history.some(h=>h.year===s.year&&(h.goalBonus??0)>0)?team.goalBonus:0,reward=2000+points*200+(result.contacts===0?1000:0)+goalBonus;
+ const goalBonus=s.round===(calendarFor(s).legacyContract?2:SEASON.length-1)&&goal&&!s.history.some(h=>h.year===s.year&&(h.goalBonus??0)>0)?team.goalBonus:0,reward=RACE_REWARDS.base+points*RACE_REWARDS.perPoint+(result.contacts===0?RACE_REWARDS.clean:0)+goalBonus;
  const championship=classification?[...(s.championship??[]),captureSeasonRace(s.year,s.round,classification,result.position)].slice(-120):s.championship;
  return change(s,{...(championship===undefined?{}:{championship}),calendar:{...calendarFor(s),month:SEASON[s.round].month,day:SEASON[s.round].day+1},round:s.round+1,points:s.points+points,money:s.money+reward,history:[...s.history,{year:s.year,round:s.round,position:result.position,points,reward,goalBonus,result}].slice(-120)});
 }
