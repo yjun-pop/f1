@@ -347,3 +347,5 @@ fieldset.career-offers{border:0;padding:0;margin:0;min-width:0}
 @media(prefers-reduced-motion:reduce){.career-screen label.career-offer{transition:none!important}}
 
 .career-metrics strong small,.career-training-goals strong small{font-family:'Noto Sans KR',system-ui,sans-serif}
+
+.career-training-goals strong.career-small,.career-metrics strong.career-small{font-family:'Noto Sans KR',system-ui,sans-serif;font-size:24px;line-height:1.4}
