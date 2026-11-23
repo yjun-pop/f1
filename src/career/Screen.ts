@@ -128,7 +128,7 @@ export async function openCareer(host:HTMLElement){
  async function load(serverOnly=false){if(busy)return;busy=true;shell('커리어 불러오기','<p>저장된 진행을 확인하는 중입니다…</p>');
   try{save=await store.load(serverOnly);pending=null;pendingAction=undefined;if(game){dashboard();return;}if(new URLSearchParams(location.search).get('career')==='new'&&!serverOnly)form();else if(!save){const url=new URL(location.href);url.search='?career-empty=1';location.replace(url.href);}else paint();}
   catch(e){shell('저장 확인이 필요합니다','<p>서버 또는 기기 저장을 확인하지 못했습니다. 기존 진행은 덮어쓰지 않았습니다.</p><div class="career-actions"><button id="reload-career">다시 시도</button><button id="load-server">서버 진행 사용</button></div>');error((e as Error).message);button('reload-career',()=>void load());button('load-server',()=>void load(true));}
-  finally{busy=false;bootScreen.finish();}
+  finally{busy=false;disabled(false);bootScreen.finish();}
  }
  window.addEventListener('apex-account-change',()=>{if((account.session?.user.id??null)!==store.owner){selectedTeam='';intro?.close();academyHUD?.dispose();briefing?.close();game?.endCareerSession();busy=false;shell('계정이 변경됐습니다','<p>현재 계정의 저장을 다시 확인해주세요.</p><button id="switch-account">현재 계정으로 커리어 열기</button>');button('switch-account',()=>{if(!account.session){home();return;}store=new CareerStore(account);void load();});}});
  await load();
