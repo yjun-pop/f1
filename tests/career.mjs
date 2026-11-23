@@ -44,3 +44,16 @@ assert.equal(startExit.result({...sample,elapsed:95},true).evaluation.cleanExits
 startExit.update({...sample,dt:.6,distance:.1,throttle:1,brake:0,guide:{section:1,currentSection:8,distance:100,sinceSection:50,targetKmh:100,brakeDistance:null}});
 assert.equal(startExit.result({...sample,elapsed:95},true).evaluation.cleanExits,1,'Reverse travel cannot qualify a corner');
 console.log('PASS assessment exits require an observed forward corner crossing');
+
+let sequence=m.completeTraining(m.newCareer('동반 연습','대한민국',33));
+assert.throws(()=>m.completeTrafficPractice(sequence,result));
+sequence=m.completeSoloAssessment(sequence,{...qualifiedResult,start:'standing'});
+assert.equal(sequence.phase,'assessment');assert.equal(sequence.academyStep,'traffic');assert.ok(m.readCareer(sequence));assert.throws(()=>m.completeSoloAssessment(sequence,qualifiedResult));
+const soloRecord=structuredClone(sequence.assessment);
+sequence=m.completeTrafficPractice(sequence,{...qualifiedResult,start:'standing',position:5,contacts:2,offRoadSeconds:1});
+assert.equal(sequence.phase,'offers');assert.equal(sequence.academyStep,'complete');assert.deepEqual(sequence.assessment,soloRecord);assert.equal(sequence.academyRace.position,5);assert.equal(sequence.money,0);assert.equal(sequence.history.length,0);assert.ok(m.readCareer(sequence));
+assert.equal(m.readCareer({...sequence,academyStep:'traffic'}),null);assert.equal(m.readCareer({...sequence,academyRace:{...sequence.academyRace,position:6}}),null);
+const retaken=m.completeSoloAssessment({...sequence,phase:'assessment'},{...qualifiedResult,start:'standing',score:100});
+assert.equal(retaken.phase,'offers');assert.deepEqual(retaken.academyRace,sequence.academyRace);
+const legacyOffers={...sequence,academyStep:undefined,academyRace:undefined};assert.ok(m.readCareer(legacyOffers));assert.ok(m.readCareer({...m.signContract(legacyOffers,'atlas'),academyStep:undefined}));
+console.log('PASS solo-before-traffic locking, standing-start metadata, last-place completion, separate results, preserved rewards and legacy career continuation');

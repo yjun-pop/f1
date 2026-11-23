@@ -29,24 +29,24 @@ export class Game {
   private scene=new THREE.Scene();private input=new Input();private track:Track;private vehicle:Vehicle;private cockpit:CockpitCamera;private line:RacingLine;private hud:HUD;private race:Race;
   private mirror:RearViewMirror;private academy?:AcademyDrive;private tutorialStamp='';
   private careerGuide?:PracticeGuide;private careerGuideAge=Infinity;
-  private careerHooks?:{hudMode?:'training'|'assessment'|'practice'|'race';guidance?:boolean;tutorial?:{lesson:number;update:(state:TutorialStatus)=>void};sample:(s:DrivingSample)=>void;exit:()=>void;reset:()=>void};
+  private careerHooks?:{hudMode?:'training'|'assessment'|'traffic'|'practice'|'race';guidance?:boolean;tutorial?:{lesson:number;update:(state:TutorialStatus)=>void};sample:(s:DrivingSample)=>void;exit:()=>void;reset:()=>void};
   private renderPose=new VehiclePose();private rivalPoses:VehiclePose[]=[];
   private audio=new DrivingAudio();private feedback=new DrivingFeedback();
   private sun:THREE.DirectionalLight;
   private appliedTier?:string;private graphics:GraphicsQuality;private lighting:WorldLighting;
   private paused=false;private changingCircuit=false;private previous=performance.now();private accumulator=0;
   private shadows=new ShadowBudget();private sceneAge=Infinity;private scenePosition=new THREE.Vector3(Infinity,0,0);private hudAge=Infinity;private hudStamp='';private renderAge=Infinity;private renderStamp='';
-  constructor(container:HTMLElement,hudRoot:HTMLElement,options:{circuit?:CircuitId;autoStart?:boolean;transmission?:TransmissionMode;audioContext?:AudioContext;totalLaps?:number;opponentCount?:number;career?:{hudMode?:'training'|'assessment'|'practice'|'race';guidance?:boolean;tutorial?:{lesson:number;update:(state:TutorialStatus)=>void};sample:(s:DrivingSample)=>void;exit:()=>void;reset:()=>void}}={}){
+  constructor(container:HTMLElement,hudRoot:HTMLElement,options:{circuit?:CircuitId;autoStart?:boolean;transmission?:TransmissionMode;audioContext?:AudioContext;totalLaps?:number;opponentCount?:number;flyingStart?:boolean;career?:{hudMode?:'training'|'assessment'|'traffic'|'practice'|'race';guidance?:boolean;tutorial?:{lesson:number;update:(state:TutorialStatus)=>void};sample:(s:DrivingSample)=>void;exit:()=>void;reset:()=>void}}={}){
     this.careerHooks=options.career;hudRoot.dataset.mode=options.career?.hudMode??'race';
     this.renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.7));this.renderer.setSize(window.innerWidth,window.innerHeight);this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=.95;this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;container.appendChild(this.renderer.domElement);
     let savedGraphics:unknown;try{savedGraphics=localStorage.getItem('apex-graphics-quality');}catch{}
     this.graphics=new GraphicsQuality(graphicsMode(savedGraphics),recommendedTier({memory:(navigator as Navigator&{deviceMemory?:number}).deviceMemory,cores:navigator.hardwareConcurrency,maxTextureSize:this.renderer.capabilities.maxTextureSize,width:window.innerWidth}));
     let savedCircuit:unknown;try{savedCircuit=localStorage.getItem('apex-circuit');}catch{}
-    const circuit=options.career?.tutorial?(options.career.tutorial.lesson===2?ASSESSMENT_CIRCUIT:ACADEMY_CIRCUIT):options.career?.hudMode==='assessment'?ASSESSMENT_CIRCUIT:options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit);
+    const circuit=options.career?.tutorial?(options.career.tutorial.lesson===2?ASSESSMENT_CIRCUIT:ACADEMY_CIRCUIT):(options.career?.hudMode==='assessment'||options.career?.hudMode==='traffic')?ASSESSMENT_CIRCUIT:options.circuit?circuitById(options.circuit):selectedCircuit(window.location.search,savedCircuit);
     const environment=environmentFor(circuit.id);this.renderer.toneMappingExposure=environment.exposure;
     this.lighting=new WorldLighting(this.scene,this.renderer,this.graphics.tier,!!circuit.night,environment);this.sun=this.lighting.sun;
     this.renderer.shadowMap.autoUpdate=false;
-    this.track=new Track(this.scene,circuit);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle,opponentCount:opponentCount(options.opponentCount??new URLSearchParams(window.location.search).get('opponents')),flyingStart:options.totalLaps===1||(!options.totalLaps&&quickRaceLaps(new URLSearchParams(window.location.search).get('laps'))===1),totalLaps:quickRaceLaps(options.totalLaps??new URLSearchParams(window.location.search).get('laps'))});
+    this.track=new Track(this.scene,circuit);this.vehicle=new Vehicle(this.track,this.scene);this.cockpit=new CockpitCamera(this.scene);this.line=new RacingLine(this.track,this.scene);this.race=new Race(this.track,this.scene,this.line.planner,{player:this.vehicle,opponentCount:opponentCount(options.opponentCount??new URLSearchParams(window.location.search).get('opponents')),flyingStart:options.flyingStart??(options.totalLaps===1||(!options.totalLaps&&quickRaceLaps(new URLSearchParams(window.location.search).get('laps'))===1)),totalLaps:quickRaceLaps(options.totalLaps??new URLSearchParams(window.location.search).get('laps'))});
     this.renderPose.capture(this.vehicle);this.rivalPoses=this.race.opponents.map(o=>{const pose=new VehiclePose();pose.capture(o.car);return pose;});
     if(!circuit.training)try{localStorage.setItem('apex-circuit',this.track.circuit.id);}catch{}
     try{

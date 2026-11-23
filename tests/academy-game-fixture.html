@@ -13,7 +13,19 @@ window.checkHiddenEnergySettings=()=>{document.documentElement.dataset.academySe
 </script></body></html>
 <script type="module">
 import {Game} from '../src/game/Game';
-window.checkAssessmentGame=()=>{document.querySelector('#viewport').replaceChildren();delete document.querySelector('#hud').dataset.tutorial;const q=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{circuit:'monza',opponentCount:0,totalLaps:1,autoStart:true,career:{hudMode:'assessment',guidance:true,sample:()=>{},exit:()=>{},reset:()=>{}}});const show=q.renderer.render.bind(q.renderer);q.renderer.render=()=>{};q.mirror.render=()=>{};let ticks=0;while(q.race.elapsed===0&&ticks++<2400)q.frame(q.previous+1000/60);const result={name:q.track.name,corners:q.track.cornerCount,sections:q.track.sections.length,started:q.race.elapsed>0,savedCircuit:localStorage.getItem('apex-circuit')};show(q.scene,q.cockpit.camera);q.endCareerSession();return result;};
+window.checkAssessmentGame=(opponents=0)=>{
+ document.querySelector('#viewport').replaceChildren();delete document.querySelector('#hud').dataset.tutorial;
+ const q=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{circuit:'monza',opponentCount:opponents,totalLaps:1,flyingStart:false,autoStart:true,career:{hudMode:opponents?'traffic':'assessment',guidance:true,sample:()=>{},exit:()=>{},reset:()=>{}}});
+ const show=q.renderer.render.bind(q.renderer);q.renderer.render=()=>{};q.mirror.render=()=>{};q.input.down=(...keys)=>keys.includes('KeyW');q.input.consume=()=>false;q.input.analog=()=>({throttle:0,brake:0,steer:0});
+ const cars=[q.vehicle,...q.race.opponents.map(o=>o.car)],poses=cars.map(c=>c.position.clone());const initialSpeeds=cars.map(c=>c.speed);
+ for(let i=0;i<120;i++)q.frame(q.previous+1000/60);
+ const stoppedForLights=cars.every((c,i)=>c.position.distanceTo(poses[i])===0&&c.speed===0)&&q.race.elapsed===0;q.input.down=()=>false;
+ let ticks=0;while(q.race.elapsed===0&&ticks++<2400)q.frame(q.previous+1000/60);
+ const speedAtGo=q.vehicle.speed;show(q.scene,q.cockpit.camera);const aiStart=q.race.opponents.map(o=>o.car.distance);
+ if(opponents)for(let i=0;i<1200;i++)q.frame(q.previous+1000/60);
+ const ai=q.race.opponents.map((o,i)=>({moved:(o.car.distance-aiStart[i])*q.track.length,progress:o.car.progress,offRoad:o.car.offRoad,speed:o.car.speed}));
+ const result={name:q.track.name,corners:q.track.cornerCount,sections:q.track.sections.length,started:q.race.elapsed>0,savedCircuit:localStorage.getItem('apex-circuit'),initialSpeeds,stoppedForLights,speedAtGo,flying:q.race.flyingStart,ai,firstCorner:q.track.sections[0].progress};q.endCareerSession();return result;
+};
 </script>
 <script type="module">
 import {Game} from '../src/game/Game';
