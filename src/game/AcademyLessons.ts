@@ -14,6 +14,7 @@ export class ActionGate {
  update(active:boolean){if(!active)this.released=true;return this.released&&active;}
 }
 export interface LessonSample {dt:number;metres:number;speed:number;throttle:number;brake:number;steer:number;headingError:number;curvature:number;offRoad:boolean;impacts:number;boosting:boolean;energy:number;gap:number}
+export function cornerExitAligned(s:LessonSample,exit:number){return s.metres>=exit&&Math.abs(s.headingError)<.2&&Math.abs(s.steer)<.4;}
 /** Test scoring uses measured motion, controls and contacts, never just speed loss. */
 export class LessonJudge {
  success=false;failed='';braked=false;entered=false;aligned=false;private braking=0;private gas=0;private energy=0;private fast=0;
@@ -34,7 +35,7 @@ export class LessonJudge {
    if(!this.entered&&s.metres>this.apex+110)this.failed=this.braking<.2?'제동을 확인하지 못했습니다.':s.speed>this.target*1.35?'코너 진입 속도가 높습니다.':'감속 뒤 코너 방향으로 조향하세요.';
   }
   if(this.lesson===2){
-   if(this.entered&&s.metres>=this.exit&&Math.abs(s.headingError)<.2&&Math.abs(s.steer)<.4){this.aligned=true;if(s.throttle>.45)this.gas+=s.dt;}
+   if(this.entered&&cornerExitAligned(s,this.exit)){this.aligned=true;if(s.throttle>.45)this.gas+=s.dt;}
    this.success=this.gas>=.6&&s.metres>this.exit+45&&s.speed>=Math.min(this.start.speed,this.target)+5&&Math.abs(s.headingError)<.16;
   }
   if(this.lesson===3){if(s.boosting)this.energy+=Math.max(0,this.start.energy-s.energy-this.energy);this.success=this.energy>=18&&s.gap< -5&&s.throttle>.4&&Math.abs(s.headingError)<.16;}

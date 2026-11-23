@@ -17,7 +17,7 @@ export const ACADEMY_CIRCUIT:CircuitDefinition={
 export function academyGeometry(track:Track,planner:LinePlanner){
  const section=track.sections.find(s=>s.number===1)!.progress,apex=(planner.apices.filter(a=>Math.abs(a.progress-section)*track.length<180).sort((a,b)=>a.progress-b.progress)[0]?.progress??section)*track.length;
  const group=planner.apices.filter(a=>a.progress*track.length>=apex&&a.progress*track.length<apex+180);
- return {apex,exit:Math.max(apex+90,...group.map(a=>a.progress*track.length+55)),target:Math.max(14,Math.min(26,planner.speed(apex/track.length)*.9))};
+ return {apex,brake:apex-80,exit:Math.max(apex+90,...group.map(a=>a.progress*track.length+55)),target:Math.max(14,Math.min(26,planner.speed(apex/track.length)*.9))};
 }
 export function createAcademyFacilities(track:Track){
  const group=new THREE.Group();group.name='academy-facilities';

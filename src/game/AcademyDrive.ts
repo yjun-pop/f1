@@ -3,12 +3,12 @@ import {VehiclePose} from './VehiclePose';
 import * as THREE from 'three';
 import {Vehicle,resolveCollision} from './Vehicle';import type {Track} from './Track';import type {LinePlanner} from './LinePlanner';import type {Input} from './Input';
 import {HANDLING,steeringLock} from './Dynamics';
-import {ACADEMY_TESTS,ActionGate,LessonJudge,type TutorialStatus,type LessonSample} from './AcademyLessons';
+import {ACADEMY_TESTS,ActionGate,LessonJudge,cornerExitAligned,type TutorialStatus,type LessonSample} from './AcademyLessons';
 export class AcademyDrive {
- readonly opponent?:Vehicle;private opponentPose=new VehiclePose();phase:TutorialStatus['phase']='approach';private gate=new ActionGate();private judge?:LessonJudge;private apex:number;private exit:number;private cueAt=0;private target=20;private turnGate=false;private exitGate=false;private device:'keyboard'|'wheel'='keyboard';private inputValue=0;private actionActive=false;private boostButton:number|null=null;
+ readonly opponent?:Vehicle;private opponentPose=new VehiclePose();phase:TutorialStatus['phase']='approach';private gate=new ActionGate();private judge?:LessonJudge;private apex:number;private exit:number;private cueAt=0;private brakingPoint=0;private target=20;private turnGate=false;private exitGate=false;private device:'keyboard'|'wheel'='keyboard';private inputValue=0;private actionActive=false;private boostButton:number|null=null;
  constructor(private track:Track,private car:Vehicle,private planner:LinePlanner,readonly lesson:number,scene:THREE.Scene){
   if(!Number.isInteger(lesson)||lesson<0||lesson>3)throw Error('훈련 항목을 확인하세요.');
-  const geometry=academyGeometry(track,planner);this.apex=geometry.apex;this.exit=geometry.exit;this.target=geometry.target;
+  const geometry=academyGeometry(track,planner);this.apex=geometry.apex;this.exit=geometry.exit;this.target=geometry.target;this.brakingPoint=geometry.brake;
   if(lesson===3)this.opponent=new Vehicle(track,scene,0x30b9a4);
   this.reset();
  }
@@ -19,7 +19,7 @@ export class AcademyDrive {
   this.place(this.car,start,this.lesson===0?0:this.lesson===1?42:this.lesson===2?42:50);
   this.car.ersEnabled=this.lesson===3;this.car.boost=100;
   if(this.opponent){this.place(this.opponent,start+12,50);this.opponent.ersEnabled=false;this.opponentPose.capture(this.opponent);}
-  this.cueAt=this.lesson===0?start:(this.lesson===1||this.lesson===2)?this.apex-80:start+65;
+  this.cueAt=this.lesson===0?start:(this.lesson===1||this.lesson===2)?this.brakingPoint:start+65;
  }
  private place(car:Vehicle,metres:number,speed:number){car.resetAt(metres/this.track.length);car.position.copy(this.lesson===3?this.track.point(car.progress).addScaledVector(this.track.normal(car.progress),car===this.car?-1.8:1.8):this.planner.point(car.progress));const t=this.lesson===3?this.track.tangent(car.progress):this.planner.point(car.progress+2/this.track.length).sub(this.planner.point(car.progress-2/this.track.length));car.heading=Math.atan2(t.x,t.z);car.speed=speed;car.setTransmissionMode('auto');car.sync();}
  private get action(){return this.lesson===3?'boost':this.lesson===1||this.lesson===2?this.exitGate?'throttle':this.turnGate?'steer':'brake':'throttle';}
@@ -43,7 +43,7 @@ export class AcademyDrive {
   this.judge!.update(this.sample(dt));
   if(this.judge!.success)this.phase='success';else if(this.judge!.failed)this.phase='failed';
   else if((this.lesson===1||this.lesson===2)&&!this.turnGate&&this.car.speed<=this.target*1.15&&controls.brake>.25){this.turnGate=true;this.phase='waiting';this.gate=new ActionGate();}
-  else if(this.lesson===2&&this.turnGate&&!this.exitGate&&this.judge!.entered&&this.car.distance*this.track.length>=this.exit){this.exitGate=true;this.phase='waiting';this.gate=new ActionGate();}
+  else if(this.lesson===2&&this.turnGate&&!this.exitGate&&this.judge!.entered&&cornerExitAligned(this.sample(0),this.exit)){this.exitGate=true;this.phase='waiting';this.gate=new ActionGate();}
   if(this.car.distance*this.track.length>this.apex+500&&!this.done){this.judge?.failAtEnd(this.sample(0));this.phase='failed';}
  }
  get status():TutorialStatus {
