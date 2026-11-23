@@ -75,7 +75,7 @@ export async function openCareer(host:HTMLElement){
   }
   if(s.phase==='academy'){
    const progress=academyProgress(s);
-   shell('훈련 준비',`<div class="academy-preparation"><p class="career-kicker">몬자 · 드라이버 아카데미</p><h2>하나씩 익히는<br>주행의 기본.</h2><div class="academy-test-list">${ACADEMY_TESTS.map((test,i)=>`<article class="${i===progress?'is-next':''}"><span class="academy-test-number">0${i+1}</span><div><h3>${i===3&&progress<3?'마지막 시험':test.title}</h3><p>${i>progress?'이전 시험 통과 후 시작':i<progress?'통과':test.goal}</p></div><button data-academy-test="${i}" ${i>progress?'disabled data-unavailable="true"':''}>${i>progress?'잠김':i<progress?'다시 연습':'시작'} <span>→</span></button></article>`).join('')}</div></div>`);
+   shell('훈련 준비',`<div class="academy-preparation"><p class="career-kicker">아카데미 트랙 · 드라이버 아카데미</p><h2>하나씩 익히는<br>주행의 기본.</h2><div class="academy-test-list">${ACADEMY_TESTS.map((test,i)=>`<article class="${i===progress?'is-next':''}"><span class="academy-test-number">0${i+1}</span><div><h3>${i===3&&progress<3?'마지막 시험':test.title}</h3><p>${i>progress?'이전 시험 통과 후 시작':i<progress?'통과':test.goal}</p></div><button data-academy-test="${i}" ${i>progress?'disabled data-unavailable="true"':''}>${i>progress?'잠김':i<progress?'다시 연습':'시작'} <span>→</span></button></article>`).join('')}</div></div>`);
    root.querySelectorAll<HTMLButtonElement>('[data-academy-test]').forEach(b=>b.addEventListener('click',()=>void requestTraining(Number(b.dataset.academyTest))));return;
   }
   if(s.phase==='assessment'){
@@ -92,7 +92,7 @@ export async function openCareer(host:HTMLElement){
   if(!start||!save||save.saveId!==id||account.session?.user.id!==store.owner)return;
   busy=true;disabled(true);const startSave=structuredClone(save);document.documentElement.dataset.ersLocked=String(lesson<3);
   try{
-   shell('시험을 준비합니다','<p>몬자와 차량을 불러오는 중…</p>');await new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));
+   shell('시험을 준비합니다','<p>아카데미 트랙과 차량을 불러오는 중…</p>');await new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));
    const {Game}=await import('../game/Game');if(account.session?.user.id!==store.owner||save?.saveId!==startSave.saveId){busy=false;return;}root.classList.add('career-driving');root.innerHTML='<div class="career-viewport"></div><div id="hud" class="career-game-hud"></div>';
    let updateUI:(state:TutorialStatus)=>void=()=>{};
    game=new Game(root.querySelector('.career-viewport')!,root.querySelector('.career-game-hud')!,{circuit:'monza',totalLaps:3,opponentCount:0,transmission:'auto',career:{hudMode:'training',sample:()=>{},exit:()=>{academyHUD?.dispose();dashboard();},reset:()=>{},tutorial:{lesson,update:state=>updateUI(state)}}});

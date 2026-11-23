@@ -19,20 +19,25 @@ globalThis.window={innerWidth:1280,innerHeight:720};
 globalThis.document={querySelector:()=>null,documentElement:{dataset:{}},createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})})};
 
 const {Track}=await import(moduleURL('Track')),{LinePlanner}=await import(moduleURL('LinePlanner')),{Vehicle}=await import(moduleURL('Vehicle')),{AcademyDrive}=await import(moduleURL('AcademyDrive')),{HANDLING,steeringLock}=await import(moduleURL('Dynamics'));
-const scene=new THREE.Scene(),track=new Track(scene),planner=new LinePlanner(track),car=new Vehicle(track,scene);
+const {ACADEMY_CIRCUIT}=await import(moduleURL('AcademyCircuit'));
+const scene=new THREE.Scene(),track=new Track(scene,ACADEMY_CIRCUIT),planner=new LinePlanner(track),car=new Vehicle(track,scene);
 let control={throttle:0,brake:0,steer:0,boost:false};const input={analog:()=>control,consume:()=>false,down:(...keys)=>control.boost&&keys.includes('ShiftLeft')};
 const steer=()=>{const look=Math.max(9,Math.min(26,7+car.speed*.3)),to=(car.ersEnabled?track.point(car.progress+look/track.length).addScaledVector(track.normal(car.progress+look/track.length),-1.8):planner.point(car.progress+look/track.length)).sub(car.position),desired=Math.atan2(to.x,to.z),error=Math.atan2(Math.sin(desired-car.heading),Math.cos(desired-car.heading)),angle=Math.atan2(2*HANDLING.wheelbase*Math.sin(error),Math.max(5,to.length()));return Math.max(-1,Math.min(1,(angle-car.yawRate*.018)/steeringLock(car.speed,car.gripScale)));};
 for(let lesson=0;lesson<4;lesson++){
- const trial=new AcademyDrive(track,car,planner,lesson,scene);let gates=0,max=0;
+ const trial=new AcademyDrive(track,car,planner,lesson,scene);let gates=0,max=0;const actions=[];
  for(let tick=0;tick<120*50&&!['success','failed'].includes(trial.phase);tick++){
   const status=trial.status;control={throttle:0,brake:0,steer:0,boost:false};
   if(status.phase==='waiting'){
    const pose=car.position.clone(),energy=car.boost;for(let i=0;i<5;i++)trial.step(1/120,input);assert.equal(car.position.distanceTo(pose),0);assert.equal(car.boost,energy);gates++;
-   control=status.key.startsWith('브레이크 놓기')?{throttle:0,brake:0,steer:.3,boost:false}:lesson===1?{throttle:0,brake:1,steer:0,boost:false}:{throttle:1,brake:0,steer:steer(),boost:lesson===3};
-  }else if(status.phase==='driving')control={throttle:lesson===1?car.speed<19?.25:0:1,brake:lesson===1&&car.speed>trial.target*1.1?1:0,steer:steer(),boost:lesson===3};
+   actions.push(status.action);
+   control=status.action==='steer'?{throttle:0,brake:0,steer:steer()||.3,boost:false}:status.action==='brake'?{throttle:0,brake:1,steer:0,boost:false}:{throttle:1,brake:0,steer:steer(),boost:lesson===3};
+  }else if(status.phase==='driving'){
+   const corner=lesson===1||lesson===2;
+   control={throttle:corner&&!trial.exitGate?(car.speed<24?.35:0):1,brake:corner&&!trial.turnGate&&car.speed>trial.target*1.1?1:0,steer:steer(),boost:lesson===3};
+  }
   trial.step(1/120,input);max=Math.max(max,car.kmh);
  }
- console.log('Trial physics',lesson,{phase:trial.phase,cue:trial.status.cue,max,gates,metres:car.distance*track.length,apex:trial.apex,exit:trial.exit,speed:car.kmh,gap:trial.status.gap});assert.equal(trial.phase,'success');assert.ok(gates>=1);
+ console.log('Trial physics',lesson,{phase:trial.phase,cue:trial.status.cue,max,gates,actions,metres:car.distance*track.length,apex:trial.apex,exit:trial.exit,speed:car.kmh,gap:trial.status.gap});assert.equal(trial.phase,'success');assert.ok(gates>=1);if(lesson===2){assert.deepEqual(actions,['brake','steer','throttle']);assert.ok(trial.status.checkpoints.every(c=>c.complete));}
  const update=car.update,pose=car.position.clone();car.update=()=>{throw Error('Manual input after success');};for(let i=0;i<30;i++)trial.step(1/120,input);assert.ok(car.position.distanceTo(pose)>0);car.update=update;trial.opponent?.group.removeFromParent();
 }
 car.ersEnabled=false;car.resetAt(.02);car.boost=100;car.speed=40;car.drive(1/120,{throttle:1,brake:0,steer:0,boost:true});assert.equal(car.boosting,false);assert.equal(car.boost,100);
