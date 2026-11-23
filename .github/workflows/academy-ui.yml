@@ -41,7 +41,7 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           import fs from 'node:fs';
-          for(const name of ['academy-intro-1280','academy-track-1280','assessment-1280','assessment-result-1280','academy-exit-steer']){
+          for(const name of ['academy-intro-1280','academy-track-1280','assessment-1280','assessment-track-1280','assessment-result-1280','academy-handling-1280']){
             const path='/tmp/apex-career-checks/'+name+'.png';
             if(fs.existsSync(path))console.log('UI_SCREENSHOT '+name+' '+fs.readFileSync(path).toString('base64'));
           }

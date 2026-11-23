@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {academyGeometry} from './AcademyCircuit';
+import {academyGeometry,academyStart} from './AcademyCircuit';
 import {VehiclePose} from './VehiclePose';
 import {Vehicle,resolveCollision} from './Vehicle';
 import type {Track} from './Track';import type {LinePlanner} from './LinePlanner';import type {Input} from './Input';
@@ -24,9 +24,9 @@ export class AcademyDrive {
  get done(){return this.phase==='success';}
  reset(){
   this.phase='waiting';this.gate=new ActionGate();this.judge=undefined;
-  const start=this.lesson===2?this.cueAt-30:this.apex-(this.lesson===1?240:700);
-  this.place(this.car,start,this.lesson===0?0:this.lesson===3?42:this.lesson===2?28:36);this.car.ersEnabled=this.lesson===3;this.car.boost=100;
-  if(this.opponent){this.place(this.opponent,start+12,42);this.opponent.ersEnabled=false;this.opponentPose.capture(this.opponent);}
+  const start=academyStart(this.lesson,{apex:this.apex,brake:this.cueAt});
+  this.place(this.car,start.metres,start.speed);this.car.ersEnabled=this.lesson===3;this.car.boost=100;
+  if(this.opponent){this.place(this.opponent,start.metres+12,start.speed);this.opponent.ersEnabled=false;this.opponentPose.capture(this.opponent);}
  }
  private place(car:Vehicle,metres:number,speed:number){car.resetAt(metres/this.track.length);car.position.copy(this.lesson===3?this.track.point(car.progress).addScaledVector(this.track.normal(car.progress),car===this.car?-1.8:1.8):this.planner.point(car.progress));const t=this.lesson===3?this.track.tangent(car.progress):this.planner.point(car.progress+2/this.track.length).sub(this.planner.point(car.progress-2/this.track.length));car.heading=Math.atan2(t.x,t.z);car.speed=speed;car.setTransmissionMode('auto');car.sync();}
  private get action():AcademyAction {

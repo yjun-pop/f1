@@ -21,6 +21,10 @@ export function academyGeometry(track:Track,planner:LinePlanner,sectionNumber=1)
  const group=planner.apices.filter(a=>a.progress*track.length>=apex&&a.progress*track.length<apex+180);
  return {apex,brake:apex-120,exit:Math.max(apex+90,...group.map(a=>a.progress*track.length+55)),target:Math.max(14,Math.min(26,planner.speed(apex/track.length)*.9))};
 }
+/** Shared reset pose for the real drill and its demonstration. */
+export function academyStart(lesson:number,g:{apex:number;brake:number}){
+ return {metres:lesson===2?g.brake-30:g.apex-(lesson===1?240:700),speed:lesson===0?0:lesson===3?42:lesson===2?28:36};
+}
 export function createAcademyFacilities(track:Track){
  const group=new THREE.Group();group.name='academy-facilities';
  const concrete=new THREE.MeshStandardMaterial({color:0xabb9bf,roughness:.86}),glass=new THREE.MeshStandardMaterial({color:0x254d61,roughness:.35,metalness:.35});
