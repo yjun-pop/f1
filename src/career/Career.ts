@@ -29,7 +29,7 @@ export function readCareer(value:unknown):CareerSave|null {
  if(s.debrief?.kind==='traffic'&&(!s.academyRace||s.phase!=='offers'))return null;
  if(s.assessment&&!validResult(s.assessment)||s.phase!=='academy'&&!s.trained||['offers','season'].includes(s.phase)&&!s.assessment||s.phase==='season'&&!TEAMS.some(t=>t.id===s.team))return null;
  if(!s.history.every(h=>h&&[h.year,h.round,h.position,h.points,h.reward].every(Number.isSafeInteger)&&h.year>0&&h.round>=0&&h.round<SEASON.length&&h.position>0&&h.points>=0&&h.reward>=0&&(h.goalBonus===undefined||Number.isSafeInteger(h.goalBonus)&&h.goalBonus>=0)&&validResult(h.result)))return null;
- if(!validCalendar(s)||!validSeasonPartner(s)||!validPreseason(s.preseason,s.year))return null;
+ if(!validCalendar(s)||!validSeasonPartner(s)||!validPreseason(s.preseason,s.year)||s.preseason!==undefined&&s.phase!=='season')return null;
  if(s.calendar&&s.phase==='season'){const current=s.history.filter(h=>h.year===s.year);if(current.length!==s.round||new Set(current.map(h=>h.round)).size!==current.length||current.some(h=>h.round>=s.round)||current.reduce((n,h)=>n+h.points,0)!==s.points)return null;}
  if(!validChampionship(s.championship,s.history)||s.championship?.some(r=>r.year>s.year||r.year===s.year&&r.round>=s.round))return null;
  return structuredClone(s);
