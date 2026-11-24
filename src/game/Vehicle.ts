@@ -4,6 +4,7 @@ import {AeroState} from './Aerodynamics';
 import {Powertrain,type TransmissionMode} from './Powertrain';
 import {Track} from './Track';
 import {Controls,integrateBody} from './Dynamics';
+import {CAR_LIVERIES,carIdentity,type CarIdentity} from './CarLivery';
 import {createCar,CarVisual} from './CarModel';
 import {TIRE_RADIUS} from './TireGeometry';
 import type {GraphicsTier} from './Graphics';
@@ -17,7 +18,7 @@ export class Vehicle {
   get gripScale(){return Math.min(1.5,this.baseGrip*(this.raceGripAssist??1));}
   readonly powerScale:number;
   readonly position=new THREE.Vector3();readonly group:THREE.Group;
-  private model:CarVisual;
+  private model:CarVisual;private color:number;private appearanceDisposed=false;
   private farModel?:THREE.Group;private nearModel=true;
   speed=0;lateralSpeed=0;yawRate=0;heading=0;steer=0;steerAngle=0;progress=0;lap=1;offRoad=false;
   acceleration=0;lateralAcceleration=0;gripUsage=0;
@@ -25,11 +26,13 @@ export class Vehicle {
   recordImpact(strength:number){if(strength>.5){this.impactSerial++;this.impactStrength=strength;}}
   ersEnabled=true;distance=0;throttle=0;brake=0;boost=100;boosting=false;
   private lastProgress=0;private reverseHold=0;
-  constructor(private track:Track,scene:THREE.Scene,private color=0x8c969f,performance={grip:1,power:1}){
+  constructor(private track:Track,scene:THREE.Scene,colorOrIdentity:number|CarIdentity=0x8c969f,performance={grip:1,power:1}){
     this.baseGrip=THREE.MathUtils.clamp(performance.grip,1,1.5);
     this.powerScale=THREE.MathUtils.clamp(performance.power,1,1.5);
-    this.model=createCar(color);this.group=this.model.group;scene.add(this.group);this.reset();
+    const identity=typeof colorOrIdentity==='number'?undefined:carIdentity(colorOrIdentity.team,colorOrIdentity.number);this.color=identity?CAR_LIVERIES[identity.team].primary:typeof colorOrIdentity==='number'?colorOrIdentity:0x8c969f;
+    this.model=createCar(this.color,identity);this.group=this.model.group;scene.add(this.group);this.reset();
   }
+  disposeAppearance(){if(this.appearanceDisposed)return;this.appearanceDisposed=true;this.model.disposeAppearance?.();}
   reset(){this.resetAt(0,0);this.boost=100;}
   resetAt(progress:number,lane=0){
     this.impactSerial=0;this.impactStrength=0;this.reverseHold=0;

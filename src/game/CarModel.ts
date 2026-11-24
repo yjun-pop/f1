@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {CAR_LIVERIES,carIdentity,type CarIdentity} from './CarLivery';
 import {surfaceMaps} from './SurfaceTextures';
 import {createTireGeometry,createTireLetteringGeometry} from './TireGeometry';
 import {createHaloGeometry,createHaloSupport} from './HaloGeometry';
-export interface CarVisual {rearFlap:THREE.Group;group:THREE.Group;frontWheels:THREE.Group[];tires:THREE.Mesh[];chassis:THREE.Group;contactShadow:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>}
+export interface CarVisual {disposeAppearance?:()=>void;rearFlap:THREE.Group;group:THREE.Group;frontWheels:THREE.Group[];tires:THREE.Mesh[];chassis:THREE.Group;contactShadow:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>}
 let sidewallMaterial:THREE.MeshStandardMaterial|undefined;
 let contactMap:THREE.DataTexture|undefined;
 function contactShadowMap(){
@@ -19,14 +20,36 @@ function tireLettering(){
   const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;map.anisotropy=4;
   return sidewallMaterial=new THREE.MeshStandardMaterial({map,alphaTest:.35,side:THREE.DoubleSide,roughness:1,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1});
 }
-export function createCar(color:number):CarVisual {
+function liveryMaps(identity:CarIdentity){
+ const scheme=CAR_LIVERIES[identity.team],hex=(n:number)=>'#'+n.toString(16).padStart(6,'0');
+ const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=512;
+ const ctx=canvas.getContext('2d')!;ctx.fillStyle=hex(scheme.primary);ctx.fillRect(0,0,1024,512);
+ ctx.fillStyle=hex(scheme.secondary);ctx.fillRect(0,0,145,512);ctx.fillRect(405,0,230,512);ctx.fillRect(880,0,144,512);
+ const polygon=(points:number[][],color:number)=>{ctx.fillStyle=hex(color);ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();};
+ if(scheme.pattern==='bands'){
+  polygon([[0,295],[1024,90],[1024,200],[0,405]],scheme.secondary);polygon([[0,410],[1024,205],[1024,228],[0,433]],scheme.accent);
+ }else if(scheme.pattern==='chevron'){
+  polygon([[0,140],[256,285],[512,140],[768,285],[1024,140],[1024,240],[768,385],[512,240],[256,385],[0,240]],scheme.secondary);
+  polygon([[0,250],[256,395],[512,250],[768,395],[1024,250],[1024,270],[768,415],[512,270],[256,415],[0,270]],scheme.accent);
+ }else{
+  ctx.fillStyle=hex(scheme.accent);for(const x of scheme.pattern==='twin'?[228,270,740,782]:[244,756])ctx.fillRect(x,0,scheme.pattern==='twin'?14:23,512);
+ }
+ const labels=document.createElement('canvas');labels.width=1024;labels.height=256;const text=labels.getContext('2d')!;
+ text.fillStyle='#f4f6f4';text.fillRect(0,0,256,256);text.fillStyle=hex(scheme.secondary);text.fillRect(256,0,768,256);text.fillStyle='#101a23';text.textAlign='center';text.textBaseline='middle';text.font='900 184px Arial, sans-serif';text.fillText(String(identity.number),128,139,238);
+ text.fillStyle='#f4f6f4';text.font='900 76px Arial, sans-serif';text.fillText(scheme.name,640,132,720);
+ const texture=(source:HTMLCanvasElement,name:string)=>{const map=new THREE.CanvasTexture(source);map.name=name;map.userData.carAppearance=true;map.colorSpace=THREE.SRGBColorSpace;map.anisotropy=4;return map;};
+ return {paint:texture(canvas,'car-livery-paint'),labels:texture(labels,'car-livery-labels')};
+}
+export function createCar(color:number,identity?:CarIdentity):CarVisual {
   const group=new THREE.Group(),chassis=new THREE.Group();group.add(chassis);
+  const identityValue=identity&&carIdentity(identity.team,identity.number),scheme=identityValue?CAR_LIVERIES[identityValue.team]:undefined,maps=identityValue?liveryMaps(identityValue):undefined;if(identityValue)group.userData.livery={...identityValue};
   const carbon=new THREE.MeshStandardMaterial({...surfaceMaps('carbon'),color:0xd0d5dd,roughness:.72,metalness:.08,bumpScale:.002});
-  const paint=new THREE.MeshPhysicalMaterial({color,roughness:.29,metalness:.18,clearcoat:.95,clearcoatRoughness:.18,envMapIntensity:1.1});
+  const paint=new THREE.MeshPhysicalMaterial({color:scheme?0xffffff:color,map:maps?.paint,roughness:.29,metalness:.18,clearcoat:.95,clearcoatRoughness:.18,envMapIntensity:1.1});
   const silver=new THREE.MeshStandardMaterial({color:0xc6cdd1,roughness:.27,metalness:.85});
   const rubber=new THREE.MeshStandardMaterial({...surfaceMaps('rubber'),color:0xa7aaad,roughness:.94,bumpScale:.001});
-  const accent=new THREE.MeshStandardMaterial({color:0xb48b40,roughness:.58,metalness:.1});
+  const accent=new THREE.MeshStandardMaterial({color:scheme?.accent??0xb48b40,roughness:.58,metalness:.1});
   const inlet=new THREE.MeshStandardMaterial({color:0x080d12,roughness:.94});
+  const trim=scheme?new THREE.MeshStandardMaterial({color:scheme.secondary,roughness:.35,metalness:.15}):silver;
   const addBox=(parent:THREE.Object3D,w:number,h:number,d:number,x:number,y:number,z:number,mat:THREE.Material)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);parent.add(m);return m;};
   const tapered=(wRear:number,wFront:number,length:number,height:number,z:number,mat:THREE.Material)=>{
     const positions:number[]=[],uvs:number[]=[],indices:number[]=[],rings=10,sides=20;
@@ -47,10 +70,10 @@ export function createCar(color:number):CarVisual {
   };
   addBox(chassis,1.7,.1,4.8,0,.18,-.1,carbon);
   const shell=tapered(1.25,.56,3.25,.43,-.2,paint);shell.name='driver';
-  const nose=tapered(.62,.22,2.4,.16,1.65,silver);nose.position.y=.56;
-  const stripe=addBox(chassis,.13,.015,1.65,0,.66,1.75,paint);stripe.rotation.x=-.025;
+  const nose=tapered(.62,.22,2.4,.16,1.65,scheme?paint:silver);nose.position.y=.56;
+  const stripe=addBox(chassis,.13,.015,1.65,0,.66,1.75,scheme?accent:paint);stripe.rotation.x=-.025;
   addBox(chassis,2.15,.055,.62,0,.28,2.8,carbon);
-  for(let j=0;j<3;j++)addBox(chassis,2.05-j*.10,.035,.15,0,.35+j*.065,2.62+j*.15,silver);
+  for(let j=0;j<3;j++)addBox(chassis,2.05-j*.10,.035,.15,0,.35+j*.065,2.62+j*.15,trim);
   for(const side of [-1,1]){
     const pod=tapered(.63,.38,2.1,.33,-.8,paint);pod.position.x=side*.66;pod.name='driver';
     const intake=addBox(chassis,.44,.16,.045,side*.64,.59,.26,inlet);intake.name='driver';
@@ -67,6 +90,13 @@ export function createCar(color:number):CarVisual {
   }
   for(const side of [-1,1])addBox(chassis,.32,.16,.06,side*.66,.65,.28,carbon);
   const rearFlap=new THREE.Group();rearFlap.name='drs-flap';rearFlap.position.set(0,1.3,-2.7);chassis.add(rearFlap);addBox(rearFlap,2.15,.1,.7,0,0,.3,carbon);addBox(chassis,2.1,.07,.4,0,1.15,-2.35,silver);
+  if(maps){
+    const decal=new THREE.MeshStandardMaterial({map:maps.labels,roughness:.55,metalness:0,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1});
+    const mark=(parent:THREE.Object3D,w:number,h:number,rect:readonly[number,number,number,number])=>{const geometry=new THREE.PlaneGeometry(w,h),uv=geometry.getAttribute('uv');for(let i=0;i<uv.count;i++)uv.setXY(i,rect[0]+uv.getX(i)*rect[2],rect[1]+uv.getY(i)*rect[3]);const mesh=new THREE.Mesh(geometry,decal);parent.add(mesh);return mesh;};
+    const number=mark(chassis,.34,.48,[0,0,.25,1]);number.position.set(0,.694,1.45);number.rotation.set(-Math.PI/2,0,Math.PI);
+    for(const side of[-1,1]){const plate=mark(chassis,.54,.31,[0,0,.25,1]);plate.position.set(side*1.025,.52,-.83);plate.rotation.y=side*Math.PI/2;plate.name='driver';}
+    const wordmark=mark(rearFlap,1.96,.30,[.25,0,.75,1]);wordmark.position.set(0,.056,.30);wordmark.rotation.set(-Math.PI/2,0,Math.PI);
+  }
   const seat=new THREE.Mesh(new THREE.SphereGeometry(.49,24,16),carbon);seat.scale.set(.9,.45,1.6);seat.position.set(0,.77,-.45);seat.name='driver';chassis.add(seat);
   const helmet=new THREE.Mesh(new THREE.SphereGeometry(.25,24,16),accent);helmet.position.set(0,1.02,-.45);helmet.name='driver';chassis.add(helmet);
   const top=new THREE.Mesh(new THREE.SphereGeometry(.6,24,16),paint);top.scale.set(.6,.7,1.5);top.position.set(0,.8,-1.2);top.name='driver';chassis.add(top);
@@ -125,5 +155,5 @@ export function createCar(color:number):CarVisual {
   // transforms skip recomposition; steering, suspension and axle spin stay live.
   const moving=new Set<THREE.Object3D>([group,chassis,rearFlap,...frontWheels,...tires]);
   group.traverse(child=>{if(!moving.has(child)){child.updateMatrix();child.matrixAutoUpdate=false;}});
-  return {group,chassis,frontWheels,tires,contactShadow,rearFlap};
+  return {group,chassis,frontWheels,tires,contactShadow,rearFlap,disposeAppearance:maps?()=>{maps.paint.dispose();maps.labels.dispose();}:undefined};
 }

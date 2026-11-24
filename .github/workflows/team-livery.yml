@@ -1,0 +1,60 @@
+name: Validate team liveries and clean race HUD
+on:
+  push:
+    branches: ['codex/team-livery-*']
+permissions:
+  contents: read
+concurrency:
+  group: team-livery-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build -- --base=/f1/
+      - run: node tests/car-livery.mjs && node tests/race-session.mjs && node tests/visual-quality.mjs && node tests/career.mjs && node tests/academy-drive.mjs
+      - name: Browser checks
+        shell: bash
+        run: |
+          set -eu
+          npm run dev -- --port 5180 >/tmp/apex-livery-vite.log 2>&1 &
+          vite_pid=$!
+          chrome_bin="$(command -v google-chrome || command -v chromium)"
+          "$chrome_bin" --headless --no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --remote-debugging-port=9238 --user-data-dir=/tmp/apex-team-browser about:blank >/tmp/apex-livery-chrome.log 2>&1 &
+          chrome_pid=$!
+          trap 'kill "$chrome_pid" "$vite_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:5180/ >/dev/null 2>&1 && curl -fsS http://127.0.0.1:9238/json/list >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          node tests/livery-browser.mjs
+          CAREER_UI_ONLY=1 node tests/career-browser.mjs
+          UI_CDP_URL=http://127.0.0.1:9238 node tests/ui-settings-browser.mjs
+      - name: Review previews
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          for(const name of ['vector-cockpit-1280','pause-settings-1280','team-livery-gallery']){
+            const path='/tmp/apex-livery-checks/'+name+'.png';
+            if(fs.existsSync(path))console.log('UI_SCREENSHOT '+name+' '+fs.readFileSync(path).toString('base64'));
+          }
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: team-livery-and-HUD
+          path: |
+            /tmp/apex-livery-checks/
+            /tmp/apex-career-checks/
+            /tmp/apex-ui-checks/
+            /tmp/apex-livery-vite.log
+            /tmp/apex-livery-chrome.log
+          if-no-files-found: ignore

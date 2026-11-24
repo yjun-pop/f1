@@ -1,0 +1,17 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="viewport"></div><div id="hud"></div><script type="module">
+import '../src/style.css';import * as THREE from 'three';import {Game} from '../src/game/Game';import {createCar} from '../src/game/CarModel';import {CAR_LIVERIES,carIdentity} from '../src/game/CarLivery';
+localStorage.setItem('apex-graphics-quality','low');localStorage.setItem('apex-transmission-mode','auto');window.requestAnimationFrame=()=>0;
+const g=new Game(document.querySelector('#viewport'),document.querySelector('#hud'),{appearance:carIdentity('vector',27),opponentCount:0,totalLaps:1,flyingStart:false,autoStart:true,career:{hudMode:'assessment',sample:()=>{},exit:()=>{},reset:()=>{}}});
+const pressed=new Set();g.input.consume=key=>pressed.delete(key);g.input.down=()=>false;g.input.analog=()=>undefined;
+const frame=()=>g.frame(g.previous+1000/60);frame();window.frameLivery=frame;window.pressLivery=key=>{pressed.add(key);frame();};
+window.identityState=()=>({identity:g.vehicle.group.userData.livery,grip:g.vehicle.gripScale,power:g.vehicle.powerScale,paused:g.paused,transmission:g.vehicle.transmission.mode,muted:g.audio.isMuted,footer:!!document.querySelector('#hud footer'),controls:!!document.querySelector('#hud-settings')});
+window.restartLivery=()=>{const identity=structuredClone(g.vehicle.group.userData.livery);g.restart();frame();return {before:identity,after:g.vehicle.group.userData.livery};};
+window.disposeLivery=()=>{let disposed=0;const textures=new Set();g.vehicle.group.traverse(o=>{if(o.material?.map&&o.material.map instanceof THREE.CanvasTexture&&o.material.map.userData.carAppearance)textures.add(o.material.map);});for(const t of textures)t.addEventListener('dispose',()=>disposed++);g.endCareerSession();g.endCareerSession();return {textures:textures.size,disposed};};
+window.showLiveryGallery=()=>{
+ document.querySelector('#hud').hidden=true;const scene=new THREE.Scene();scene.background=new THREE.Color(0x131d2a);scene.add(new THREE.HemisphereLight(0xecf3ff,0x252f38,2.5));const key=new THREE.DirectionalLight(0xffecd8,3.5);key.position.set(4,9,5);scene.add(key);
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,80),new THREE.MeshStandardMaterial({color:0x202e3e,roughness:.95}));floor.rotation.x=-Math.PI/2;scene.add(floor);
+ const cars=['atlas','vector','helix'].map((team,i)=>{const car=createCar(0x8c969f,carIdentity(team,27));car.group.position.x=(i-1)*3.9;scene.add(car.group);return car;});
+ const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,.1,100);camera.position.set(7,9,12);camera.lookAt(0,.35,0);g.renderer.setSize(innerWidth,innerHeight);g.renderer.render(scene,camera);
+ return cars.map(c=>({identity:c.group.userData.livery,meshes:c.group.getObjectsByProperty('type','Mesh').length}));
+};
+</script></body></html>

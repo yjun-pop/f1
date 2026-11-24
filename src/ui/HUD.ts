@@ -18,18 +18,17 @@ export class HUD {
   private raceActive=false;private wasPaused=false;private session:RaceSessionPanel;private sessionState='';
   private textNodes=new Map<string,Element>();
   private mapPoint:(p:{x:number;z:number})=>{x:number;y:number};
-  constructor(root:HTMLElement,track:Track,actions:{totalLaps?:number;start:(id:CircuitId)=>void,restart:()=>void,camera:()=>void;resume:()=>void;volume:(value:number)=>void;audioLevel:number;motionLevel:number;motion:(value:number)=>void;graphicsMode:GraphicsMode;graphicsTier:GraphicsTier;graphics:(mode:GraphicsMode)=>void;transmissionMode?:TransmissionMode;transmission?:(mode:TransmissionMode)=>void;menu?:()=>void;wheel?:()=>void}) {
+  constructor(root:HTMLElement,track:Track,actions:{totalLaps?:number;start:(id:CircuitId)=>void,restart:()=>void,resume:()=>void;graphicsMode:GraphicsMode;graphicsTier:GraphicsTier;transmissionMode?:TransmissionMode;transmission?:(mode:TransmissionMode)=>void;menu?:()=>void;}) {
     this.root=root;const context=root.dataset.mode??'race',contextName=({training:'아카데미 · 기본 훈련',assessment:'아카데미 · 1랩 평가',practice:'트랙 익히기 · 단독 연습'} as Record<string,string>)[context];
     root.innerHTML=`<header><div class="brand"><i>Λ</i> APEX<span>FORMULA</span><small>OPEN WHEEL RACING / 01</small></div><div class="session"><b>${track.name} · ${track.country}</b><small>${contextName??`RACE · ${actions.totalLaps??3} LAPS · DRY · ${track.circuit?.night?'NIGHT':'DAYLIGHT'}`}</small></div></header>
     <div class="rearview-frame" role="img" aria-label="차량 뒤쪽 실시간 백미러"><div id="rearview-viewport"></div><span>REAR VIEW</span></div>
     <aside class="timing"><div class="eyebrow">레이스 순위</div><div class="position"><strong id="position">${DEFAULT_FIELD_SIZE}</strong><span>/ <b id="field-size">${DEFAULT_FIELD_SIZE}</b><small>순위</small></span></div><div class="intervals" aria-label="앞뒤 차량 시간 차"><div class="interval-row"><span>앞차 <b id="gap-ahead-name">—</b></span><strong id="gap-ahead">—</strong></div><div class="interval-row"><span>뒤차 <b id="gap-behind-name">—</b></span><strong id="gap-behind">—</strong></div></div><div class="timingrow"><span>LAP</span><b id="lap">1 / ${actions.totalLaps??3}</b></div><div class="timingrow"><span>현재 랩</span><b id="current"></b></div><div class="timingrow"><span>이전 랩</span><b id="last"></b></div><div class="timingrow best"><span title="개인 최고 랩">최고 랩</span><b id="best"></b></div></aside>
     <div class="mapbox"><canvas id="map" width="240" height="190"></canvas><span>${track.name} · ${track.country} · ${(track.length/1000).toFixed(2)} KM</span></div>
-<div id="warning"></div><div id="proximity-ring" class="proximity-ring" hidden role="group" aria-label="주변 차량 접근 방향"></div><div id="wheel-notice" class="wheel-input-notice" role="status" hidden></div><footer><span id="gearbox-label">자동</span><span id="audio-state"></span><button id="camera">시점 변경 · C</button><button id="hud-settings">설정 / 도움말</button><button id="restart">다시 시작</button></footer>
+<div id="warning"></div><div id="proximity-ring" class="proximity-ring" hidden role="group" aria-label="주변 차량 접근 방향"></div><div id="wheel-notice" class="wheel-input-notice" role="status" hidden></div>
     <div class="overlay race-session-overlay" id="overlay" hidden>${raceSessionMarkup()}</div>
     <div class="pause-shade" id="pause-menu" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden><section class="pause-panel"><div class="eyebrow">APEX FORMULA / SESSION CONTROL</div><h2 id="pause-title">일시정지</h2><p>레이스와 랩 타이머가 멈췄습니다.</p><button id="resume" class="primary">레이스 계속 <span>ESC →</span></button><button type="button" id="pause-settings">설정 <span>→</span></button><p id="controller-state" role="status"></p><button id="change-circuit" class="secondary">다른 서킷 선택 <span>→</span></button><p class="change-circuit-hint">현재 레이스를 종료하고 서킷 선택 화면으로 돌아갑니다.</p><button id="pause-restart" class="secondary">레이스 다시 시작</button></section></div>`;
     const restartRace=()=>{(document.activeElement as HTMLElement)?.blur?.();const restart=()=>{actions.restart();actions.start(track.circuit.id);};if(this.raceActive)confirmRaceAction('레이스를 다시 시작할까요?',restart);else restart();};
-    root.querySelector('#restart')!.addEventListener('click',restartRace);root.querySelector('#camera')!.addEventListener('click',actions.camera);
-    root.querySelector('#resume')!.addEventListener('click',actions.resume);root.querySelector('#pause-restart')!.addEventListener('click',restartRace);root.querySelector('#pause-settings')!.addEventListener('click',()=>openSettings());root.querySelector('#hud-settings')!.addEventListener('click',()=>{actions.wheel?.();});applyHUDScale();
+    root.querySelector('#resume')!.addEventListener('click',actions.resume);root.querySelector('#pause-restart')!.addEventListener('click',restartRace);root.querySelector('#pause-settings')!.addEventListener('click',()=>openSettings());applyHUDScale();
     root.querySelector('#pause-menu')!.addEventListener('keydown',event=>{const e=event as KeyboardEvent;if(e.key!=='Tab')return;const elements=Array.from(root.querySelectorAll<HTMLElement>('#pause-menu button,#pause-menu input,#pause-menu select,#pause-menu summary'));const first=elements[0],last=elements[elements.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}});
     this.session=new RaceSessionPanel(root,{start:()=>actions.start(track.circuit.id),restart:restartRace,menu:()=>actions.menu?.()});
     root.querySelector('#change-circuit')!.addEventListener('click',()=>confirmRaceAction('레이스를 종료하고 메인 화면으로 돌아갈까요?',()=>actions.menu?.()));
@@ -55,12 +54,10 @@ export class HUD {
   setWheelStatus(status:string,attention=false){this.text('controller-state',status);this.text('wheel-notice',status);(this.root.querySelector('#wheel-notice') as HTMLElement).hidden=!attention;}
   setTransmissionMode(mode:TransmissionMode){
     for(const id of ['#start-transmission'])(this.root.querySelector(id) as HTMLSelectElement).value=mode;
-    this.text('gearbox-label',mode==='auto'?'자동':'수동');
   }
   setGraphics(mode:GraphicsMode,tier:GraphicsTier){
     document.documentElement.dataset.graphicsTier=tier;
   }
-  setMuted(muted:boolean){this.root.querySelector('#audio-state')!.innerHTML=`<kbd>M</kbd> ${muted?'소리 켜기':'음소거'}`;}
   private text(id:string,value:string){let node=this.textNodes.get(id);if(!node){node=this.root.querySelector('#'+id)!;this.textNodes.set(id,node);}if(node.textContent!==value)node.textContent=value;}
   updateProximity(v:Vehicle,r:Race,paused:boolean){
     const cues=r.state==='racing'&&!paused&&v.position?proximityCues(v,r.opponents):{cars:[]};
