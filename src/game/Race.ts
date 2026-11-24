@@ -1,5 +1,6 @@
 import {readBest,writeBest,recordOwner} from './RecordStore';
 import * as THREE from 'three';
+import type {OpponentIdentity} from './CarLivery';
 import {Track} from './Track';
 import {Vehicle,resolveCollision} from './Vehicle';
 import {LinePlanner} from './LinePlanner';
@@ -43,7 +44,7 @@ export class Race {
   private lapSamples(player:Vehicle){return [{id:'PLAYER',name:'YOU',distance:player.distance},...this.opponents.map(o=>({id:o.id,name:o.name,distance:o.car.distance}))];}
   get classification(){return this.player?this.laps.standings(this.lapSamples(this.player),this.elapsed):[];}
   private gridPlayer?:Vehicle;
-  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{opponentCount?:number;player?:Vehicle;totalLaps?:number;flyingStart?:boolean}={}){
+  constructor(private track:Track,scene:THREE.Scene,private planner:LinePlanner,options:{teammate?:OpponentIdentity;opponentCount?:number;player?:Vehicle;totalLaps?:number;flyingStart?:boolean}={}){
     this.gridPlayer=options.player;this.flying=!!options.flyingStart;
     this.timing=new RaceTiming(track.length);this.laps=new RaceLaps(track.length,quickRaceLaps(options.totalLaps));this.aerodynamics=new RaceAerodynamics(track,planner);track.details.addDRSBoards(track,this.aerodynamics.zones);
     // Rivals retain fixed steering/grip calibration, but share the player's
@@ -62,7 +63,7 @@ export class Race {
     this.cornerObserver=new CornerPaceObserver(track,planner);
     this.storageKey=`apex-best-${track.name.toLowerCase()}${track.circuit?.training&&!this.flying?'-standing-v1':'-v3'}`;
     const profiles=DRIVER_PROFILES.slice(0,Math.max(0,Math.min(DRIVER_PROFILES.length,Math.floor(options.opponentCount??DEFAULT_FIELD_SIZE-1))));
-    profiles.forEach((profile,i)=>this.opponents.push(new Opponent(profile,i,track,scene,planner,this.aiSpeeds,this.speedPlanner)));this.reset();
+    profiles.forEach((profile,i)=>this.opponents.push(new Opponent(profile,i,track,scene,planner,this.aiSpeeds,this.speedPlanner,options.teammate?.id===`ai:${profile.name.toLowerCase()}`?options.teammate.appearance:undefined)));this.reset();
     this.best=readBest(this.storageKey,this.recordUser);this.bestAtStart=this.best;
   }
   reset(){this.laps.reset();this.bestAtStart=this.best;this.aerodynamics.reset();this.aeroPreparedAt=-Infinity;this.contacts.clear();this.pack.reset();this.cornerObserver.reset();this.startSequence.reset();this.timing.reset();this.player=undefined;this.state='ready';this.countdown=0;this.elapsed=0;this.lapTime=0;this.lapStart=0;this.lastLap=0;this.completed=0;this.position=this.fieldSize;

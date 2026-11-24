@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type {CarIdentity} from './CarLivery';
 import {PaceControl} from './PaceControl';
 import {Vehicle} from './Vehicle';
 import {DriverAgent,type DriverObservation} from './DriverAgent';
@@ -27,11 +28,11 @@ export class Opponent implements Rival {
   passLane?:number;passUntil=0;defendUntil=0;defendCooldown=0;defendLane=0;
   racePace?:number;rank=1;speedCap=94;powerAssist=1;attack=0;lane=0;decision=0;stuck=0;
   control:Controls={throttle:0,brake:0,steer:0};
-  constructor(profile:DriverProfile,index:number,private track:Track,scene:THREE.Scene,planner:LinePlanner,aiSpeeds:Readonly<Float64Array>,private speedPlanner:AISpeedPlanner){
+  constructor(profile:DriverProfile,index:number,private track:Track,scene:THREE.Scene,planner:LinePlanner,aiSpeeds:Readonly<Float64Array>,private speedPlanner:AISpeedPlanner,appearance?:CarIdentity){
     this.name=profile.name;this.id=`ai:${profile.name.toLowerCase()}`;
     this.personality=profile.personality;this.caution=profile.caution;this.launch=profile.launch;this.pace=profile.pace;
     this.aggression=profile.aggression;this.reaction=profile.reaction;this.lineBias=profile.lineBias;this.phase=index*2.17;
-    this.car=new Vehicle(track,scene,profile.color,{grip:1.4,power:1});
+    this.car=new Vehicle(track,scene,appearance??profile.color,{grip:1.4,power:1});
     this.agent=new DriverAgent(this,track,planner,aiSpeeds,speedPlanner);
   }
   reset(slot:{meters:number;lane:number},rank:number){

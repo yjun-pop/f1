@@ -1,3 +1,6 @@
+import {makeSeasonPartner,validSeasonPartner,type SeasonPartner} from './Teammate';
+import {validPreseason,type PreseasonReport} from './Preseason';
+import {inPreseason} from './Calendar';
 import {ACADEMY_ASSESSMENT} from '../game/AcademyLayout';
 import {SEASON,calendarFor,validCalendar,raceReady,dateLabel,type CareerCalendar} from './Calendar';
 export {SEASON} from './Calendar';
@@ -7,7 +10,7 @@ import type {CircuitId} from '../game/Circuits';
 import type {PracticeGuide} from './TrackBriefing';
 export interface DrivingSample {dt:number;elapsed:number;speed:number;throttle:number;brake:number;steer:number;offRoad:boolean;impacts:number;distance:number;finished:boolean;position:number;fieldSize:number;bestLap:number;guide?:PracticeGuide;classification?:readonly RaceStanding[]}
 export interface RunResult {seconds:number;offRoadSeconds:number;contacts:number;bestLap:number;position:number;score:number;course?:'academy-v2';start?:'standing';evaluation?:{version:2;safety:number;technique:number;pace:number;brakingCorners:number;cleanExits:number}}
-export interface CareerSave {version:1;kind:'apex-career';saveId:string;driver:{name:string;country:string;number:number};phase:'academy'|'assessment'|'offers'|'season';trained:boolean;academyStep?:'solo'|'traffic'|'complete';academyRace?:RunResult;academyCompleted?:number;calendar?:CareerCalendar;championship?:SeasonRace[];debrief?:{kind:'training'|'assessment'|'traffic'|'season';result:RunResult;points:number;reward:number};briefed?:CircuitId[];assessment?:RunResult;team?:string;year:number;round:number;money:number;points:number;history:{year:number;round:number;position:number;points:number;reward:number;goalBonus?:number;result:RunResult}[]}
+export interface CareerSave {version:1;kind:'apex-career';saveId:string;driver:{name:string;country:string;number:number};phase:'academy'|'assessment'|'offers'|'season';trained:boolean;seasonPartner?:SeasonPartner;preseason?:PreseasonReport[];academyStep?:'solo'|'traffic'|'complete';academyRace?:RunResult;academyCompleted?:number;calendar?:CareerCalendar;championship?:SeasonRace[];debrief?:{kind:'training'|'assessment'|'traffic'|'season';result:RunResult;points:number;reward:number};briefed?:CircuitId[];assessment?:RunResult;team?:string;year:number;round:number;money:number;points:number;history:{year:number;round:number;position:number;points:number;reward:number;goalBonus?:number;result:RunResult}[]}
 export const TEAMS=[{id:'atlas',name:'ATLAS RACING',style:'육성형',description:'안정적인 완주를 중시합니다. 첫 시즌은 경험을 쌓는 데 집중합니다.',bonus:12000,goalBonus:3000,target:'12경기 완주'}, {id:'vector',name:'VECTOR MOTORSPORT',style:'균형형',description:'기록과 안정성을 함께 평가합니다. 포인트 획득을 목표로 합니다.',bonus:16000,goalBonus:6000,target:'한 경기 이상 상위 4위'}, {id:'helix',name:'HELIX PERFORMANCE',style:'도전형',description:'높은 목표와 성과 보너스를 제안합니다. 포디움에 도전하세요.',bonus:18000,goalBonus:10000,target:'한 경기 이상 포디움'}] as const;
 const careerCircuitIds:readonly string[]=['monza','silverstone','spa','monaco','suzuka','interlagos','singapore','montreal'];
 const stamp=()=>globalThis.crypto.randomUUID();
@@ -26,7 +29,7 @@ export function readCareer(value:unknown):CareerSave|null {
  if(s.debrief?.kind==='traffic'&&(!s.academyRace||s.phase!=='offers'))return null;
  if(s.assessment&&!validResult(s.assessment)||s.phase!=='academy'&&!s.trained||['offers','season'].includes(s.phase)&&!s.assessment||s.phase==='season'&&!TEAMS.some(t=>t.id===s.team))return null;
  if(!s.history.every(h=>h&&[h.year,h.round,h.position,h.points,h.reward].every(Number.isSafeInteger)&&h.year>0&&h.round>=0&&h.round<SEASON.length&&h.position>0&&h.points>=0&&h.reward>=0&&(h.goalBonus===undefined||Number.isSafeInteger(h.goalBonus)&&h.goalBonus>=0)&&validResult(h.result)))return null;
- if(!validCalendar(s))return null;
+ if(!validCalendar(s)||!validSeasonPartner(s)||!validPreseason(s.preseason,s.year)||s.preseason!==undefined&&s.phase!=='season')return null;
  if(s.calendar&&s.phase==='season'){const current=s.history.filter(h=>h.year===s.year);if(current.length!==s.round||new Set(current.map(h=>h.round)).size!==current.length||current.some(h=>h.round>=s.round)||current.reduce((n,h)=>n+h.points,0)!==s.points)return null;}
  if(!validChampionship(s.championship,s.history)||s.championship?.some(r=>r.year>s.year||r.year===s.year&&r.round>=s.round))return null;
  return structuredClone(s);
@@ -48,7 +51,7 @@ export function completeTrafficPractice(s:CareerSave,result:RunResult){
 export const RACE_REWARDS={base:2000,perPoint:200,clean:1000} as const;
 export function signingTerms(s:CareerSave,team:typeof TEAMS[number]){const performance=Math.round((s.assessment?.score??0)/100*8000);return {base:team.bonus,performance,total:team.bonus+performance};}
 export function signingBonus(s:CareerSave,team:typeof TEAMS[number]){return signingTerms(s,team).total;}
-export function signContract(s:CareerSave,id:string){const team=TEAMS.find(t=>t.id===id);if(s.phase!=='offers'||!team)throw Error('현재 계약할 수 없습니다.');return change(s,{team:id,phase:'season',calendar:{month:1,day:15,meetings:[]},money:s.money+signingBonus(s,team)});}
+export function signContract(s:CareerSave,id:string){const team=TEAMS.find(t=>t.id===id);if(s.phase!=='offers'||!team)throw Error('현재 계약할 수 없습니다.');return change(s,{team:id,seasonPartner:makeSeasonPartner(s.year,id,s.driver.number),phase:'season',calendar:{month:1,day:15,meetings:[]},money:s.money+signingBonus(s,team)});}
 export function finishRound(s:CareerSave,result:RunResult,classification?:readonly RaceStanding[]){
  if(s.phase!=='season'||s.round>=SEASON.length)throw Error('진행 중인 경기가 없습니다.');
  if(!raceReady(s))throw Error('경기 날짜로 이동한 뒤 출전하세요.');
@@ -60,7 +63,11 @@ export function finishRound(s:CareerSave,result:RunResult,classification?:readon
  const championship=classification?[...(s.championship??[]),captureSeasonRace(s.year,s.round,classification,result.position)].slice(-120):s.championship;
  return change(s,{...(championship===undefined?{}:{championship}),calendar:{...calendarFor(s),month:SEASON[s.round].month,day:SEASON[s.round].day+1},round:s.round+1,points:s.points+points,money:s.money+reward,history:[...s.history,{year:s.year,round:s.round,position:result.position,points,reward,goalBonus,result}].slice(-120)});
 }
-export function nextSeason(s:CareerSave,teamId=s.team){const team=TEAMS.find(t=>t.id===teamId);if(s.phase!=='season'||s.round!==SEASON.length||calendarFor(s).month!==12||s.debrief||!team)throw Error('12월 결산을 먼저 마치세요.');return change(s,{year:s.year+1,round:0,points:0,team:team.id,calendar:{month:1,day:15,meetings:[]},money:s.money+team.bonus});}
+export function nextSeason(s:CareerSave,teamId=s.team){const team=TEAMS.find(t=>t.id===teamId);if(s.phase!=='season'||s.round!==SEASON.length||calendarFor(s).month!==12||s.debrief||!team)throw Error('12월 결산을 먼저 마치세요.');return change(s,{year:s.year+1,round:0,points:0,team:team.id,seasonPartner:makeSeasonPartner(s.year+1,team.id,s.driver.number),calendar:{month:1,day:15,meetings:[]},money:s.money+team.bonus});}
+export function completePreseason(s:CareerSave,report:PreseasonReport){
+ if(!inPreseason(s)||s.debrief||report.year!==s.year||!validPreseason([report],s.year))throw Error('프리시즌 기록을 확인하세요.');
+ return change(s,{preseason:[...(s.preseason??[]).filter(r=>r.year!==s.year),structuredClone(report)].slice(-12)});
+}
 /** Read-only telemetry: no input injection or vehicle physics changes. */
 export class AcademyRun {
  accelerated=false;braked=false;exited=false;turnSeconds=0;offRoadSeconds=0;contacts=0;seconds=0;retryHint='';private retryUntil=0;private lastImpacts=0;private entryTime=new Map<number,number>();private exitTime=new Map<number,number>();private passedSections=new Set<number>();private previousSection?:number;private previousDistance?:number;
