@@ -21,7 +21,7 @@ dialog.settings-dialog::backdrop,dialog.confirm-dialog::backdrop,dialog.wheel-di
 /* Clear, angular secondary actions; the same warm wash as the title on hover. */
 dialog.settings-dialog button,dialog.confirm-dialog button,dialog.wheel-dialog button,
 .pause-shade .pause-panel button,.overlay .race-session-actions button,
-#hud footer button,#front-menu .menu-wheel-button{
+#front-menu .menu-wheel-button{
   background:var(--race-control);border-color:var(--race-line);border-radius:2px;
   box-shadow:inset 0 1px 0 #ffffff0a;transition:background .18s ease,border-color .18s ease,box-shadow .18s ease;
 }
@@ -30,7 +30,6 @@ dialog.confirm-dialog button:is(:hover,:focus-visible):not(:disabled),
 dialog.wheel-dialog button:is(:hover,:focus-visible):not(:disabled),
 .pause-shade .pause-panel button:is(:hover,:focus-visible):not(:disabled),
 .overlay .race-session-actions button:is(:hover,:focus-visible):not(:disabled),
-#hud footer button:is(:hover,:focus-visible):not(:disabled),
 #front-menu .menu-wheel-button:is(:hover,:focus-visible):not(:disabled){
   background:var(--race-hover);border-color:#ff795f50;box-shadow:inset 2px 0 0 var(--race-accent),inset 0 1px 0 #ffffff12;
 }
@@ -77,10 +76,9 @@ dialog.wheel-dialog input[type=range]{accent-color:var(--race-accent)}
 #hud .timing .eyebrow,#hud .timingrow span{color:#b4c7d6}
 #hud .wheel-input-notice{background:linear-gradient(115deg,#203348e8,#0b172bf0);border-radius:2px;box-shadow:inset 0 1px 0 #ffffff10}
 #hud .rearview-frame{border-radius:4px}
-#hud footer{background:linear-gradient(0deg,#0b172be8,#172b3dc9);border-top:1px solid #dcecff18}
 select option{background:#172739;color:#eef4fa}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){:root{--race-panel:linear-gradient(135deg,#203348fa,#0b172bf7)}}
-@media(prefers-reduced-motion:reduce){dialog.settings-dialog button,dialog.confirm-dialog button,dialog.wheel-dialog button,.pause-shade .pause-panel button,.overlay .race-session-actions button,#hud footer button,#front-menu .menu-wheel-button{transition:none}}
+@media(prefers-reduced-motion:reduce){dialog.settings-dialog button,dialog.confirm-dialog button,dialog.wheel-dialog button,.pause-shade .pause-panel button,.overlay .race-session-actions button,#front-menu .menu-wheel-button{transition:none}}
 dialog.wheel-dialog .wheel-notice{border-left-color:#9de0be}
 .overlay .has-results .race-session-actions{background:#0b172b}
 .pause-shade .pause-panel button:hover{filter:none}
