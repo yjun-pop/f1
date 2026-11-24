@@ -93,9 +93,9 @@ export function createCar(color:number,identity?:CarIdentity):CarVisual {
   if(maps){
     const decal=new THREE.MeshStandardMaterial({map:maps.labels,roughness:.55,metalness:0,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1});
     const mark=(parent:THREE.Object3D,w:number,h:number,rect:readonly[number,number,number,number])=>{const geometry=new THREE.PlaneGeometry(w,h),uv=geometry.getAttribute('uv');for(let i=0;i<uv.count;i++)uv.setXY(i,rect[0]+uv.getX(i)*rect[2],rect[1]+uv.getY(i)*rect[3]);const mesh=new THREE.Mesh(geometry,decal);parent.add(mesh);return mesh;};
-    const number=mark(chassis,.34,.48,[0,0,.25,1]);number.position.set(0,.694,1.45);number.rotation.set(-Math.PI/2,0,Math.PI);
+    const number=mark(chassis,.34,.48,[0,0,.25,1]);number.position.set(0,.694,1.45);number.rotation.x=-Math.PI/2;
     for(const side of[-1,1]){const plate=mark(chassis,.54,.31,[0,0,.25,1]);plate.position.set(side*1.025,.52,-.83);plate.rotation.y=side*Math.PI/2;plate.name='driver';}
-    const wordmark=mark(rearFlap,1.96,.30,[.25,0,.75,1]);wordmark.position.set(0,.056,.30);wordmark.rotation.set(-Math.PI/2,0,Math.PI);
+    const wordmark=mark(rearFlap,1.96,.30,[.25,0,.75,1]);wordmark.position.set(0,.056,.30);wordmark.rotation.x=-Math.PI/2;
   }
   const seat=new THREE.Mesh(new THREE.SphereGeometry(.49,24,16),carbon);seat.scale.set(.9,.45,1.6);seat.position.set(0,.77,-.45);seat.name='driver';chassis.add(seat);
   const helmet=new THREE.Mesh(new THREE.SphereGeometry(.25,24,16),accent);helmet.position.set(0,1.02,-.45);helmet.name='driver';chassis.add(helmet);

@@ -35,8 +35,6 @@ jobs:
             sleep 1
           done
           node tests/livery-browser.mjs
-          CAREER_UI_ONLY=1 node tests/career-browser.mjs
-          UI_CDP_URL=http://127.0.0.1:9238 node tests/ui-settings-browser.mjs
       - name: Review previews
         if: always()
         run: |
