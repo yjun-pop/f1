@@ -11,7 +11,7 @@ window.showLiveryGallery=()=>{
  document.querySelector('#hud').hidden=true;const scene=new THREE.Scene();scene.background=new THREE.Color(0x131d2a);scene.add(new THREE.HemisphereLight(0xecf3ff,0x252f38,2.5));const key=new THREE.DirectionalLight(0xffecd8,3.5);key.position.set(4,9,5);scene.add(key);
  const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,80),new THREE.MeshStandardMaterial({color:0x202e3e,roughness:.95}));floor.rotation.x=-Math.PI/2;scene.add(floor);
  const cars=['atlas','vector','helix'].map((team,i)=>{const car=createCar(0x8c969f,carIdentity(team,27));car.group.position.x=(i-1)*3.9;scene.add(car.group);return car;});
- const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,.1,100);camera.position.set(7,9,12);camera.lookAt(0,.35,0);g.renderer.setSize(innerWidth,innerHeight);g.renderer.render(scene,camera);
+ const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,.1,100);camera.position.set(7,9,12);camera.lookAt(0,.35,0);const galleryRenderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});galleryRenderer.setPixelRatio(1);galleryRenderer.setSize(innerWidth,innerHeight);galleryRenderer.outputColorSpace=THREE.SRGBColorSpace;galleryRenderer.toneMapping=THREE.ACESFilmicToneMapping;document.querySelector('#viewport').replaceChildren(galleryRenderer.domElement);galleryRenderer.render(scene,camera);
  return cars.map(c=>({identity:c.group.userData.livery,meshes:c.group.getObjectsByProperty('type','Mesh').length}));
 };
 </script></body></html>

@@ -44,7 +44,7 @@ export function createCar(color:number,identity?:CarIdentity):CarVisual {
   const group=new THREE.Group(),chassis=new THREE.Group();group.add(chassis);
   const identityValue=identity&&carIdentity(identity.team,identity.number),scheme=identityValue?CAR_LIVERIES[identityValue.team]:undefined,maps=identityValue?liveryMaps(identityValue):undefined;if(identityValue)group.userData.livery={...identityValue};
   const carbon=new THREE.MeshStandardMaterial({...surfaceMaps('carbon'),color:0xd0d5dd,roughness:.72,metalness:.08,bumpScale:.002});
-  const paint=new THREE.MeshPhysicalMaterial({color:scheme?0xffffff:color,map:maps?.paint,roughness:.29,metalness:.18,clearcoat:.95,clearcoatRoughness:.18,envMapIntensity:1.1});
+  const paint=new THREE.MeshPhysicalMaterial({color:scheme?0xffffff:color,...(maps?{map:maps.paint}:{}),roughness:.29,metalness:.18,clearcoat:.95,clearcoatRoughness:.18,envMapIntensity:1.1});
   const silver=new THREE.MeshStandardMaterial({color:0xc6cdd1,roughness:.27,metalness:.85});
   const rubber=new THREE.MeshStandardMaterial({...surfaceMaps('rubber'),color:0xa7aaad,roughness:.94,bumpScale:.001});
   const accent=new THREE.MeshStandardMaterial({color:scheme?.accent??0xb48b40,roughness:.58,metalness:.1});
