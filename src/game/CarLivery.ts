@@ -11,3 +11,4 @@ export function carIdentity(team:unknown,number:unknown):CarIdentity|undefined{
  if(typeof team!=='string'||!Object.hasOwn(CAR_LIVERIES,team)||typeof number!=='number'||!Number.isInteger(number)||number<2||number>99)return undefined;
  return {team:team as LiveryTeam,number};
 }
+export interface OpponentIdentity {id:string;appearance:CarIdentity}
