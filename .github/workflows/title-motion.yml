@@ -1,0 +1,53 @@
+name: Validate title race motion
+on:
+  push:
+    branches: ['codex/title-motion-*']
+permissions:
+  contents: read
+concurrency:
+  group: title-motion-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build -- --base=/f1/
+      - name: Verify real WebGL film and startup
+        run: |
+          set -eu
+          npm run dev -- --port 5180 >/tmp/title-vite.log 2>&1 &
+          vite_pid=$!
+          chrome_bin="$(command -v google-chrome || command -v chromium)"
+          "$chrome_bin" --headless --no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --remote-debugging-port=9237 --user-data-dir=/tmp/title-motion-browser about:blank >/tmp/title-chrome.log 2>&1 &
+          chrome_pid=$!
+          trap 'kill "$chrome_pid" "$vite_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:5180/ >/dev/null 2>&1 && curl -fsS http://127.0.0.1:9237/json/list >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          node tests/title-motion-browser.mjs
+          UI_SCREENSHOT_DIR=/tmp/title-startup node tests/title-startup-browser.mjs
+      - name: Review previews
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          for(const [dir,names] of [['/tmp/title-motion/',['before','after']],['/tmp/title-startup/',['title-1920','title-390']]])for(const name of names){const path=dir+name+'.png';if(fs.existsSync(path))console.log('TITLE_SCREENSHOT '+name+' '+fs.readFileSync(path).toString('base64'));}
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: title-motion-checks
+          path: |
+            /tmp/title-motion/
+            /tmp/title-startup/
+            /tmp/title-vite.log
+            /tmp/title-chrome.log
+          if-no-files-found: ignore

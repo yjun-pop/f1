@@ -58,6 +58,21 @@ assert.ok(opening.behind&&opening.right&&opening.distance>2&&opening.distance<4,
 assert.ok(opening.screenX>.35&&opening.screenX<.55&&Math.abs(opening.screenY)<.1,'Right-front tyre must remain prominent beside the menu: '+JSON.stringify(opening));
 const film=await ev(`(()=>{const f=window.film;f.pose(0);const p0=f.cars[0].group.position.clone(),g0=f.cars[1].group.position.clone().sub(p0).dot(f.cars[0].group.getWorldDirection(p0.clone()));const wheel=f.cars[0].visual.tires[0].rotation.x;f.pose(3);const g1=f.cars[1].group.position.clone().sub(f.cars[0].group.position).dot(f.cars[0].group.getWorldDirection(p0.clone()));f.render();return {cars:f.cars.length,moved:p0.distanceTo(f.cars[0].group.position),passed:g0<0&&g1>0,wheels:wheel!==f.cars[0].visual.tires[0].rotation.x,calls:f.renderer.info.render.calls,triangles:f.renderer.info.render.triangles}})()`);
 assert.equal(film.cars,6);assert.ok(film.moved>260&&film.passed&&film.wheels);assert.ok(film.calls<230&&film.triangles<160000,JSON.stringify(film));
+
+const tracking=await ev(`(()=>{
+ const f=window.film,wrap=x=>((x%f.length)+f.length)%f.length;
+ const distanceAt=(position,around)=>{let lo=around-24,hi=around+24;for(let i=0;i<44;i++){const a=lo+(hi-lo)/3,b=hi-(hi-lo)/3;if(f.road.getPointAt(wrap(a)/f.length).distanceToSquared(position)<f.road.getPointAt(wrap(b)/f.length).distanceToSquared(position))hi=b;else lo=a;}return (lo+hi)/2;};
+ const shots=[];for(const [id,gap]of [[1,10],[2,-14],[3,5]]){f.shot=id;const measured=[];for(const seconds of [11.9,13.5,15,16.7]){f.pose(seconds);f.render();const around=f.length*.18+seconds*96,car=distanceAt(f.cars[0].group.position,around),camera=distanceAt(f.camera.position,around);measured.push(camera-car);}shots.push({id,gap,measured,drift:Math.max(...measured)-Math.min(...measured)});}
+ const step=96/120,speeds=[];for(let d=0;d<f.length;d+=step){const a=f.road.getPointAt(d/f.length),b=f.road.getPointAt(wrap(d+step)/f.length);speeds.push(a.distanceTo(b)/step);}
+ f.shot=2;f.pose(13);const spin=f.cars[0].visual.tires[0].rotation.x;f.pose(13.01);const wheelDelta=f.cars[0].visual.tires[0].rotation.x-spin;
+ f.shot=0;f.pose(0);f.render();
+ return {shots,maxPaceError:Math.max(...speeds.map(v=>Math.abs(v-1))),wheelDelta};
+})()`);
+for(const shot of tracking.shots){assert.ok(shot.drift<.02,'Tracked car must not drift backwards against its camera: '+JSON.stringify(shot));assert.ok(shot.measured.every(g=>Math.abs(g-shot.gap)<.02),'Camera distance must stay relative to the car: '+JSON.stringify(shot));}
+assert.ok(tracking.maxPaceError<.002,JSON.stringify(tracking));
+assert.ok(tracking.wheelDelta>0,'Tyres must roll in the same forward direction as gameplay');
+console.log('PASS: car-relative tracking in all three moving shots, smooth arc-length pace and forward tyre rotation',tracking);
+
 const before=await ev(`window.film.elapsed`);await wait(200);assert.equal(await ev(`window.film.elapsed`),before,'Reduced motion must keep the film still');
 await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
 await until(`window.film.elapsed>0`,'animated film');
