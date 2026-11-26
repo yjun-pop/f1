@@ -17,7 +17,7 @@ export class TitleRaceScene {
  readonly renderer:THREE.WebGLRenderer;
  private road=new THREE.CatmullRomCurve3([[-165,0,-330],[-175,0,160],[-90,0,330],[90,0,340],[180,0,170],[170,0,-240],[70,0,-380],[-80,0,-390]].map(p=>new THREE.Vector3(...p)),true,'centripetal');
  private sun=new THREE.DirectionalLight(0xcfe2ff,3.2);
- private length=this.road.getLength();private cars:FilmCar[]=[];
+ private length:number;private cars:FilmCar[]=[];
  private raf=0;private stopped=false;private last=0;private rendered=0;private elapsed=0;private shot=0;private shotStarted=0;
  private scale=1;private slow=0;private samples=0;private sampleAge=0;private warmup=2;
  private overlap=document.createElement('canvas');private reduced=matchMedia('(prefers-reduced-motion: reduce)');
@@ -29,6 +29,8 @@ export class TitleRaceScene {
  private motion=()=>{this.last=this.rendered=0;cancelAnimationFrame(this.raf);if(this.reduced.matches)this.render();else if(!document.hidden&&!this.stopped)this.raf=requestAnimationFrame(this.animate);};
  private lost=(event:Event)=>{event.preventDefault();this.dispose();this.host.dataset.background='poster';};
  constructor(private host:HTMLElement){
+  // Dense arc-length samples keep the fast tracking rig smooth through bends.
+  this.road.arcLengthDivisions=8192;this.length=this.road.getLength();
   this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
   this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.05;
   this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.domElement.className='title-race-canvas';this.renderer.domElement.setAttribute('aria-hidden','true');
@@ -164,7 +166,7 @@ export class TitleRaceScene {
   this.cars.forEach((car,i)=>{const offset=i===0?hero:i===1?rival:car.offset+Math.sin(seconds*.21+i)*3;
    const lane=i===1?THREE.MathUtils.lerp(1.8,-2,THREE.MathUtils.smoothstep(gap,-14,-8)):car.lane+Math.sin(seconds*.18+i)*.2;
    car.group.position.copy(this.at(distance+offset,lane));car.group.rotation.y=Math.atan2(this.t.x,this.t.z);
-   if(car.visual){for(const tire of car.visual.tires)tire.rotation.x=-seconds*FILM_SPEED/.49;for(const wheel of car.visual.frontWheels)wheel.rotation.y=.012*Math.sin(seconds*.6);car.visual.chassis.position.y=Math.sin(seconds*30+i)*.003;}
+   if(car.visual){for(const tire of car.visual.tires)tire.rotation.x=(seconds*FILM_SPEED+offset)/.49;for(const wheel of car.visual.frontWheels)wheel.rotation.y=.012*Math.sin(seconds*.6);car.visual.chassis.position.y=Math.sin(seconds*30+i)*.003;}
   });
   this.camera.up.set(0,1,0);
   if(this.shot===0){
@@ -182,10 +184,12 @@ export class TitleRaceScene {
    this.camera.position.copy(target).add(new THREE.Vector3(0,38,0));
    this.camera.up.copy(this.t).applyAxisAngle(new THREE.Vector3(0,1,0),.32);this.camera.lookAt(target);
   }else{
-   const cameraD=this.shot===1?distance+10:this.shot===2?distance-14:distance+5;
+   // Follow the photographed car, including its progress relative to the pack.
+   // A separate constant-speed camera made it drift backwards in chase shots.
+   const follow=distance+hero,cameraD=this.shot===1?follow+10:this.shot===2?follow-14:follow+5;
    const cameraLane=this.shot===1?-5.8:this.shot===2?6.7:-10.5;
    this.camera.position.copy(this.at(cameraD,cameraLane+(Math.sin(seconds*.15)*.25),this.shot===3?3.3:1.7));
-   const target=this.at(distance+(this.shot===2?8:-13),this.shot===2?1:0,this.shot===3?.85:.72);this.camera.lookAt(target);
+   const target=this.at(follow+(this.shot===2?8:-13),this.shot===2?1:0,this.shot===3?.85:.72);this.camera.lookAt(target);
   }
   // Shift the opening composition to the right, leaving the menu readable.
   const composition=this.shot===0?(this.camera.aspect>=1?.43:.18):this.shot===4?(this.camera.aspect>=1?.34:.08):0;
