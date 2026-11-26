@@ -7,7 +7,7 @@ interface FilmCar {group:THREE.Group;visual?:CarVisual;offset:number;lane:number
 const mod=(v:number)=>((v%1)+1)%1;
 const frame=()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
 const OPENING_SECONDS=4,FILM_SPEED=96;
-const RACE_SHOTS=[{id:1,seconds:5.2},{id:4,seconds:2.6},{id:2,seconds:5},{id:3,seconds:4.2}];
+const RACE_SHOTS=[{id:1,seconds:3.8},{id:4,seconds:1.8},{id:2,seconds:3.8},{id:3,seconds:3.2}];
 const RACE_CYCLE_SECONDS=RACE_SHOTS.reduce((sum,shot)=>sum+shot.seconds,0);
 /** Original, scripted race photography. No gameplay physics, AI or lap timers run here. */
 export class TitleRaceScene {
@@ -168,6 +168,10 @@ export class TitleRaceScene {
    car.group.position.copy(this.at(distance+offset,lane));car.group.rotation.y=Math.atan2(this.t.x,this.t.z);
    if(car.visual){for(const tire of car.visual.tires)tire.rotation.x=(seconds*FILM_SPEED+offset)/.49;for(const wheel of car.visual.frontWheels)wheel.rotation.y=.012*Math.sin(seconds*.6);car.visual.chassis.position.y=Math.sin(seconds*30+i)*.003;}
   });
+  // Wider, lower race photography strengthens near-road motion without
+  // speeding up the cars or adding camera shake. Shot changes are overlapped.
+  const fov=this.shot===0?49:this.shot===4?52:this.shot===1?64:this.shot===2?66:60;
+  if(this.camera.fov!==fov){this.camera.fov=fov;this.camera.updateProjectionMatrix();}
   this.camera.up.set(0,1,0);
   if(this.shot===0){
    // Track the actual right-front axle from behind and outside the car. A
@@ -180,16 +184,17 @@ export class TitleRaceScene {
   }else if(this.shot===4){
    // A world-fixed overhead camera: the pack crosses the frame at full speed
    // rather than remaining centred as it does in the tracking shots.
-   const anchor=this.length*.18+(this.shotStarted+.95)*FILM_SPEED,target=this.at(anchor);
-   this.camera.position.copy(target).add(new THREE.Vector3(0,38,0));
+   const anchor=this.length*.18+(this.shotStarted+.45)*FILM_SPEED,target=this.at(anchor);
+   this.camera.position.copy(target).add(new THREE.Vector3(0,28,0));
    this.camera.up.copy(this.t).applyAxisAngle(new THREE.Vector3(0,1,0),.32);this.camera.lookAt(target);
   }else{
    // Follow the photographed car, including its progress relative to the pack.
    // A separate constant-speed camera made it drift backwards in chase shots.
-   const follow=distance+hero,cameraD=this.shot===1?follow+10:this.shot===2?follow-14:follow+5;
-   const cameraLane=this.shot===1?-5.8:this.shot===2?6.7:-10.5;
-   this.camera.position.copy(this.at(cameraD,cameraLane+(Math.sin(seconds*.15)*.25),this.shot===3?3.3:1.7));
-   const target=this.at(follow+(this.shot===2?8:-13),this.shot===2?1:0,this.shot===3?.85:.72);this.camera.lookAt(target);
+   const follow=distance+hero,cameraD=this.shot===1?follow+6.5:this.shot===2?follow-8.5:follow+2;
+   const cameraLane=this.shot===1?-4.5:this.shot===2?5:-6.8;
+   this.camera.position.copy(this.at(cameraD,cameraLane+(Math.sin(seconds*.15)*.25),this.shot===3?1.3:.82));
+   const portrait=this.camera.aspect<1,heroLane=this.cars[0].lane+Math.sin(seconds*.18)*.2;
+   const target=this.at(follow+(portrait?0:this.shot===2?8:this.shot===3?-3:-7),portrait?heroLane:this.shot===2?1:0,this.shot===3?.85:.72);this.camera.lookAt(target);
   }
   // Shift the opening composition to the right, leaving the menu readable.
   const composition=this.shot===0?(this.camera.aspect>=1?.43:.18):this.shot===4?(this.camera.aspect>=1?.34:.08):0;

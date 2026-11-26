@@ -62,7 +62,7 @@ assert.equal(film.cars,6);assert.ok(film.moved>260&&film.passed&&film.wheels);as
 const tracking=await ev(`(()=>{
  const f=window.film,wrap=x=>((x%f.length)+f.length)%f.length;
  const distanceAt=(position,around)=>{let lo=around-24,hi=around+24;for(let i=0;i<44;i++){const a=lo+(hi-lo)/3,b=hi-(hi-lo)/3;if(f.road.getPointAt(wrap(a)/f.length).distanceToSquared(position)<f.road.getPointAt(wrap(b)/f.length).distanceToSquared(position))hi=b;else lo=a;}return (lo+hi)/2;};
- const shots=[];for(const [id,gap]of [[1,10],[2,-14],[3,5]]){f.shot=id;const measured=[];for(const seconds of [11.9,13.5,15,16.7]){f.pose(seconds);f.render();const around=f.length*.18+seconds*96,car=distanceAt(f.cars[0].group.position,around),camera=distanceAt(f.camera.position,around);measured.push(camera-car);}shots.push({id,gap,measured,drift:Math.max(...measured)-Math.min(...measured)});}
+ const shots=[];for(const [id,gap]of [[1,6.5],[2,-8.5],[3,2]]){f.shot=id;const measured=[];for(const seconds of [11.9,13.5,15,16.7]){f.pose(seconds);f.render();const around=f.length*.18+seconds*96,car=distanceAt(f.cars[0].group.position,around),camera=distanceAt(f.camera.position,around);measured.push(camera-car);}shots.push({id,gap,measured,drift:Math.max(...measured)-Math.min(...measured)});}
  const step=96/120,speeds=[];for(let d=0;d<f.length;d+=step){const a=f.road.getPointAt(d/f.length),b=f.road.getPointAt(wrap(d+step)/f.length);speeds.push(a.distanceTo(b)/step);}
  f.shot=2;f.pose(13);const spin=f.cars[0].visual.tires[0].rotation.x;f.pose(13.01);const wheelDelta=f.cars[0].visual.tires[0].rotation.x-spin;
  f.shot=0;f.pose(0);f.render();
@@ -78,12 +78,12 @@ await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion
 await until(`window.film.elapsed>0`,'animated film');
 await ev(`cancelAnimationFrame(film.raf);film.elapsed=3.99;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
 assert.equal(await ev(`film.shot===1&&film.overlap.width>1&&film.camera.filmOffset===0`),true,'The opening must overlap into the race framing after four seconds');
-await ev(`film.elapsed=9.19;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
+await ev(`film.elapsed=7.79;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
 assert.equal(await ev(`film.shot===4&&film.overlap.width>1`),true,'The race sequence must include the overhead pass');
-const overhead=await ev(`(()=>{const f=film,start=f.shotStarted;f.pose(start+.82);f.render();const camera=f.camera.position.clone(),before=f.cars[0].group.position.clone().project(f.camera);f.pose(start+1.12);f.render();const after=f.cars[0].group.position.clone().project(f.camera);return {stationary:camera.distanceTo(f.camera.position)<.001,down:f.camera.getWorldDirection(camera.clone()).y<-.99,beforeY:before.y,afterY:after.y,screenTravel:before.distanceTo(after),calls:f.renderer.info.render.calls,triangles:f.renderer.info.render.triangles}})()`);
+const overhead=await ev(`(()=>{const f=film,start=f.shotStarted;f.pose(start+.30);f.render();const camera=f.camera.position.clone(),before=f.cars[0].group.position.clone().project(f.camera);f.pose(start+.60);f.render();const after=f.cars[0].group.position.clone().project(f.camera);return {stationary:camera.distanceTo(f.camera.position)<.001,down:f.camera.getWorldDirection(camera.clone()).y<-.99,beforeY:before.y,afterY:after.y,screenTravel:before.distanceTo(after),calls:f.renderer.info.render.calls,triangles:f.renderer.info.render.triangles}})()`);
 assert.ok(overhead.stationary&&overhead.down&&overhead.beforeY<0&&overhead.afterY>0&&overhead.screenTravel>1.2,JSON.stringify(overhead));
 assert.ok(overhead.calls<230&&overhead.triangles<160000,JSON.stringify(overhead));
-await ev(`film.elapsed=11.79;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
+await ev(`film.elapsed=9.59;film.last=performance.now();film.rendered=0;film.animate(film.last+30);cancelAnimationFrame(film.raf)`);
 assert.equal(await ev(`film.shot===2&&film.camera.up.y===1&&film.camera.filmOffset===0`),true,'Overhead framing must return to a level chase view');
 await ev(`Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));window.hiddenTime=film.elapsed`);await wait(200);
 assert.equal(await ev(`film.elapsed===window.hiddenTime`),true,'Hidden tabs must stop advancing the film');
